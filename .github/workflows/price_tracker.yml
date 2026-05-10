@@ -2,12 +2,17 @@ name: Hourly Price Tracker
 
 on:
   schedule:
-    - cron: "0 * * * *"   # runs every hour on the hour
-  workflow_dispatch:        # lets you trigger it manually from GitHub too
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   track-price:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # ← needed to commit last_price.txt
 
     steps:
       - name: Check out repo
@@ -27,5 +32,13 @@ jobs:
           PRODUCT_NAME:     ${{ secrets.PRODUCT_NAME }}
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SCRAPER_API_KEY:  ${{ secrets.SCRAPER_API_KEY }}   # ← add this line
+          SCRAPER_API_KEY:  ${{ secrets.SCRAPER_API_KEY }}
         run: python price_tracker.py
+
+      - name: Save last price to repo    # ← new step
+        run: |
+          git config user.name "price-bot"
+          git config user.email "bot@github.com"
+          git add last_price.txt
+          git diff --cached --quiet || git commit -m "chore: update last price"
+          git push
