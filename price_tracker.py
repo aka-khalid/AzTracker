@@ -36,11 +36,19 @@ HEADERS_LIST = [
 
 
 def fetch_price(url, retries=3):
+    scraper_api_key = os.environ.get("SCRAPER_API_KEY")
+    
     for attempt in range(retries):
-        headers = random.choice(HEADERS_LIST)
         try:
-            time.sleep(random.uniform(2, 4))
-            resp = requests.get(url, headers=headers, timeout=15)
+            time.sleep(random.uniform(1, 3))
+            if scraper_api_key:
+                # Route through ScraperAPI to bypass Amazon's blocking
+                api_url = "http://api.scraperapi.com"
+                params = {"api_key": scraper_api_key, "url": url, "country_code": "eg"}
+                resp = requests.get(api_url, params=params, timeout=60)
+            else:
+                headers = random.choice(HEADERS_LIST)
+                resp = requests.get(url, headers=headers, timeout=15)
             resp.raise_for_status()
         except requests.RequestException as e:
             print(f"[Attempt {attempt+1}] Request error: {e}")
