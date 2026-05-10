@@ -27,4 +27,5 @@ jobs:
           PRODUCT_NAME:     ${{ secrets.PRODUCT_NAME }}
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SCRAPER_API_KEY:  ${{ secrets.SCRAPER_API_KEY }}   # ← add this line
         run: python price_tracker.py
