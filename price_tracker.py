@@ -121,14 +121,28 @@ def main():
         sys.exit(1)
 
     print(f"Price: {price:.2f} EGP")
+    last_price = read_last_price()
+    write_last_price(price)
+
+    if last_price is None:
+        print("First run — saving price, no notification sent.")
+        return
+
+    if price == last_price:
+        print("Price unchanged — no notification sent.")
+        return
+
+    diff = price - last_price
+    arrow = "📉" if diff < 0 else "📈"
+    direction = "Down" if diff < 0 else "Up"
 
     send_telegram(
-        f"🛒 <b>{PRODUCT_NAME}</b>\n"
+        f"{arrow} <b>{PRODUCT_NAME}</b>\n"
         f"💰 <b>{price:,.2f} EGP</b>\n"
+        f"{direction} {abs(diff):,.2f} EGP (was {last_price:,.2f})\n"
         f"🕐 {now}\n"
         f'<a href="{PRODUCT_URL}">View on Amazon.eg</a>'
     )
-
 
 if __name__ == "__main__":
     main()
