@@ -34,7 +34,19 @@ HEADERS_LIST = [
     },
 ]
 
+LAST_PRICE_FILE = "last_price.txt"
 
+def read_last_price():
+    try:
+        with open(LAST_PRICE_FILE, "r") as f:
+            return float(f.read().strip())
+    except:
+        return None
+
+def write_last_price(price):
+    with open(LAST_PRICE_FILE, "w") as f:
+        f.write(str(price))
+        
 def fetch_price(url, retries=3):
     scraper_api_key = os.environ.get("SCRAPER_API_KEY")
     
