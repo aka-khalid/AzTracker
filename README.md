@@ -49,6 +49,8 @@ Edit `products.json` with the Amazon.eg URLs you want to track:
 
 > ⚠️ Use full product URLs only. Shortened links like `amzn.eu/...` might not work.
 
+> 📝 The URLs above are for demonstration only. Replace them with your actual Amazon.eg product URLs.
+
 ---
 
 ### Step 3 — Create a Telegram bot
@@ -86,7 +88,7 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 1. Sign up at [cron-job.org](https://cron-job.org)
 2. Create a GitHub Personal Access Token:
    - GitHub → **Settings → Developer settings → Fine-grained personal access tokens**
-   - Select your repo → add **Actions: Read and write** permission → generate and copy the token
+   - Select your repo → add **Actions: Read and write** and **Workflows: Read and write** permissions → generate and copy the token
 3. Create a new cronjob on cron-job.org with these settings:
 
 | Setting | Value |
