@@ -60,7 +60,7 @@ def fetch_product(url, retries=3):
     for attempt in range(retries):
         try:
             time.sleep(random.uniform(2, 4))
-            if SCRAPER_API_KEY:
+            if SCRAPER_API_KEYS:
                 resp = requests.get(
                     "http://api.scraperapi.com",
                     params={"api_key": random.choice(SCRAPER_API_KEYS), "url": url, "country_code": "eg"},
