@@ -162,6 +162,12 @@ View on Amazon.eg
 
 ---
 
+## Acknowledgements
+
+Built with the help of [Claude](https://claude.ai) by Anthropic.
+
+---
+
 ## License
 
 MIT — free to use, modify, and distribute.
