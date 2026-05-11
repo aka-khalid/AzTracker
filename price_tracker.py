@@ -1,7 +1,7 @@
 """
 Amazon.eg Price Tracker
-Reads products from products.json, checks prices, and sends
-a Telegram notification only when a price changes.
+Reads URLs from products.json, fetches name and price automatically,
+and sends a Telegram notification only when a price changes.
 """
 
 import requests
@@ -55,7 +55,8 @@ def write_last_price(url, price):
         f.write(str(price))
 
 
-def fetch_price(url, retries=3):
+def fetch_product(url, retries=3):
+    """Returns (name, price) tuple or (None, None) on failure."""
     for attempt in range(retries):
         try:
             time.sleep(random.uniform(2, 4))
@@ -74,21 +75,34 @@ def fetch_price(url, retries=3):
             continue
 
         soup = BeautifulSoup(resp.text, "lxml")
-        selectors = [
+
+        # ── Name ──────────────────────────────────────────────
+        name = None
+        name_el = soup.find("span", {"id": "productTitle"})
+        if name_el:
+            name = name_el.get_text().strip()
+
+        # ── Price ─────────────────────────────────────────────
+        price = None
+        price_selectors = [
             ("span", {"class": "a-price-whole"}),
             ("span", {"id": "priceblock_ourprice"}),
             ("span", {"id": "priceblock_dealprice"}),
             ("span", {"class": "a-offscreen"}),
         ]
-        for tag, attrs in selectors:
+        for tag, attrs in price_selectors:
             el = soup.find(tag, attrs)
             if el:
                 price = parse_price(el.get_text().strip())
                 if price:
-                    return price
+                    break
 
-        print(f"  [Attempt {attempt+1}] Price element not found.")
-    return None
+        if name and price:
+            return name, price
+
+        print(f"  [Attempt {attempt+1}] Could not find name or price.")
+
+    return None, None
 
 
 def parse_price(raw: str):
@@ -119,22 +133,22 @@ def main():
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     for product in products:
-        url  = product["url"]
-        name = product["name"]
-        print(f"\nChecking: {name}")
+        url = product["url"]
+        print(f"\nChecking: {url}")
 
-        price = fetch_price(url)
+        name, price = fetch_product(url)
 
-        if price is None:
-            print("  ❌ Could not fetch price.")
+        if name is None or price is None:
+            print("  ❌ Could not fetch product.")
             send_telegram(
-                f"⚠️ <b>{name}</b>\n"
-                f"Could not fetch price at {now}.\n"
-                f"Amazon may be blocking the request."
+                f"⚠️ Could not fetch product at {now}.\n"
+                f'<a href="{url}">View on Amazon.eg</a>'
             )
             continue
 
-        print(f"  💰 Price: {price:,.2f} EGP")
+        print(f"  📦 {name}")
+        print(f"  💰 {price:,.2f} EGP")
+
         last_price = read_last_price(url)
         write_last_price(url, price)
 
