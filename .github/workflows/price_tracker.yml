@@ -10,7 +10,7 @@ jobs:
   track-price:
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # ← needed to commit last_price.txt
+      contents: write
 
     steps:
       - name: Check out repo
@@ -26,17 +26,15 @@ jobs:
 
       - name: Run price tracker
         env:
-          PRODUCT_URL:      ${{ secrets.PRODUCT_URL }}
-          PRODUCT_NAME:     ${{ secrets.PRODUCT_NAME }}
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SCRAPER_API_KEY:  ${{ secrets.SCRAPER_API_KEY }}
         run: python price_tracker.py
 
-      - name: Save last price to repo    # ← new step
+      - name: Save prices to repo
         run: |
           git config user.name "price-bot"
           git config user.email "bot@github.com"
-          git add last_price.txt
-          git diff --cached --quiet || git commit -m "chore: update last price"
+          git add prices/
+          git diff --cached --quiet || git commit -m "chore: update prices"
           git push
