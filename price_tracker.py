@@ -16,7 +16,7 @@ from datetime import datetime
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-SCRAPER_API_KEY  = os.environ.get("SCRAPER_API_KEY")
+SCRAPER_API_KEYS = os.environ.get("SCRAPER_API_KEY", "").split(",")
 # ─────────────────────────────────────────────────────────────────────────────
 
 LAST_PRICE_DIR = "prices"
@@ -63,7 +63,7 @@ def fetch_product(url, retries=3):
             if SCRAPER_API_KEY:
                 resp = requests.get(
                     "http://api.scraperapi.com",
-                    params={"api_key": SCRAPER_API_KEY, "url": url, "country_code": "eg"},
+                    params={"api_key": random.choice(SCRAPER_API_KEYS), "url": url, "country_code": "eg"},
                     timeout=60
                 )
             else:
