@@ -1,75 +1,44 @@
 # AzTracker 🛒
 
-A lightweight Amazon.eg price tracker that runs on GitHub Actions and sends Telegram notifications when a price changes.
+> Track Amazon.eg product prices and get instant Telegram alerts when they drop — no server, no cost.
+
+AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add your product URLs, set up a Telegram bot, and you'll get notified the moment a price changes. No device needs to stay on.
 
 ---
 
-## How It Works
+## Features
 
-1. cron-job.org triggers the GitHub Actions workflow every hour
-2. The script fetches the current price for each product in `products.json`
-3. If the price changed since the last check, a Telegram notification is sent
-4. The latest prices are committed back to the repo in the `prices/` folder
+- 🔔 Telegram notifications on price change only — no spam
+- 📦 Track multiple products from a single file
+- 🤖 Product names fetched automatically — no manual labeling
+- ☁️ Fully serverless — runs on GitHub Actions
+- 💸 100% free with the right setup
 
 ---
 
-## Repo Structure
+## Quick Start
+
+### What you'll need
+- A [GitHub](https://github.com) account
+- A [Telegram](https://telegram.org) account
+- A [ScraperAPI](https://www.scraperapi.com) account (free tier)
+- A [cron-job.org](https://cron-job.org) account (free)
+
+---
+
+### Step 1 — Fork or clone this repo
 
 ```
-AzTracker/
-├── price_tracker.py        # main script
-├── products.json           # list of product URLs to track
-├── requirements.txt        # Python dependencies
-├── prices/                 # auto-generated, one .txt file per product
-└── .github/
-    └── workflows/
-        └── price_tracker.yml
+https://github.com/YOUR_USERNAME/AzTracker
 ```
 
----
-
-## Setup
-
-### 1. Telegram Bot
-- Open Telegram → search **@BotFather** → send `/newbot` → copy the token
-- Search **@userinfobot** → send `/start` → copy your Chat ID
-- Send your bot any message so it can message you back
-
-### 2. ScraperAPI
-- Sign up at [scraperapi.com](https://www.scraperapi.com) (free tier: 1,000 requests/month)
-- Copy your API key from the dashboard
-- To add multiple keys, comma-separate them in the GitHub secret: `key1,key2,key3`
-
-### 3. GitHub Secrets
-Go to your repo → **Settings → Secrets and variables → Actions** and add:
-
-| Secret | Value |
-|---|---|
-| `TELEGRAM_TOKEN` | from @BotFather |
-| `TELEGRAM_CHAT_ID` | from @userinfobot |
-| `SCRAPER_API_KEY` | from ScraperAPI (comma-separated for multiple) |
-
-### 4. cron-job.org
-- Sign up at [cron-job.org](https://cron-job.org) (free)
-- Create a new cronjob with these settings:
-  - **URL:** `https://api.github.com/repos/YOUR_USERNAME/AzTracker/actions/workflows/price_tracker.yml/dispatches`
-  - **Method:** `POST`
-  - **Headers:**
-    - `Authorization: Bearer YOUR_GITHUB_TOKEN`
-    - `Accept: application/vnd.github+json`
-  - **Body:** `{"ref":"main"}`
-  - **Schedule:** every 1 hour (or adjust based on usage)
-
-### 5. GitHub Personal Access Token
-- GitHub → **Settings → Developer settings → Fine-grained tokens**
-- Select your repo, add **Actions: Read and write** permission
-- Copy the token and paste it into cron-job.org as the Bearer token
+Make it **private** if you don't want your product URLs visible publicly.
 
 ---
 
-## Adding Products
+### Step 2 — Add your products
 
-Edit `products.json` — just add the full Amazon.eg product URL:
+Edit `products.json` with the Amazon.eg URLs you want to track:
 
 ```json
 [
@@ -78,32 +47,100 @@ Edit `products.json` — just add the full Amazon.eg product URL:
 ]
 ```
 
-- Use full URLs only (`amazon.eg/dp/...`), not shortened links (`amzn.eu/...`)
-- Product names are fetched automatically from the page
-- Commit and push — the next run will pick up the new products
+> ⚠️ Use full product URLs only. Shortened links like `amzn.eu/...` won't work.
 
 ---
 
-## Free Tier Limits
+### Step 3 — Create a Telegram bot
 
-| Service | Free limit | Hourly usage (6 products) |
-|---|---|---|
-| ScraperAPI | 1,000 req/month | ~4,320 ❌ |
-| ScraperAPI x2 keys | 2,000 req/month | ~4,320 ❌ |
-| ScraperAPI x3 keys | 3,000 req/month | ~4,320 ❌ |
-| GitHub Actions | 2,000 min/month | ~360 min ✅ |
-| cron-job.org | Unlimited | ✅ |
-
-> For 6 products, run every **3 hours** to stay within 1 ScraperAPI key's free limit (672 req/2 weeks).
+1. Open Telegram → search **@BotFather** → send `/newbot` → follow the steps → copy the **token**
+2. Search **@userinfobot** → send `/start` → copy your **Chat ID**
+3. Open your new bot and send it any message so it can reply to you
 
 ---
 
-## Telegram Notification Format
+### Step 4 — Get a ScraperAPI key
+
+Sign up at [scraperapi.com](https://www.scraperapi.com) and copy your API key from the dashboard.
+
+> ScraperAPI is used to bypass Amazon's bot detection. The free tier includes 1,000 requests/month.
+
+---
+
+### Step 5 — Add GitHub Secrets
+
+Go to your repo → **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret | Value |
+|---|---|
+| `TELEGRAM_TOKEN` | from @BotFather |
+| `TELEGRAM_CHAT_ID` | from @userinfobot |
+| `SCRAPER_API_KEY` | from ScraperAPI |
+
+---
+
+### Step 6 — Set up the scheduler
+
+GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-job.org to trigger runs instead.
+
+1. Sign up at [cron-job.org](https://cron-job.org)
+2. Create a GitHub Personal Access Token:
+   - GitHub → **Settings → Developer settings → Fine-grained personal access tokens**
+   - Select your repo → add **Actions: Read and write** permission → generate and copy the token
+3. Create a new cronjob on cron-job.org with these settings:
+
+| Setting | Value |
+|---|---|
+| URL | `https://api.github.com/repos/YOUR_USERNAME/AzTracker/actions/workflows/price_tracker.yml/dispatches` |
+| Method | `POST` |
+| Header 1 | `Authorization: Bearer YOUR_GITHUB_TOKEN` |
+| Header 2 | `Accept: application/vnd.github+json` |
+| Body | `{"ref":"main"}` |
+| Schedule | Every 1 hour (see note below) |
+
+---
+
+## Choosing a check frequency
+
+Each run uses **1 ScraperAPI request per product**. Plan accordingly:
+
+| Products | Every 1h | Every 2h | Every 3h |
+|---|---|---|---|
+| 1 | 720 ✅ | 360 ✅ | 240 ✅ |
+| 3 | 2,160 ❌ | 1,080 ❌ | 720 ✅ |
+| 6 | 4,320 ❌ | 2,160 ❌ | 1,440 ❌ |
+
+Numbers are monthly requests. Free tier limit is **1,000/month**.
+
+**Need more?** You can add multiple ScraperAPI keys (one per free account) as a comma-separated secret:
+```
+key1,key2,key3
+```
+The tracker will rotate between them automatically.
+
+---
+
+## Repo Structure
 
 ```
-📉 Product Name
-💰 4,299.00 EGP
-Down 200.00 EGP (was 4,499.00)
+AzTracker/
+├── price_tracker.py        # main script
+├── products.json           # your product URLs
+├── requirements.txt        # Python dependencies
+├── prices/                 # auto-generated price history (one file per product)
+└── .github/
+    └── workflows/
+        └── price_tracker.yml
+```
+
+---
+
+## Notification Format
+
+```
+📉 Samsung 55" QLED TV
+💰 18,999.00 EGP
+Down 2,000.00 EGP (was 20,999.00)
 🕐 2026-05-11 10:00 UTC
 View on Amazon.eg
 ```
@@ -112,10 +149,17 @@ View on Amazon.eg
 
 ## Troubleshooting
 
-| Issue | Cause | Fix |
+| Problem | Likely cause | Fix |
 |---|---|---|
-| "Could not fetch product" | Amazon blocking or wrong URL | Use full `amazon.eg/dp/...` URL, not shortened links |
-| "chat not found" Telegram error | Bot never messaged first | Send your bot any message on Telegram |
-| 401 on cron-job.org | Bad GitHub token | Regenerate token with Actions: Read and write |
-| Runs delayed or skipped | GitHub scheduler unreliable | cron-job.org handles this — ignore GitHub's built-in schedule |
-| Hit ScraperAPI limit | Too many requests | Add a second API key or reduce check frequency |
+| "Could not fetch product" | Shortened or invalid URL | Use full `amazon.eg/dp/...` URLs |
+| "chat not found" from Telegram | Bot not activated | Send your bot any message first |
+| 401 on cron-job.org test | Bad GitHub token | Regenerate with Actions: Read and write |
+| 403 on cron-job.org test | Wrong token permission | Make sure Actions (not just Workflows) is Read and write |
+| Runs delayed or skipped | GitHub scheduler unreliable | Expected — cron-job.org fixes this |
+| Hit ScraperAPI limit mid-month | Too many requests | Add a second API key or reduce frequency |
+
+---
+
+## License
+
+MIT — free to use, modify, and distribute.
