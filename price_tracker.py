@@ -1,7 +1,7 @@
 """
 Amazon.eg Price Tracker
-Fetches the current price and sends a Telegram notification.
-Designed to be run by GitHub Actions every hour.
+Reads products from products.json, checks prices, and sends
+a Telegram notification only when a price changes.
 """
 
 import requests
@@ -9,15 +9,17 @@ import random
 import time
 import os
 import sys
+import json
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-# ── Config (loaded from GitHub Secrets) ──────────────────────────────────────
-PRODUCT_URL      = os.environ["PRODUCT_URL"]
-PRODUCT_NAME     = os.environ.get("PRODUCT_NAME", "Tracked Product")
+# ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+SCRAPER_API_KEY  = os.environ.get("SCRAPER_API_KEY")
 # ─────────────────────────────────────────────────────────────────────────────
+
+LAST_PRICE_DIR = "prices"
 
 HEADERS_LIST = [
     {
@@ -25,45 +27,50 @@ HEADERS_LIST = [
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8",
-    },
-    {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                      "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                      "Version/17.0 Safari/605.1.15",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.google.com/",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
     },
 ]
 
-LAST_PRICE_FILE = "last_price.txt"
 
-def read_last_price():
+def get_price_file(url):
+    product_id = url.rstrip("/").split("/")[-1]
+    os.makedirs(LAST_PRICE_DIR, exist_ok=True)
+    return f"{LAST_PRICE_DIR}/{product_id}.txt"
+
+
+def read_last_price(url):
     try:
-        with open(LAST_PRICE_FILE, "r") as f:
+        with open(get_price_file(url), "r") as f:
             return float(f.read().strip())
     except:
         return None
 
-def write_last_price(price):
-    with open(LAST_PRICE_FILE, "w") as f:
+
+def write_last_price(url, price):
+    with open(get_price_file(url), "w") as f:
         f.write(str(price))
-        
+
+
 def fetch_price(url, retries=3):
-    scraper_api_key = os.environ.get("SCRAPER_API_KEY")
-    
     for attempt in range(retries):
         try:
-            time.sleep(random.uniform(1, 3))
-            if scraper_api_key:
-                # Route through ScraperAPI to bypass Amazon's blocking
-                api_url = "http://api.scraperapi.com"
-                params = {"api_key": scraper_api_key, "url": url, "country_code": "eg"}
-                resp = requests.get(api_url, params=params, timeout=60)
+            time.sleep(random.uniform(2, 4))
+            if SCRAPER_API_KEY:
+                resp = requests.get(
+                    "http://api.scraperapi.com",
+                    params={"api_key": SCRAPER_API_KEY, "url": url, "country_code": "eg"},
+                    timeout=60
+                )
             else:
                 headers = random.choice(HEADERS_LIST)
                 resp = requests.get(url, headers=headers, timeout=15)
             resp.raise_for_status()
         except requests.RequestException as e:
-            print(f"[Attempt {attempt+1}] Request error: {e}")
+            print(f"  [Attempt {attempt+1}] Request error: {e}")
             continue
 
         soup = BeautifulSoup(resp.text, "lxml")
@@ -80,7 +87,7 @@ def fetch_price(url, retries=3):
                 if price:
                     return price
 
-        print(f"[Attempt {attempt+1}] Price element not found.")
+        print(f"  [Attempt {attempt+1}] Price element not found.")
     return None
 
 
@@ -100,49 +107,57 @@ def send_telegram(message: str):
         "parse_mode": "HTML"
     }, timeout=10)
     if resp.status_code == 200:
-        print("Telegram notification sent.")
+        print("  ✅ Telegram notification sent.")
     else:
-        print(f"Telegram error: {resp.text}")
-        sys.exit(1)
+        print(f"  ⚠️  Telegram error: {resp.text}")
 
 
 def main():
+    with open("products.json") as f:
+        products = json.load(f)
+
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    print(f"Checking price at {now}...")
 
-    price = fetch_price(PRODUCT_URL)
+    for product in products:
+        url  = product["url"]
+        name = product["name"]
+        print(f"\nChecking: {name}")
 
-    if price is None:
+        price = fetch_price(url)
+
+        if price is None:
+            print("  ❌ Could not fetch price.")
+            send_telegram(
+                f"⚠️ <b>{name}</b>\n"
+                f"Could not fetch price at {now}.\n"
+                f"Amazon may be blocking the request."
+            )
+            continue
+
+        print(f"  💰 Price: {price:,.2f} EGP")
+        last_price = read_last_price(url)
+        write_last_price(url, price)
+
+        if last_price is None:
+            print("  📝 First run — price saved, no notification sent.")
+            continue
+
+        if price == last_price:
+            print("  ➡️  Unchanged — no notification sent.")
+            continue
+
+        diff = price - last_price
+        arrow = "📉" if diff < 0 else "📈"
+        direction = "Down" if diff < 0 else "Up"
+
         send_telegram(
-            f"⚠️ <b>{PRODUCT_NAME}</b>\n"
-            f"Could not fetch price at {now}.\n"
-            f"Amazon may be blocking the request."
+            f"{arrow} <b>{name}</b>\n"
+            f"💰 <b>{price:,.2f} EGP</b>\n"
+            f"{direction} {abs(diff):,.2f} EGP (was {last_price:,.2f})\n"
+            f"🕐 {now}\n"
+            f'<a href="{url}">View on Amazon.eg</a>'
         )
-        sys.exit(1)
 
-    print(f"Price: {price:.2f} EGP")
-    last_price = read_last_price()
-    write_last_price(price)
-
-    if last_price is None:
-        print("First run — saving price, no notification sent.")
-        return
-
-    if price == last_price:
-        print("Price unchanged — no notification sent.")
-        return
-
-    diff = price - last_price
-    arrow = "📉" if diff < 0 else "📈"
-    direction = "Down" if diff < 0 else "Up"
-
-    send_telegram(
-        f"{arrow} <b>{PRODUCT_NAME}</b>\n"
-        f"💰 <b>{price:,.2f} EGP</b>\n"
-        f"{direction} {abs(diff):,.2f} EGP (was {last_price:,.2f})\n"
-        f"🕐 {now}\n"
-        f'<a href="{PRODUCT_URL}">View on Amazon.eg</a>'
-    )
 
 if __name__ == "__main__":
     main()
