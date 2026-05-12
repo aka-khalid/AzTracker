@@ -11,7 +11,7 @@ import os
 import sys
 import json
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
@@ -24,7 +24,7 @@ def next_api_key():
     key = SCRAPER_API_KEYS[_key_index % len(SCRAPER_API_KEYS)]
     _key_index += 1
     return key
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────────
 
 LAST_PRICE_DIR = "prices"
 
@@ -137,7 +137,7 @@ def main():
     with open("products.json") as f:
         products = json.load(f)
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M UTC+3")
 
     for product in products:
         url = product["url"]
