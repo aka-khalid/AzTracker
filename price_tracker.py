@@ -17,6 +17,13 @@ from datetime import datetime
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 SCRAPER_API_KEYS = os.environ.get("SCRAPER_API_KEY", "").split(",")
+_key_index = 0
+
+def next_api_key():
+    global _key_index
+    key = SCRAPER_API_KEYS[_key_index % len(SCRAPER_API_KEYS)]
+    _key_index += 1
+    return key
 # ─────────────────────────────────────────────────────────────────────────────
 
 LAST_PRICE_DIR = "prices"
@@ -63,7 +70,7 @@ def fetch_product(url, retries=3):
             if SCRAPER_API_KEYS:
                 resp = requests.get(
                     "http://api.scraperapi.com",
-                    params={"api_key": random.choice(SCRAPER_API_KEYS), "url": url, "country_code": "eg"},
+                    params={"api_key": next_api_key(), "url": url, "country_code": "eg"},
                     timeout=60
                 )
             else:
