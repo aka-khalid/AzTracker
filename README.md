@@ -2,7 +2,7 @@
 
 > Track Amazon.eg product prices and get instant Telegram alerts when they drop — no server, no cost.
 
-AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add your product URLs, set up a Telegram bot, and you'll get notified the moment a price drops. No device needs to stay on. Built for Egypt, automatically detects Cairo's timezone.
+AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add your product URLs, set up a Telegram bot, and you'll get notified the moment a price drops. No device needs to stay on.
 
 ---
 
@@ -12,7 +12,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 - 📦 Track multiple products from a single file
 - 🤖 Product names fetched automatically — no manual labeling
 - ☁️ Fully serverless — runs on GitHub Actions
-- 🌍 Automatically detects Cairo timezone (EET/EEST with DST)
+- 🕐 Cairo timezone (EET/EEST) — automatically adjusts for daylight saving
 - 💸 100% free with the right setup
 
 ---
@@ -144,9 +144,11 @@ AzTracker/
 📉 Samsung 55" QLED TV
 💰 18,999.00 EGP
 Down 2,000.00 EGP (was 20,999.00)
-🕐 2026-05-13 22:45 EET
+🕐 2026-05-11 10:00 EET
 View on Amazon.eg
 ```
+
+*Timestamps are in Cairo timezone (EET/EEST), automatically adjusted for daylight saving.*
 
 ---
 
@@ -154,7 +156,7 @@ View on Amazon.eg
 
 | Problem | Likely cause | Fix |
 |---|---|---|
-| "Could not fetch product" | Shortened or invalid URL | Use full `amazon.eg/dp/...` URLs |
+| "Could not fetch product" | Shortened or invalid URL, or ScraperAPI returning 500 errors | Use full `amazon.eg/dp/...` URLs; check ScraperAPI status or retry later |
 | "chat not found" from Telegram | Bot not activated | Send your bot any message first |
 | 401 on cron-job.org test | Bad GitHub token | Regenerate with Actions: Read and write |
 | 403 on cron-job.org test | Wrong token permission | Make sure Actions (not just Workflows) is Read and write |
