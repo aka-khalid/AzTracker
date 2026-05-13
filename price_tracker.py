@@ -163,18 +163,16 @@ def main():
             print("  📝 First run — price saved, no notification sent.")
             continue
 
-        if price == last_price:
-            print("  ➡️  Unchanged — no notification sent.")
+        if price >= last_price:
+            print("  📈 Price went up or unchanged — no notification sent.")
             continue
 
-        diff = price - last_price
-        arrow = "📉" if diff < 0 else "📈"
-        direction = "Down" if diff < 0 else "Up"
+        diff = last_price - price
 
         send_telegram(
-            f"{arrow} <b>{name}</b>\n"
+            f"📉 <b>{name}</b>\n"
             f"💰 <b>{price:,.2f} EGP</b>\n"
-            f"{direction} {abs(diff):,.2f} EGP (was {last_price:,.2f})\n"
+            f"Down {diff:,.2f} EGP (was {last_price:,.2f})\n"
             f"🕐 {now}\n"
             f'<a href="{url}">View on Amazon.eg</a>'
         )
