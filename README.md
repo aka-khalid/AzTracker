@@ -2,16 +2,17 @@
 
 > Track Amazon.eg product prices and get instant Telegram alerts when they drop — no server, no cost.
 
-AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add your product URLs, set up a Telegram bot, and you'll get notified the moment a price changes. No device needs to stay on.
+AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add your product URLs, set up a Telegram bot, and you'll get notified the moment a price drops. No device needs to stay on. Built for Egypt, automatically detects Cairo's timezone.
 
 ---
 
 ## Features
 
-- 🔔 Telegram notifications on price change only — no spam
+- 🔔 Telegram notifications on price drops only — no spam
 - 📦 Track multiple products from a single file
 - 🤖 Product names fetched automatically — no manual labeling
 - ☁️ Fully serverless — runs on GitHub Actions
+- 🌍 Automatically detects Cairo timezone (EET/EEST with DST)
 - 💸 100% free with the right setup
 
 ---
@@ -143,7 +144,7 @@ AzTracker/
 📉 Samsung 55" QLED TV
 💰 18,999.00 EGP
 Down 2,000.00 EGP (was 20,999.00)
-🕐 2026-05-11 10:00 UTC
+🕐 2026-05-13 22:45 EET
 View on Amazon.eg
 ```
 
