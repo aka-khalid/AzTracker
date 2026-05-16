@@ -11,7 +11,8 @@ import os
 import sys
 import json
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+import pytz
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
@@ -137,7 +138,8 @@ def main():
     with open("products.json") as f:
         products = json.load(f)
 
-    now = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M UTC+3")
+    cairo_tz = pytz.timezone('Africa/Cairo')
+    now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
 
     for product in products:
         url = product["url"]
@@ -156,18 +158,34 @@ def main():
         print(f"  📦 {name}")
         print(f"  💰 {price:,.2f} EGP")
 
+        price = round(price, 2)
         last_price = read_last_price(url)
-        write_last_price(url, price)
 
         if last_price is None:
+            write_last_price(url, price)
             print("  📝 First run — price saved, no notification sent.")
             continue
 
         if price >= last_price:
+            write_last_price(url, price)
             print("  📈 Price went up or unchanged — no notification sent.")
             continue
 
+        # Price drop detected — confirm it
+        print("  🔄 Price drop detected, confirming in 60s...")
+        time.sleep(60)
+        _, confirmed_price = fetch_product(url)
+        if confirmed_price is None:
+            print("  ❌ Could not confirm price — skipping.")
+            continue
+        confirmed_price = round(confirmed_price, 2)
+        if confirmed_price != price:
+            print(f"  ❌ Price reverted to {confirmed_price:,.2f} — skipping.")
+            write_last_price(url, confirmed_price)
+            continue
+
         diff = last_price - price
+        write_last_price(url, price)
 
         send_telegram(
             f"📉 <b>{name}</b>\n"
