@@ -118,15 +118,19 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 
 ## Choosing a check frequency
 
-Each run uses **1 ScraperAPI request per product** (+ 1 extra per drop for confirmation). Plan accordingly:
+Each run uses **1 ScraperAPI request per product**. When a price drop is detected, an **additional confirmation request** is made 60 seconds later. Plan accordingly:
+
+**Base requests (without drops):**
 
 | Products | Every 1h | Every 2h | Every 3h |
 |---|---|---|---|
 | 1 | 720 ✅ | 360 ✅ | 240 ✅ |
 | 3 | 2,160 ❌ | 1,080 ❌ | 720 ✅ |
-| 6 | 4,320 ❌ | 2,160 ❌ | 1,440 ❌ |
+| 5 | 3,600 ❌ | 1,800 ❌ | 1,200 ❌ |
 
-Numbers are monthly requests. Free tier limit is **1,000/month**. Confirmation checks count as additional requests.
+Numbers are monthly requests. Free tier limit is **1,000/month**.
+
+**⚠️ Important**: Confirmation requests are only triggered when price drops are detected. If products frequently drop in price, add extra margin or use multiple API keys. The table above shows the baseline; actual usage depends on how often prices drop.
 
 **Need more?** You can add multiple ScraperAPI keys (one per free account) as a comma-separated secret:
 ```
