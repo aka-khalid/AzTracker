@@ -12,7 +12,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 - 📦 Track multiple products from a single file
 - 🤖 Product names fetched automatically — no manual labeling
 - ☁️ Fully serverless — runs on GitHub Actions
-- ✅ Price drop verification — waits 60s and re-checks before notifying (prevents false alerts)
+- ✅ Price drop verification — waits 5s and re-checks before notifying (prevents false alerts)
 - 🕐 Cairo timezone (EET/EEST) — automatically adjusts for daylight saving
 - 💸 100% free with the right setup
 
