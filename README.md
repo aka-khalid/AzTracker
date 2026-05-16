@@ -57,7 +57,7 @@ Edit `products.json` with the Amazon.eg URLs you want to track:
 ```json
 [
   { "url": "https://www.amazon.eg/dp/B0CX1234XY" },
-  { "url": "https://www.amazon.eg/dp/B0CX5678AB" }
+  { "url": "https://www.amazon.eg/dp/B0CXXXX8AB" }
 ]
 ```
 
@@ -147,7 +147,7 @@ AzTracker/
 ├── price_tracker.py        # main script
 ├── products.json           # your product URLs
 ├── requirements.txt        # Python dependencies
-├── prices/                 # auto-generated price history (one file per product)
+├── prices.json             # auto-generated price history
 └── .github/
     └── workflows/
         └── price_tracker.yml
