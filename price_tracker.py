@@ -1,18 +1,17 @@
 """
 Amazon.eg Price Tracker
 Reads URLs from products.json, fetches name and price automatically,
-and sends a Telegram notification only when a price changes.
+and sends a Telegram notification only when a price drops.
 """
 
 import requests
 import random
 import time
 import os
-import sys
 import json
 from bs4 import BeautifulSoup
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
@@ -25,9 +24,9 @@ def next_api_key():
     key = SCRAPER_API_KEYS[_key_index % len(SCRAPER_API_KEYS)]
     _key_index += 1
     return key
-# ────────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 
-LAST_PRICE_DIR = "prices"
+PRICES_FILE = "prices.json"
 
 HEADERS_LIST = [
     {
@@ -44,24 +43,26 @@ HEADERS_LIST = [
 ]
 
 
-def get_price_file(url):
-    product_id = url.rstrip("/").split("/")[-1]
-    os.makedirs(LAST_PRICE_DIR, exist_ok=True)
-    return f"{LAST_PRICE_DIR}/{product_id}.txt"
+# ── Price store ───────────────────────────────────────────────────────────────
 
-
-def read_last_price(url):
+def load_prices():
     try:
-        with open(get_price_file(url), "r") as f:
-            return float(f.read().strip())
+        with open(PRICES_FILE, "r") as f:
+            return json.load(f)
     except:
-        return None
+        return {}
 
 
-def write_last_price(url, price):
-    with open(get_price_file(url), "w") as f:
-        f.write(str(price))
+def save_prices(prices: dict):
+    with open(PRICES_FILE, "w") as f:
+        json.dump(prices, f, indent=2)
 
+
+def get_product_id(url):
+    return url.rstrip("/").split("/")[-1]
+
+
+# ── Scraper ───────────────────────────────────────────────────────────────────
 
 def fetch_product(url, retries=3):
     """Returns (name, price) tuple or (None, None) on failure."""
@@ -75,8 +76,7 @@ def fetch_product(url, retries=3):
                     timeout=60
                 )
             else:
-                headers = random.choice(HEADERS_LIST)
-                resp = requests.get(url, headers=headers, timeout=15)
+                resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
             resp.raise_for_status()
         except requests.RequestException as e:
             print(f"  [Attempt {attempt+1}] Request error: {e}")
@@ -84,21 +84,18 @@ def fetch_product(url, retries=3):
 
         soup = BeautifulSoup(resp.text, "lxml")
 
-        # ── Name ──────────────────────────────────────────────
         name = None
         name_el = soup.find("span", {"id": "productTitle"})
         if name_el:
             name = name_el.get_text().strip()
 
-        # ── Price ─────────────────────────────────────────────
         price = None
-        price_selectors = [
+        for tag, attrs in [
             ("span", {"class": "a-price-whole"}),
             ("span", {"id": "priceblock_ourprice"}),
             ("span", {"id": "priceblock_dealprice"}),
             ("span", {"class": "a-offscreen"}),
-        ]
-        for tag, attrs in price_selectors:
+        ]:
             el = soup.find(tag, attrs)
             if el:
                 price = parse_price(el.get_text().strip())
@@ -121,6 +118,8 @@ def parse_price(raw: str):
         return None
 
 
+# ── Telegram ──────────────────────────────────────────────────────────────────
+
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     resp = requests.post(url, json={
@@ -134,66 +133,85 @@ def send_telegram(message: str):
         print(f"  ⚠️  Telegram error: {resp.text}")
 
 
+# ── Per-product check ─────────────────────────────────────────────────────────
+
+def check_product(url, prices, now):
+    print(f"\nChecking: {url}")
+    product_id = get_product_id(url)
+
+    name, price = fetch_product(url)
+
+    if name is None or price is None:
+        print("  ❌ Could not fetch product.")
+        send_telegram(
+            f"⚠️ Could not fetch product at {now}.\n"
+            f'<a href="{url}">View on Amazon.eg</a>'
+        )
+        return product_id, None
+
+    price = round(price, 2)
+    print(f"  📦 {name}")
+    print(f"  💰 {price:,.2f} EGP")
+
+    last_price = prices.get(product_id)
+
+    if last_price is None:
+        print("  📝 First run — price saved, no notification sent.")
+        return product_id, price
+
+    if price >= last_price:
+        print("  📈 Price went up or unchanged — no notification sent.")
+        return product_id, price
+
+    # Price drop detected — confirm after 60s
+    print("  🔄 Price drop detected, confirming in 60s...")
+    time.sleep(60)
+    _, confirmed_price = fetch_product(url)
+
+    if confirmed_price is None:
+        print("  ❌ Could not confirm price — skipping.")
+        return product_id, last_price
+
+    confirmed_price = round(confirmed_price, 2)
+
+    if confirmed_price != price:
+        print(f"  ❌ Price reverted to {confirmed_price:,.2f} — skipping.")
+        return product_id, confirmed_price
+
+    diff = last_price - price
+    send_telegram(
+        f"📉 <b>{name}</b>\n"
+        f"💰 <b>{price:,.2f} EGP</b>\n"
+        f"Down {diff:,.2f} EGP (was {last_price:,.2f})\n"
+        f"🕐 {now}\n"
+        f'<a href="{url}">View on Amazon.eg</a>'
+    )
+
+    return product_id, price
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
 def main():
     with open("products.json") as f:
         products = json.load(f)
 
-    cairo_tz = pytz.timezone('Africa/Cairo')
-    now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
+    prices = load_prices()
+    now = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M UTC+3")
+    updates = {}
 
-    for product in products:
-        url = product["url"]
-        print(f"\nChecking: {url}")
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(check_product, p["url"], prices, now): p["url"]
+            for p in products
+        }
+        for future in as_completed(futures):
+            product_id, new_price = future.result()
+            if new_price is not None:
+                updates[product_id] = new_price
 
-        name, price = fetch_product(url)
-
-        if name is None or price is None:
-            print("  ❌ Could not fetch product.")
-            send_telegram(
-                f"⚠️ Could not fetch product at {now}.\n"
-                f'<a href="{url}">View on Amazon.eg</a>'
-            )
-            continue
-
-        print(f"  📦 {name}")
-        print(f"  💰 {price:,.2f} EGP")
-
-        price = round(price, 2)
-        last_price = read_last_price(url)
-
-        if last_price is None:
-            write_last_price(url, price)
-            print("  📝 First run — price saved, no notification sent.")
-            continue
-
-        if price >= last_price:
-            write_last_price(url, price)
-            print("  📈 Price went up or unchanged — no notification sent.")
-            continue
-
-        # Price drop detected — confirm it
-        print("  🔄 Price drop detected, confirming in 60s...")
-        time.sleep(60)
-        _, confirmed_price = fetch_product(url)
-        if confirmed_price is None:
-            print("  ❌ Could not confirm price — skipping.")
-            continue
-        confirmed_price = round(confirmed_price, 2)
-        if confirmed_price != price:
-            print(f"  ❌ Price reverted to {confirmed_price:,.2f} — skipping.")
-            write_last_price(url, confirmed_price)
-            continue
-
-        diff = last_price - price
-        write_last_price(url, price)
-
-        send_telegram(
-            f"📉 <b>{name}</b>\n"
-            f"💰 <b>{price:,.2f} EGP</b>\n"
-            f"Down {diff:,.2f} EGP (was {last_price:,.2f})\n"
-            f"🕐 {now}\n"
-            f'<a href="{url}">View on Amazon.eg</a>'
-        )
+    prices.update(updates)
+    save_prices(prices)
 
 
 if __name__ == "__main__":
