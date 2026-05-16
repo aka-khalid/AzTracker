@@ -22,7 +22,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 
 1. Fetches product name and price from Amazon.eg
 2. Compares with last known price
-3. **If price drops**: Waits 60 seconds, re-fetches the price to confirm
+3. **If price drops**: Waits 5 seconds, re-fetches the price to confirm
 4. **If confirmed**: Sends Telegram notification with price change details
 5. **If price reverted**: Silently updates and skips notification
 
