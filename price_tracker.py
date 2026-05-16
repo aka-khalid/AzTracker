@@ -20,7 +20,7 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 SCRAPER_API_KEYS = os.environ.get("SCRAPER_API_KEY", "").split(",")
 _key_index = 0
-_key_lock = threading.Lock()
+_key_lock  = threading.Lock()
 
 def next_api_key():
     global _key_index
@@ -74,7 +74,7 @@ def truncate_name(name: str) -> str:
 # ── Scraper ───────────────────────────────────────────────────────────────────
 
 def fetch_product(url, retries=3):
-    """Returns (name, price, attempts) tuple or (None, None, attempts) on failure."""
+    """Returns (name, price, attempts) or (name_or_None, None, attempts) on failure."""
     for attempt in range(retries):
         try:
             time.sleep(random.uniform(2, 4))
@@ -114,12 +114,9 @@ def fetch_product(url, retries=3):
         if name and price:
             return name, price, attempt + 1
 
-        # Partial failure — report what's missing
         missing = []
-        if not name:
-            missing.append("name")
-        if not price:
-            missing.append("price")
+        if not name: missing.append("name")
+        if not price: missing.append("price")
         print(f"  [Attempt {attempt+1}] Could not find: {', '.join(missing)}.")
 
     return name, None, retries
@@ -150,9 +147,16 @@ def send_telegram(message: str):
 
 # ── Per-product check ─────────────────────────────────────────────────────────
 
-def check_product(url, prices, now):
-    print(f"\nChecking: {url}")
+def check_product(product, prices, now):
+    url    = product["url"]
+    paused = product.get("paused", False)
     product_id = get_product_id(url)
+
+    if paused:
+        print(f"\n⏸ Skipping (paused): {url}")
+        return product_id, None
+
+    print(f"\nChecking: {url}")
 
     name, price, attempts = fetch_product(url)
 
@@ -223,7 +227,7 @@ def main():
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(check_product, p["url"], prices, now): p["url"]
+            executor.submit(check_product, p, prices, now): p["url"]
             for p in products
         }
         for future in as_completed(futures):
