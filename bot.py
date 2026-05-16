@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = int(os.environ["TELEGRAM_CHAT_ID"])
 GITHUB_TOKEN     = os.environ["GITHUB_TOKEN"]
-GITHUB_REPO      = os.environ["GITHUB_REPO"]          # e.g. "aka-khalid/AzTracker"
+GITHUB_REPO      = os.environ["AZ_REPO"]          # e.g. "aka-khalid/AzTracker"
 GITHUB_WORKFLOW  = os.environ.get("GITHUB_WORKFLOW", "price_tracker.yml")
 # ─────────────────────────────────────────────────────────────────────────────
 
