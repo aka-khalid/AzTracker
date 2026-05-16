@@ -10,7 +10,8 @@ import time
 import os
 import json
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
@@ -197,7 +198,8 @@ def main():
         products = json.load(f)
 
     prices = load_prices()
-    now = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M UTC+3")
+    cairo_tz = pytz.timezone('Africa/Cairo')
+    now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
     updates = {}
 
     with ThreadPoolExecutor(max_workers=5) as executor:
