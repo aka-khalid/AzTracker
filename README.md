@@ -175,7 +175,7 @@ View on Amazon.eg
 - ✅ Product fetched successfully
 - ✅ Price compared with last known price
 - 📈 Price went up or stayed the same → no notification
-- 📉 Price dropped → **waits 60 seconds**
+- 📉 Price dropped → **waits 5 seconds**
 - 🔄 Re-fetches product to confirm price
 - ✅ Price confirmed → **sends notification**
 - 💾 Price saved for next run
