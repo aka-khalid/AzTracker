@@ -8,12 +8,25 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 
 ## Features
 
-- 🔔 Telegram notifications on price drops only — no spam
+- 🔔 Telegram notifications on **confirmed** price drops only — no spam
 - 📦 Track multiple products from a single file
 - 🤖 Product names fetched automatically — no manual labeling
 - ☁️ Fully serverless — runs on GitHub Actions
+- ✅ Price drop verification — waits 60s and re-checks before notifying (prevents false alerts)
 - 🕐 Cairo timezone (EET/EEST) — automatically adjusts for daylight saving
 - 💸 100% free with the right setup
+
+---
+
+## How It Works
+
+1. Fetches product name and price from Amazon.eg
+2. Compares with last known price
+3. **If price drops**: Waits 60 seconds, re-fetches the price to confirm
+4. **If confirmed**: Sends Telegram notification with price change details
+5. **If price reverted**: Silently updates and skips notification
+
+This prevents false alerts from temporary price fluctuations or scraping errors.
 
 ---
 
@@ -105,7 +118,7 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 
 ## Choosing a check frequency
 
-Each run uses **1 ScraperAPI request per product**. Plan accordingly:
+Each run uses **1 ScraperAPI request per product** (+ 1 extra per drop for confirmation). Plan accordingly:
 
 | Products | Every 1h | Every 2h | Every 3h |
 |---|---|---|---|
@@ -113,7 +126,7 @@ Each run uses **1 ScraperAPI request per product**. Plan accordingly:
 | 3 | 2,160 ❌ | 1,080 ❌ | 720 ✅ |
 | 6 | 4,320 ❌ | 2,160 ❌ | 1,440 ❌ |
 
-Numbers are monthly requests. Free tier limit is **1,000/month**.
+Numbers are monthly requests. Free tier limit is **1,000/month**. Confirmation checks count as additional requests.
 
 **Need more?** You can add multiple ScraperAPI keys (one per free account) as a comma-separated secret:
 ```
@@ -152,16 +165,37 @@ View on Amazon.eg
 
 ---
 
+## What Happens During a Run
+
+### Success Flow
+- ✅ Product fetched successfully
+- ✅ Price compared with last known price
+- 📈 Price went up or stayed the same → no notification
+- 📉 Price dropped → **waits 60 seconds**
+- 🔄 Re-fetches product to confirm price
+- ✅ Price confirmed → **sends notification**
+- 💾 Price saved for next run
+
+### Skip Scenarios
+- First run → saves price, no notification
+- Price went up or unchanged → skips silently
+- Confirmation fetch fails → skips without notifying
+- Price reverted during confirmation → updates saved price, skips
+
+---
+
 ## Troubleshooting
 
 | Problem | Likely cause | Fix |
 |---|---|---|
 | "Could not fetch product" | Shortened or invalid URL, or ScraperAPI returning 500 errors | Use full `amazon.eg/dp/...` URLs; check ScraperAPI status or retry later |
+| "Could not confirm price — skipping" | ScraperAPI or Amazon temporarily unreachable during confirmation | This is expected during high traffic; will retry on next run |
+| "Price reverted — skipping" | Temporary price drop detected but reverted within 60 seconds | This prevents false alerts and is working as intended |
 | "chat not found" from Telegram | Bot not activated | Send your bot any message first |
 | 401 on cron-job.org test | Bad GitHub token | Regenerate with Actions: Read and write |
 | 403 on cron-job.org test | Wrong token permission | Make sure Actions (not just Workflows) is Read and write |
 | Runs delayed or skipped | GitHub scheduler unreliable | Expected — cron-job.org fixes this |
-| Hit ScraperAPI limit mid-month | Too many requests | Add a second API key or reduce frequency |
+| Hit ScraperAPI limit mid-month | Too many requests (including confirmations) | Add a second API key or reduce frequency |
 
 ---
 
