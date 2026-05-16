@@ -9,6 +9,7 @@ import random
 import time
 import os
 import json
+import threading
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
@@ -19,15 +20,18 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 SCRAPER_API_KEYS = os.environ.get("SCRAPER_API_KEY", "").split(",")
 _key_index = 0
+_key_lock = threading.Lock()
 
 def next_api_key():
     global _key_index
-    key = SCRAPER_API_KEYS[_key_index % len(SCRAPER_API_KEYS)]
-    _key_index += 1
-    return key
+    with _key_lock:
+        key = SCRAPER_API_KEYS[_key_index % len(SCRAPER_API_KEYS)]
+        _key_index += 1
+        return key
 # ─────────────────────────────────────────────────────────────────────────────
 
-PRICES_FILE = "prices.json"
+PRICES_FILE  = "prices.json"
+MAX_NAME_LEN = 60
 
 HEADERS_LIST = [
     {
@@ -63,10 +67,14 @@ def get_product_id(url):
     return url.rstrip("/").split("/")[-1]
 
 
+def truncate_name(name: str) -> str:
+    return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
+
+
 # ── Scraper ───────────────────────────────────────────────────────────────────
 
 def fetch_product(url, retries=3):
-    """Returns (name, price) tuple or (None, None) on failure."""
+    """Returns (name, price, attempts) tuple or (None, None, attempts) on failure."""
     for attempt in range(retries):
         try:
             time.sleep(random.uniform(2, 4))
@@ -104,11 +112,17 @@ def fetch_product(url, retries=3):
                     break
 
         if name and price:
-            return name, price
+            return name, price, attempt + 1
 
-        print(f"  [Attempt {attempt+1}] Could not find name or price.")
+        # Partial failure — report what's missing
+        missing = []
+        if not name:
+            missing.append("name")
+        if not price:
+            missing.append("price")
+        print(f"  [Attempt {attempt+1}] Could not find: {', '.join(missing)}.")
 
-    return None, None
+    return name, None, retries
 
 
 def parse_price(raw: str):
@@ -140,18 +154,21 @@ def check_product(url, prices, now):
     print(f"\nChecking: {url}")
     product_id = get_product_id(url)
 
-    name, price = fetch_product(url)
+    name, price, attempts = fetch_product(url)
 
-    if name is None or price is None:
+    if price is None:
         print("  ❌ Could not fetch product.")
+        label = truncate_name(name) if name else url
         send_telegram(
-            f"⚠️ Could not fetch product at {now}.\n"
+            f"⚠️ <b>{label}</b>\n"
+            f"Could not fetch price after {attempts} attempt(s) at {now}.\n"
             f'<a href="{url}">View on Amazon.eg</a>'
         )
         return product_id, None
 
     price = round(price, 2)
-    print(f"  📦 {name}")
+    display_name = truncate_name(name)
+    print(f"  📦 {display_name}")
     print(f"  💰 {price:,.2f} EGP")
 
     last_price = prices.get(product_id)
@@ -167,7 +184,7 @@ def check_product(url, prices, now):
     # Price drop detected — confirm after 60s
     print("  🔄 Price drop detected, confirming in 60s...")
     time.sleep(60)
-    _, confirmed_price = fetch_product(url)
+    _, confirmed_price, _ = fetch_product(url)
 
     if confirmed_price is None:
         print("  ❌ Could not confirm price — skipping.")
@@ -180,10 +197,12 @@ def check_product(url, prices, now):
         return product_id, confirmed_price
 
     diff = last_price - price
+    pct  = (diff / last_price) * 100
+
     send_telegram(
-        f"📉 <b>{name}</b>\n"
+        f"📉 <b>{display_name}</b>\n"
         f"💰 <b>{price:,.2f} EGP</b>\n"
-        f"Down {diff:,.2f} EGP (was {last_price:,.2f})\n"
+        f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
         f"🕐 {now}\n"
         f'<a href="{url}">View on Amazon.eg</a>'
     )
