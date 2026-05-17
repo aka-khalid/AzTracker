@@ -191,71 +191,37 @@ def check_product(product, prices, now):
         print("  📈 Price went up or unchanged — no notification sent.")
         return product_id, price
 
-    # ── Layer 1: Direct request confirmation (60s) ────────────────────────
-    print("  🔄 Price drop detected, confirming directly in 60s...")
+    # ── Layer 1: ScraperAPI confirmation (60s) ────────────────────────────
+    print("  🔄 Price drop detected, ScraperAPI confirmation 1 in 60s...")
     time.sleep(60)
+    _, confirmed_price_1, _ = fetch_product(url)
 
-    try:
-        resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
-        soup = BeautifulSoup(resp.text, "lxml")
-        direct_price_1 = None
-        for tag, attrs in [
-            ("span", {"class": "a-price-whole"}),
-            ("span", {"id": "priceblock_ourprice"}),
-            ("span", {"id": "priceblock_dealprice"}),
-            ("span", {"class": "a-offscreen"}),
-        ]:
-            el = soup.find(tag, attrs)
-            if el:
-                direct_price_1 = parse_price(el.get_text().strip())
-                if direct_price_1:
-                    direct_price_1 = round(direct_price_1, 2)
-                    break
-    except Exception as e:
-        print(f"  ❌ Direct request 1 failed: {e}")
+    if confirmed_price_1 is None:
+        print("  ❌ ScraperAPI confirmation 1 failed — skipping.")
         return product_id, last_price
 
-    if direct_price_1 is None:
-        print("  ❌ Could not parse price from direct request 1 — skipping.")
-        return product_id, last_price
+    confirmed_price_1 = round(confirmed_price_1, 2)
 
-    if direct_price_1 != price:
-        print(f"  ❌ Direct request 1: price mismatch {direct_price_1:,.2f} — skipping.")
-        return product_id, direct_price_1
+    if confirmed_price_1 != price:
+        print(f"  ❌ ScraperAPI 1: price reverted to {confirmed_price_1:,.2f} — skipping.")
+        return product_id, confirmed_price_1
 
-    # ── Layer 2: Second direct request confirmation (30s) ─────────────────
-    print("  🔄 Direct request 1 confirmed, second direct request in 30s...")
+    # ── Layer 2: ScraperAPI confirmation (30s) ────────────────────────────
+    print("  🔄 ScraperAPI 1 confirmed, ScraperAPI confirmation 2 in 30s...")
     time.sleep(30)
+    _, confirmed_price_2, _ = fetch_product(url)
 
-    try:
-        resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
-        soup = BeautifulSoup(resp.text, "lxml")
-        direct_price_2 = None
-        for tag, attrs in [
-            ("span", {"class": "a-price-whole"}),
-            ("span", {"id": "priceblock_ourprice"}),
-            ("span", {"id": "priceblock_dealprice"}),
-            ("span", {"class": "a-offscreen"}),
-        ]:
-            el = soup.find(tag, attrs)
-            if el:
-                direct_price_2 = parse_price(el.get_text().strip())
-                if direct_price_2:
-                    direct_price_2 = round(direct_price_2, 2)
-                    break
-    except Exception as e:
-        print(f"  ❌ Direct request 2 failed: {e}")
+    if confirmed_price_2 is None:
+        print("  ❌ ScraperAPI confirmation 2 failed — skipping.")
         return product_id, last_price
 
-    if direct_price_2 is None:
-        print("  ❌ Could not parse price from direct request 2 — skipping.")
-        return product_id, last_price
+    confirmed_price_2 = round(confirmed_price_2, 2)
 
-    if direct_price_2 != price:
-        print(f"  ❌ Direct request 2: price mismatch {direct_price_2:,.2f} — skipping.")
-        return product_id, direct_price_2
+    if confirmed_price_2 != price:
+        print(f"  ❌ ScraperAPI 2: price reverted to {confirmed_price_2:,.2f} — skipping.")
+        return product_id, confirmed_price_2
 
-    # ── Both layers confirmed — notify ────────────────────────────────────
+    # ── All layers confirmed — notify ─────────────────────────────────────
     diff = last_price - price
     pct  = (diff / last_price) * 100
 
@@ -268,7 +234,6 @@ def check_product(product, prices, now):
     )
 
     return product_id, price
-
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
