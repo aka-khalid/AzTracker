@@ -31,6 +31,7 @@ jobs:
           AMAZON_ACCESS_KEY:  ${{ secrets.AMAZON_ACCESS_KEY }}
           AMAZON_SECRET_KEY:  ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
+          AMAZON_API_VERSION: ${{ secrets.AMAZON_API_VERSION }}
         run: python price_tracker.py
 
       - name: Save prices to repo
