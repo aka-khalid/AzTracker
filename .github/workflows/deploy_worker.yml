@@ -25,5 +25,7 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           secrets: |
             TELEGRAM_TOKEN
+            ALLOWED_USERS
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          ALLOWED_USERS: ${{ secrets.ALLOWED_USERS }}
