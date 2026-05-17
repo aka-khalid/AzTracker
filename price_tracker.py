@@ -108,127 +108,134 @@ def fetch_batch(asin_list, retries=3):
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
-def send_telegram(message: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    resp = requests.post(url, json={
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }, timeout=10)
-    if resp.status_code == 200:
-        print("  ✅ Telegram notification sent.")
-    else:
-        print(f"  ⚠️  Telegram error: {resp.text}")
+def send_telegram(chat_id, text):
+    token = os.environ.get("TELEGRAM_TOKEN")
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Telegram error: {e}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    with open("products.json") as f:
-        products = json.load(f)
-
-    prices = load_prices()
-    cairo_tz = pytz.timezone('Africa/Cairo')
-    now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
-    updates = {}
-
-    # 1. Filter out paused products and map tracking info
-    active_products = []
-    for p in products:
-        url = p["url"]
-        paused = p.get("paused", False)
-        product_id = get_product_id(url)
-
-        if paused:
-            print(f"⏸ Skipping (paused): {url}")
-            continue
-
-        active_products.append({"asin": product_id, "url": url})
-
-    if not active_products:
-        print("No active products to track.")
+    CF_ACCOUNT_ID = os.environ.get("CF_ACCOUNT_ID")
+    CF_NAMESPACE_ID = os.environ.get("CF_NAMESPACE_ID")
+    CF_API_TOKEN = os.environ.get("CF_API_TOKEN")
+    
+    if not all([CF_ACCOUNT_ID, CF_NAMESPACE_ID, CF_API_TOKEN]):
+        print("❌ Missing Cloudflare API credentials. Cannot sync database.")
         return
 
-    # 2. Divide active products into batches of up to 10 ASINs
+    cf_headers = {"Authorization": f"Bearer {CF_API_TOKEN}", "Content-Type": "application/json"}
+    cf_base_url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/storage/kv/namespaces/{CF_NAMESPACE_ID}"
+
+    cairo_tz = pytz.timezone('Africa/Cairo')
+    now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
+
+    # 1. Fetch all multi-tenant users from Cloudflare KV
+    print("🔍 Fetching multi-tenant data from Cloudflare KV...")
+    keys_res = requests.get(f"{cf_base_url}/keys?prefix=user:", headers=cf_headers)
+    if keys_res.status_code != 200:
+        print("❌ Failed to connect to KV.")
+        return
+        
+    user_keys = keys_res.json().get("result", [])
+    users_data = {}
+    unique_asins = set()
+
+    for k in user_keys:
+        key_name = k["name"]
+        chat_id = key_name.split(":")[1]
+        
+        val_res = requests.get(f"{cf_base_url}/values/{key_name}", headers=cf_headers)
+        if val_res.status_code == 200:
+            products = val_res.json()
+            users_data[chat_id] = products
+            for p in products:
+                if not p.get("paused", False):
+                    asin = get_product_id(p["url"])
+                    if asin:
+                        unique_asins.add((asin, p["url"]))
+
+    if not unique_asins:
+        print("No active products to track across any users.")
+        return
+
+    active_products = [{"asin": a[0], "url": a[1]} for a in unique_asins]
+
+    # 2. Batch and Fetch (Optimized deduplicated list)
     BATCH_SIZE = 10
     batches = [active_products[i:i + BATCH_SIZE] for i in range(0, len(active_products), BATCH_SIZE)]
-    
     all_fetched_results = {}
-    print(f"📋 Found {len(active_products)} active products. Splitting into {len(batches)} batches.")
+    print(f"📋 Found {len(active_products)} unique items across {len(users_data)} users.")
 
-    # 3. Fetch each batch sequentially with a polite delay to prevent throttling
     for idx, batch in enumerate(batches):
-        print(f"\n🚀 Fetching batch {idx+1}/{len(batches)} ({len(batch)} items)...")
+        print(f"\n🚀 Fetching batch {idx+1}/{len(batches)}...")
         asin_list = [p["asin"] for p in batch]
-        
         results = fetch_batch(asin_list)
         all_fetched_results.update(results)
-        
-        # Anti-throttling delay between API calls (Amazon allows 1 request per second)
         if idx < len(batches) - 1:
             time.sleep(1)
 
-    # 4. Evaluate prices and send alerts
-    for p in active_products:
-        product_id = p["asin"]
-        url = p["url"]
+    # 3. Fetch Global Price History from Cloudflare
+    gp_res = requests.get(f"{cf_base_url}/values/global_prices", headers=cf_headers)
+    global_prices = gp_res.json() if gp_res.status_code == 200 else {}
+    updates = {}
 
-        res = all_fetched_results.get(product_id)
-        if res is None:
-            print(f"\n  ❌ Could not fetch {url}")
-            send_telegram(
-                f"⚠️ <b>{url}</b>\n"
-                f"Could not fetch price at {now}.\n"
+    # 4. Evaluate prices & route personalized Telegram notifications
+    for chat_id, products in users_data.items():
+        for p in products:
+            if p.get("paused", False):
+                continue
+
+            product_id = get_product_id(p["url"])
+            url = p["url"]
+            res = all_fetched_results.get(product_id)
+            
+            if not res:
+                continue
+
+            name, price = res
+            price = round(price, 2)
+            display_name = truncate_name(name)
+
+            last_entry = global_prices.get(product_id)
+            last_price = None
+            if isinstance(last_entry, dict):
+                last_price = last_entry.get("price")
+            elif isinstance(last_entry, (int, float)):
+                last_price = last_entry
+
+            if last_price is None or price >= last_price:
+                # Price hasn't dropped, just mark it for the global DB update
+                updates[product_id] = {"price": price, "name": name}
+                continue
+
+            # IT'S A PRICE DROP! Notify THIS specific user
+            diff = last_price - price
+            pct  = (diff / last_price) * 100
+
+            send_telegram(chat_id,
+                f"📉 <b>{display_name}</b>\n"
+                f"💰 <b>{price:,.2f} EGP</b>\n"
+                f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
+                f"🕐 {now}\n"
                 f'<a href="{url}">View on Amazon.eg</a>'
             )
-            time.sleep(1) # Protect Telegram API limits
-            continue
+            time.sleep(0.5)
 
-        name, price = res
-        price = round(price, 2)
-        display_name = truncate_name(name)
-        print(f"\n  📦 {display_name}")
-        print(f"  💰 {price:,.2f} EGP")
-
-        # --- MODIFIED: Extracting price safely for backward compatibility ---
-        last_entry = prices.get(product_id)
-        last_price = None
-
-        if isinstance(last_entry, dict):
-            last_price = last_entry.get("price")
-        elif isinstance(last_entry, (int, float)):
-            last_price = last_entry
-        # --------------------------------------------------------------------
-
-        if last_price is None:
-            print("  📝 First run — price and name saved, no notification sent.")
-            updates[product_id] = {"price": price, "name": name}
-            continue
-
-        if price >= last_price:
-            print("  📈 Price went up or unchanged — no notification sent.")
-            updates[product_id] = {"price": price, "name": name}
-            continue
-
-        diff = last_price - price
-        pct  = (diff / last_price) * 100
-
-        send_telegram(
-            f"📉 <b>{display_name}</b>\n"
-            f"💰 <b>{price:,.2f} EGP</b>\n"
-            f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
-            f"🕐 {now}\n"
-            f'<a href="{url}">View on Amazon.eg</a>'
-        )
-        
-        # Anti-flooding delay to prevent spamming the Telegram API on massive drops
-        time.sleep(1)
-
-        # Save the rich data format containing both price and name
-        updates[product_id] = {"price": price, "name": name}
-
-    prices.update(updates)
-    save_prices(prices)
+    # 5. Push updated master price list back to Cloudflare
+    global_prices.update(updates)
+    requests.put(f"{cf_base_url}/values/global_prices", headers=cf_headers, json=global_prices)
+    print("\n✅ Global database synced to Cloudflare KV.")
 
 if __name__ == "__main__":
     main()
