@@ -67,7 +67,7 @@ In your GitHub Repo, go to **Settings → Secrets and variables → Actions** an
 | Secret | Value |
 |---|---|
 | `TELEGRAM_TOKEN` | From @BotFather |
-| `TELEGRAM_CHAT_ID` | Your Root Admin Telegram ID |
+| `ALLOWED_USERS` | Your Root Admin Telegram ID |
 | `AMAZON_ACCESS_KEY` | From Amazon Creators API |
 | `AMAZON_SECRET_KEY` | From Amazon Creators API |
 | `AMAZON_PARTNER_TAG` | Your Amazon Associates ID |
@@ -75,7 +75,6 @@ In your GitHub Repo, go to **Settings → Secrets and variables → Actions** an
 | `CF_ACCOUNT_ID` | Found on your main Cloudflare Dashboard right sidebar |
 | `CF_NAMESPACE_ID` | Found in your Cloudflare KV `AZTRACKER_DB` settings |
 | `CF_API_TOKEN` | Custom API Token. Requires: `Workers Scripts: Edit`, `Workers KV Storage: Edit`, `Account Settings: Read`, and `User Details: Read` to bypass Code 10000 errors. |
-| `ALLOWED_USERS` | Your Root Admin Telegram ID |
 
 ### Step 5 — Set up the Scheduler
 Use [cron-job.org](https://cron-job.org) to trigger the workflow.
@@ -114,6 +113,8 @@ AzTracker/
 ```
 
 *(Note: Persistent tracking states and price history are saved completely in Cloudflare KV. There are no local JSON storage dependencies inside this repository.)*
+
+> 💡 **Note on Deployment & Bundling:** AzTracker utilizes automated GitOps compiling. When GitHub Actions pushes `worker.js` to Cloudflare, Wrangler runs the script through an internal `esbuild` process to optimize edge execution times. If you inspect the codebase inside the Cloudflare Dashboard console, do not be alarmed to see native emojis transpile into secure ASCII hex codes (e.g., `\u2705`) or scopes compressed into standard `var` layouts—the underlying functional execution matches your repository source identically.
 
 ---
 
