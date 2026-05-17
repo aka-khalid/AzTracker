@@ -192,11 +192,39 @@ async function handleCallback(callback, env) {
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
                `👥 <b>Total Approved Guests:</b> ${approvedUsers.length}\n` +
                `🛡️ <b>Total Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
-               `💡 <b>To manage access parameters:</b>\nSimply drop a user's Telegram ID text into this chat panel. The application will catch it and map it to interface controls automatically.`;
+               `💡 <b>To manage access parameters:</b>\nSelect the directory register button below to view active users, or drop a user's raw Telegram ID text directly into this chat layout.`;
     
     await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [[{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]]
+      inline_keyboard: [
+        [{ text: "👥 View Approved Users", callback_data: "list_users" }],
+        [{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]
+      ]
     });
+  }
+  else if (data === "list_users" && isAdmin) {
+    await renderUserList(env, chatId, messageId);
+  }
+  else if (data.startsWith("manage_user_") && isAdmin) {
+    const targetId = data.replace("manage_user_", "");
+    const isTargetRoot = rootAdmins.includes(targetId);
+    const isTargetAdmin = isTargetRoot || admins.includes(targetId);
+    const isTargetApproved = isTargetAdmin || approvedUsers.includes(targetId);
+
+    let buttons = [];
+    if (isRootAdmin) {
+      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `promote_${targetId}` }]);
+      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `demote_${targetId}` }]);
+    } else if (isAdmin) {
+      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
+    }
+    buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
+
+    const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
+    const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
+    await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
   }
   else if (data === "global_track") {
     await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
@@ -268,6 +296,50 @@ async function handleCallback(callback, env) {
 }
 
 // ── UI Renderers ────────────────────────────────────────────────────────────
+
+async function renderUserList(env, chatId, messageId) {
+  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  
+  if (approvedUsers.length === 0) {
+    const text = `👥 <b>Approved Users Directory</b>\n\nNo approved guest profiles exist in the core server database right now.`;
+    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]] };
+    await editTelegramMessage(env, chatId, messageId, text, keyboard);
+    return;
+  }
+
+  // ⚡ Parallel Fetch: Request profiles for all IDs from Telegram simultaneously
+  const userPromises = approvedUsers.map(async (id) => {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/getChat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: id })
+      });
+      const data = await res.json();
+      
+      if (data.ok && data.result) {
+        const profile = data.result;
+        const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
+        const formatName = profile.username ? `${fullName} (@${profile.username})` : fullName;
+        return { id, label: formatName || id };
+      }
+    } catch (e) {
+      console.error(`Failed to fetch chat profile for ID ${id}:`, e);
+    }
+    return { id, label: `Unknown User (${id})` }; // Fallback if user blocked bot
+  });
+
+  const resolvedUsers = await Promise.all(userPromises);
+
+  const keyboard = { inline_keyboard: [] };
+  resolvedUsers.forEach((user) => {
+    keyboard.inline_keyboard.push([{ text: `👤 ${user.label}`, callback_data: `manage_user_${user.id}` }]);
+  });
+  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]);
+
+  const text = `👥 <b>Approved Users Register</b>\n\nSelect an active profile record below to open its structural permissions card inline:`;
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
 
 async function renderMainMenu(env, chatId, messageId = null) {
   const userDbKey = `user:${chatId}:products`;
