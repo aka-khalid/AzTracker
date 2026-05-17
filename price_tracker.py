@@ -185,9 +185,9 @@ def check_product(product, prices, now):
         print("  📈 Price went up or unchanged — no notification sent.")
         return product_id, price
 
-    # Price drop detected — confirm after 5s
-    print("  🔄 Price drop detected, confirming in 5s...")
-    time.sleep(5)
+    # Price drop detected — confirm after 10s
+    print("  🔄 Price drop detected, confirming in 10s...")
+    time.sleep(10)
     _, confirmed_price, _ = fetch_product(url)
 
     if confirmed_price is None:
