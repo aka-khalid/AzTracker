@@ -12,7 +12,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 - 📦 **Track multiple products** from a single file (with the ability to pause specific items)
 - 🤖 **Product names fetched automatically** — no manual labeling
 - ☁️ **Fully serverless** — runs on GitHub Actions
-- 🛰️ **Uses Amazon's official Creators API (v2.2)** — real prices, no scraping, no honeypots
+- 🛰️ **Uses Amazon's official Creators API** — real prices, no scraping, no honeypots
 - ⚡ **Optimized Batch Requests** — groups products in batches of 10 to avoid rate limits and throttling
 - 🕐 **Cairo timezone (EET/EEST)** — automatically adjusts for daylight saving
 - 💸 **100% free** with the right setup
