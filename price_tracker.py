@@ -28,6 +28,7 @@ MAX_NAME_LEN = 60
 api = AmazonCreatorsApi(
     credential_id=AMAZON_ACCESS_KEY,
     credential_secret=AMAZON_SECRET_KEY,
+    version="2.2",
     tag=AMAZON_PARTNER_TAG,
     country=Country.EG,
 )
