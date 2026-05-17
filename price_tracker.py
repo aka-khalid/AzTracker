@@ -1,50 +1,41 @@
 """
 Amazon.eg Price Tracker
-Reads URLs from products.json, fetches name and price automatically,
-and sends a Telegram notification only when a price drops.
+Uses the Amazon Creators API for real prices — no scraping, no honeypots.
+Sends a Telegram notification only when a confirmed price drop is detected.
 """
 
-import requests
-import random
-import time
 import os
 import json
+import time
 import threading
-from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
+import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from amazon_creatorsapi import AmazonCreatorsApi, Country
+from amazon_creatorsapi.models import GetItemsResource
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
-TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-SCRAPER_API_KEYS = os.environ.get("SCRAPER_API_KEY", "").split(",")
-_key_index = 0
-_key_lock  = threading.Lock()
-
-def next_api_key():
-    global _key_index
-    with _key_lock:
-        key = SCRAPER_API_KEYS[_key_index % len(SCRAPER_API_KEYS)]
-        _key_index += 1
-        return key
+TELEGRAM_TOKEN    = os.environ["TELEGRAM_TOKEN"]
+TELEGRAM_CHAT_ID  = os.environ["TELEGRAM_CHAT_ID"]
+AMAZON_ACCESS_KEY = os.environ["AMAZON_ACCESS_KEY"]
+AMAZON_SECRET_KEY = os.environ["AMAZON_SECRET_KEY"]
+AMAZON_PARTNER_TAG = os.environ["AMAZON_PARTNER_TAG"]
 # ─────────────────────────────────────────────────────────────────────────────
 
 PRICES_FILE  = "prices.json"
 MAX_NAME_LEN = 60
 
-HEADERS_LIST = [
-    {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/124.0.0.0 Safari/537.36",
-        "Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://www.google.com/",
-        "DNT": "1",
-        "Upgrade-Insecure-Requests": "1",
-    },
+api = AmazonCreatorsApi(
+    credential_id=AMAZON_ACCESS_KEY,
+    credential_secret=AMAZON_SECRET_KEY,
+    tag=AMAZON_PARTNER_TAG,
+    country=Country.EG,
+)
+
+RESOURCES = [
+    GetItemsResource.ITEMINFO_TITLE,
+    GetItemsResource.OFFERS_LISTINGS_PRICE,
 ]
 
 
@@ -71,69 +62,44 @@ def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
 
 
-# ── Scraper ───────────────────────────────────────────────────────────────────
+# ── Amazon Creators API fetch ─────────────────────────────────────────────────
 
-def fetch_product(url, retries=3):
-    """Returns (name, price, attempts) or (name_or_None, None, attempts) on failure."""
+def fetch_product(asin, retries=3):
+    """Returns (name, price) or (None, None) on failure."""
     for attempt in range(retries):
         try:
-            time.sleep(random.uniform(2, 4))
-            if SCRAPER_API_KEYS:
-                resp = requests.get(
-                    "http://api.scraperapi.com",
-                    params={"api_key": next_api_key(), "url": url, "country_code": "eg"},
-                    timeout=60
-                )
-                if resp.status_code == 401:
-                    print(f"  [Attempt {attempt+1}] ScraperAPI key quota exceeded or invalid.")
-                    continue
-                if resp.status_code == 403:
-                    print(f"  [Attempt {attempt+1}] ScraperAPI key forbidden — check your plan.")
-                    continue
-            else:
-                resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            print(f"  [Attempt {attempt+1}] Request error: {e}")
-            continue
+            items = api.get_items([asin], resources=RESOURCES)
+            if not items:
+                print(f"  [Attempt {attempt+1}] No items returned for {asin}.")
+                continue
 
-        soup = BeautifulSoup(resp.text, "lxml")
+            item = items[0]
 
-        name = None
-        name_el = soup.find("span", {"id": "productTitle"})
-        if name_el:
-            name = name_el.get_text().strip()
+            name = None
+            try:
+                name = item.item_info.title.display_value
+            except:
+                pass
 
-        price = None
-        for tag, attrs in [
-            ("span", {"class": "a-price-whole"}),
-            ("span", {"id": "priceblock_ourprice"}),
-            ("span", {"id": "priceblock_dealprice"}),
-            ("span", {"class": "a-offscreen"}),
-        ]:
-            el = soup.find(tag, attrs)
-            if el:
-                price = parse_price(el.get_text().strip())
-                if price:
-                    break
+            price = None
+            try:
+                price = item.offers.listings[0].price.money.amount
+            except:
+                pass
 
-        if name and price:
-            return name, price, attempt + 1
+            if name and price:
+                return name, float(price)
 
-        missing = []
-        if not name: missing.append("name")
-        if not price: missing.append("price")
-        print(f"  [Attempt {attempt+1}] Could not find: {', '.join(missing)}.")
+            missing = []
+            if not name: missing.append("name")
+            if not price: missing.append("price")
+            print(f"  [Attempt {attempt+1}] Could not find: {', '.join(missing)}.")
 
-    return name, None, retries
+        except Exception as e:
+            print(f"  [Attempt {attempt+1}] API error: {e}")
+            time.sleep(2)
 
-
-def parse_price(raw: str):
-    cleaned = "".join(ch for ch in raw if ch.isdigit() or ch == ".")
-    try:
-        return float(cleaned) if cleaned else None
-    except ValueError:
-        return None
+    return None, None
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -160,11 +126,11 @@ def initial_fetch(product):
 
     if paused:
         print(f"\n⏸ Skipping (paused): {url}")
-        return product_id, None, None, None, None
+        return product_id, None, None, None
 
     print(f"\nChecking: {url}")
-    name, price, attempts = fetch_product(url)
-    return product_id, name, price, attempts, url
+    name, price = fetch_product(product_id)
+    return product_id, name, price, url
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -184,7 +150,7 @@ def main():
         fetch_results = [future.result() for future in as_completed(futures)]
 
     # ── Phase 2: Handle drops sequentially ───────────────────────────────
-    for product_id, name, price, attempts, url in fetch_results:
+    for product_id, name, price, url in fetch_results:
         if url is None:
             continue
 
@@ -193,7 +159,7 @@ def main():
             label = truncate_name(name) if name else url
             send_telegram(
                 f"⚠️ <b>{label}</b>\n"
-                f"Could not fetch price after {attempts} attempt(s) at {now}.\n"
+                f"Could not fetch price at {now}.\n"
                 f'<a href="{url}">View on Amazon.eg</a>'
             )
             continue
@@ -215,37 +181,37 @@ def main():
             updates[product_id] = price
             continue
 
-        # ── Layer 1: ScraperAPI confirmation (60s) ────────────────────────
-        print("  🔄 Price drop detected, ScraperAPI confirmation 1 in 60s...")
+        # ── Layer 1: API confirmation (60s) ───────────────────────────────
+        print("  🔄 Price drop detected, confirming in 60s...")
         time.sleep(60)
-        _, confirmed_price_1, _ = fetch_product(url)
+        _, confirmed_price_1 = fetch_product(product_id)
 
         if confirmed_price_1 is None:
-            print("  ❌ ScraperAPI confirmation 1 failed — skipping.")
+            print("  ❌ Confirmation 1 failed — skipping.")
             updates[product_id] = last_price
             continue
 
         confirmed_price_1 = round(confirmed_price_1, 2)
 
         if confirmed_price_1 != price:
-            print(f"  ❌ ScraperAPI 1: price reverted to {confirmed_price_1:,.2f} — skipping.")
+            print(f"  ❌ Confirmation 1: price reverted to {confirmed_price_1:,.2f} — skipping.")
             updates[product_id] = confirmed_price_1
             continue
 
-        # ── Layer 2: ScraperAPI confirmation (30s) ────────────────────────
-        print("  🔄 ScraperAPI 1 confirmed, ScraperAPI confirmation 2 in 30s...")
+        # ── Layer 2: API confirmation (30s) ───────────────────────────────
+        print("  🔄 Confirmation 1 passed, confirming again in 30s...")
         time.sleep(30)
-        _, confirmed_price_2, _ = fetch_product(url)
+        _, confirmed_price_2 = fetch_product(product_id)
 
         if confirmed_price_2 is None:
-            print("  ❌ ScraperAPI confirmation 2 failed — skipping.")
+            print("  ❌ Confirmation 2 failed — skipping.")
             updates[product_id] = last_price
             continue
 
         confirmed_price_2 = round(confirmed_price_2, 2)
 
         if confirmed_price_2 != price:
-            print(f"  ❌ ScraperAPI 2: price reverted to {confirmed_price_2:,.2f} — skipping.")
+            print(f"  ❌ Confirmation 2: price reverted to {confirmed_price_2:,.2f} — skipping.")
             updates[product_id] = confirmed_price_2
             continue
 
