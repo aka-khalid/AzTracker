@@ -1,0 +1,7 @@
+name = "aztracker-bot"
+main = "worker.js"
+compatibility_date = "2026-05-17"
+
+[[kv_namespaces]]
+binding = "AZTRACKER_DB"
+id = "90fcfcb742fe4d7299087c076bd1ba4d"
