@@ -101,7 +101,7 @@ def fetch_batch(asin_list, retries=3):
 
         except Exception as e:
             print(f"  [Attempt {attempt+1}] API error for batch: {e}")
-            time.sleep(2)
+            time.sleep(2 * (attempt + 1))  # Waits 2s on attempt 1, 4s on attempt 2, etc.
 
     return batch_results
 
