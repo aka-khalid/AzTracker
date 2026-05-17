@@ -4,4 +4,9 @@ compatibility_date = "2026-05-17"
 
 [[kv_namespaces]]
 binding = "AZTRACKER_DB"
-id = "90fcfcb742fe4d7299087c076bd1ba4d"
+id = "YOUR_CF_NAMESPACE_ID_HERE"
+
+[vars]
+GITHUB_OWNER = "aka-khalid"
+GITHUB_REPO = "AzTracker"
+ALLOWED_USERS = "760872964"
