@@ -12,7 +12,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 - 📦 Track multiple products from a single file
 - 🤖 Product names fetched automatically — no manual labeling
 - ☁️ Fully serverless — runs on GitHub Actions
-- ✅ Price drop verification — waits 10s and re-checks before notifying (prevents false alerts)
+- ✅ Price drop verification — waits 60s and re-checks before notifying (prevents false alerts)
 - 🕐 Cairo timezone (EET/EEST) — automatically adjusts for daylight saving
 - 💸 100% free with the right setup
 
@@ -22,7 +22,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 
 1. Fetches product name and price from Amazon.eg
 2. Compares with last known price
-3. **If price drops**: Waits 10 seconds, re-fetches the price to confirm
+3. **If price drops**: Waits 60 seconds, re-fetches the price to confirm
 4. **If confirmed**: Sends Telegram notification with price change details
 5. **If price reverted**: Silently updates and skips notification
 
@@ -175,7 +175,7 @@ View on Amazon.eg
 - ✅ Product fetched successfully
 - ✅ Price compared with last known price
 - 📈 Price went up or stayed the same → no notification
-- 📉 Price dropped → **waits 10 seconds**
+- 📉 Price dropped → **waits 60 seconds**
 - 🔄 Re-fetches product to confirm price
 - ✅ Price confirmed → **sends notification**
 - 💾 Price saved for next run
