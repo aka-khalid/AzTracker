@@ -20,6 +20,7 @@ TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
 AMAZON_ACCESS_KEY  = os.environ["AMAZON_ACCESS_KEY"]
 AMAZON_SECRET_KEY  = os.environ["AMAZON_SECRET_KEY"]
 AMAZON_PARTNER_TAG = os.environ["AMAZON_PARTNER_TAG"]
+AMAZON_API_VERSION = os.environ["AMAZON_API_VERSION"]
 # ─────────────────────────────────────────────────────────────────────────────
 
 PRICES_FILE  = "prices.json"
@@ -28,7 +29,7 @@ MAX_NAME_LEN = 60
 api = AmazonCreatorsApi(
     credential_id=AMAZON_ACCESS_KEY,
     credential_secret=AMAZON_SECRET_KEY,
-    version="2.2",
+    version=AMAZON_API_VERSION,
     tag=AMAZON_PARTNER_TAG,
     country=Country.EG,
 )
