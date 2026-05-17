@@ -190,16 +190,24 @@ def main():
         print(f"\n  📦 {display_name}")
         print(f"  💰 {price:,.2f} EGP")
 
-        last_price = prices.get(product_id)
+        # --- MODIFIED: Extracting price safely for backward compatibility ---
+        last_entry = prices.get(product_id)
+        last_price = None
+
+        if isinstance(last_entry, dict):
+            last_price = last_entry.get("price")
+        elif isinstance(last_entry, (int, float)):
+            last_price = last_entry
+        # --------------------------------------------------------------------
 
         if last_price is None:
-            print("  📝 First run — price saved, no notification sent.")
-            updates[product_id] = price
+            print("  📝 First run — price and name saved, no notification sent.")
+            updates[product_id] = {"price": price, "name": name}
             continue
 
         if price >= last_price:
             print("  📈 Price went up or unchanged — no notification sent.")
-            updates[product_id] = price
+            updates[product_id] = {"price": price, "name": name}
             continue
 
         diff = last_price - price
@@ -216,11 +224,11 @@ def main():
         # Anti-flooding delay to prevent spamming the Telegram API on massive drops
         time.sleep(1)
 
-        updates[product_id] = price
+        # Save the rich data format containing both price and name
+        updates[product_id] = {"price": price, "name": name}
 
     prices.update(updates)
     save_prices(prices)
-
 
 if __name__ == "__main__":
     main()
