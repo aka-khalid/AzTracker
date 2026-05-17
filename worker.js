@@ -73,6 +73,10 @@ async function handleMessage(message, env) {
       }
     }
 
+    if (isTargetApproved) {
+      buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+    }
+
     if (buttons.length > 0) {
       const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
       const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
@@ -220,11 +224,51 @@ async function handleCallback(callback, env) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
       if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
     }
+    
+    if (isTargetApproved) {
+      buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+    }
     buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
 
     const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
     const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
     await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
+  }
+  else if (data.startsWith("admProd_") && isAdmin) {
+    const targetId = data.replace("admProd_", "");
+    await renderAdminUserProducts(env, chatId, messageId, targetId);
+  }
+  else if (data.startsWith("admView_") && isAdmin) {
+    const parts = data.split("_");
+    const targetId = parts[1];
+    const pid = parts[2];
+    await renderAdminProductView(env, chatId, messageId, targetId, pid);
+  }
+  else if (data.startsWith("admTog_") && isAdmin) {
+    const parts = data.split("_");
+    const targetId = parts[1];
+    const pid = parts[2];
+    const targetDbKey = `user:${targetId}:products`;
+    let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+    const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+    if (idx !== -1) {
+      products[idx].paused = !products[idx].paused;
+      await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
+    }
+    await renderAdminProductView(env, chatId, messageId, targetId, pid);
+  }
+  else if (data.startsWith("admDel_") && isAdmin) {
+    const parts = data.split("_");
+    const targetId = parts[1];
+    const pid = parts[2];
+    const targetDbKey = `user:${targetId}:products`;
+    let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+    const filtered = products.filter(p => getAsinFromUrl(p.url) !== pid);
+    await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(filtered));
+    
+    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
+      inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
+    });
   }
   else if (data === "global_track" && isAdmin) {
     const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
@@ -310,6 +354,72 @@ async function handleCallback(callback, env) {
 }
 
 // ── UI Renderers ────────────────────────────────────────────────────────────
+
+async function renderAdminUserProducts(env, chatId, messageId, targetId) {
+  const targetDbKey = `user:${targetId}:products`;
+  const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+
+  if (products.length === 0) {
+    const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\n\nThis user currently has no active or paused products in their database.`;
+    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]] };
+    await editTelegramMessage(env, chatId, messageId, text, keyboard);
+    return;
+  }
+
+  const keyboard = { inline_keyboard: [] };
+  products.forEach((p) => {
+    const pid = getAsinFromUrl(p.url);
+    let name = pid;
+    if (prices[pid] && typeof prices[pid] === 'object' && prices[pid].name) {
+      name = prices[pid].name;
+    } else if (p.name) {
+      name = p.name;
+    }
+    if (name.length > 30) name = name.substring(0, 27) + "...";
+    
+    const statusIcon = p.paused ? "⏸️" : "✅";
+    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${name}`, callback_data: `admView_${targetId}_${pid}` }]);
+  });
+  keyboard.inline_keyboard.push([{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]);
+
+  const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\n\n<i>Select an item below to manage it on behalf of the user:</i>`;
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
+
+async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
+  const targetDbKey = `user:${targetId}:products`;
+  const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  const product = products.find(p => getAsinFromUrl(p.url) === pid);
+
+  if (!product) return;
+
+  const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
+  let lastPrice = "⏳ Waiting for next tracker run...";
+  let title = product.name ? product.name : "Amazon Product";
+
+  if (prices[pid]) {
+    if (typeof prices[pid] === 'object') {
+      lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
+      if (prices[pid].name) title = prices[pid].name;
+    } else {
+      lastPrice = `${prices[pid].toLocaleString()} EGP`;
+    }
+  }
+
+  const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
+      [{ text: "🗑️ Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
+      [{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}` }]
+    ]
+  };
+
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
 
 async function renderUserList(env, chatId, messageId) {
   const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
