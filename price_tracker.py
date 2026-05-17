@@ -1,25 +1,24 @@
 """
 Amazon.eg Price Tracker
 Uses the Amazon Creators API for real prices — no scraping, no honeypots.
-Sends a Telegram notification only when a confirmed price drop is detected.
+Sends a Telegram notification immediately when a price drop is detected.
 """
 
 import os
 import json
 import time
-import threading
+import requests
 from datetime import datetime
 import pytz
-import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
-TELEGRAM_TOKEN    = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID  = os.environ["TELEGRAM_CHAT_ID"]
-AMAZON_ACCESS_KEY = os.environ["AMAZON_ACCESS_KEY"]
-AMAZON_SECRET_KEY = os.environ["AMAZON_SECRET_KEY"]
+TELEGRAM_TOKEN     = os.environ["TELEGRAM_TOKEN"]
+TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
+AMAZON_ACCESS_KEY  = os.environ["AMAZON_ACCESS_KEY"]
+AMAZON_SECRET_KEY  = os.environ["AMAZON_SECRET_KEY"]
 AMAZON_PARTNER_TAG = os.environ["AMAZON_PARTNER_TAG"]
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -117,7 +116,7 @@ def send_telegram(message: str):
         print(f"  ⚠️  Telegram error: {resp.text}")
 
 
-# ── Initial fetch (runs in parallel) ─────────────────────────────────────────
+# ── Per-product fetch (runs in parallel) ──────────────────────────────────────
 
 def initial_fetch(product):
     url    = product["url"]
@@ -144,12 +143,10 @@ def main():
     now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
     updates = {}
 
-    # ── Phase 1: Fetch all prices in parallel ─────────────────────────────
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(initial_fetch, p): p for p in products}
         fetch_results = [future.result() for future in as_completed(futures)]
 
-    # ── Phase 2: Handle drops sequentially ───────────────────────────────
     for product_id, name, price, url in fetch_results:
         if url is None:
             continue
@@ -181,41 +178,6 @@ def main():
             updates[product_id] = price
             continue
 
-        # ── Layer 1: API confirmation (60s) ───────────────────────────────
-        print("  🔄 Price drop detected, confirming in 60s...")
-        time.sleep(60)
-        _, confirmed_price_1 = fetch_product(product_id)
-
-        if confirmed_price_1 is None:
-            print("  ❌ Confirmation 1 failed — skipping.")
-            updates[product_id] = last_price
-            continue
-
-        confirmed_price_1 = round(confirmed_price_1, 2)
-
-        if confirmed_price_1 != price:
-            print(f"  ❌ Confirmation 1: price reverted to {confirmed_price_1:,.2f} — skipping.")
-            updates[product_id] = confirmed_price_1
-            continue
-
-        # ── Layer 2: API confirmation (30s) ───────────────────────────────
-        print("  🔄 Confirmation 1 passed, confirming again in 30s...")
-        time.sleep(30)
-        _, confirmed_price_2 = fetch_product(product_id)
-
-        if confirmed_price_2 is None:
-            print("  ❌ Confirmation 2 failed — skipping.")
-            updates[product_id] = last_price
-            continue
-
-        confirmed_price_2 = round(confirmed_price_2, 2)
-
-        if confirmed_price_2 != price:
-            print(f"  ❌ Confirmation 2: price reverted to {confirmed_price_2:,.2f} — skipping.")
-            updates[product_id] = confirmed_price_2
-            continue
-
-        # ── All layers confirmed — notify ─────────────────────────────────
         diff = last_price - price
         pct  = (diff / last_price) * 100
 
