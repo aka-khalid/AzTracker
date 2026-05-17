@@ -1,4 +1,4 @@
-# AzTracker 🛒
+# 📉 AzTracker (Amazon.eg Price Tracker)
 
 > Track Amazon.eg product prices and get instant Telegram alerts when they drop — no server, no cost.
 
@@ -42,8 +42,6 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 ```text
 [https://github.com/YOUR_USERNAME/AzTracker](https://github.com/YOUR_USERNAME/AzTracker)
 ```
-
-Make it **private** if you don't want your product URLs visible publicly.
 
 ---
 
@@ -121,7 +119,16 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 | Header 1 | `Authorization: Bearer YOUR_GITHUB_TOKEN` |
 | Header 2 | `Accept: application/vnd.github+json` |
 | Body | `{"ref":"main"}` |
-| Schedule | Every 15 minutes |
+| Schedule | *(See note below)* |
+
+> 💡 **Important: Choosing an Execution Schedule**
+> Your schedule interval depends heavily on whether your GitHub repository is **Public** or **Private**:
+> 
+> * **🌍 Public Repositories:** GitHub Actions is 100% free and completely unlimited. You can safely set your cron-job.org schedule to **Every 15 minutes** (or even faster) without ever running into limits or costs.
+> * **🔒 Private Repositories:** GitHub limits free accounts to **2,000 compute minutes per month** for private repos. Because GitHub rounds every single execution up to 1 full minute, your choice matters:
+>   * *Every 15 minutes* = ~2,880 runs/month ❌ (**Exceeds the 2,000 free minutes limit**)
+>   * *Every 30 minutes* = ~1,440 runs/month  (**Safe** — leaves a buffer of ~560 minutes)
+>   * *Every 1 hour* = ~720 runs/month  (**Highly recommended** — very safe and perfectly fine for standard price tracking)
 
 ---
 
