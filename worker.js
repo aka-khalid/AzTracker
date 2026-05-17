@@ -227,6 +227,20 @@ async function handleCallback(callback, env) {
     await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
   }
   else if (data === "global_track" && isAdmin) {
+    const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
+    const now = Date.now();
+    const cooldown = 10 * 60 * 1000; // 10 minutes
+
+    if (lastTrigger && (now - parseInt(lastTrigger)) < cooldown) {
+        const remaining = Math.ceil((cooldown - (now - parseInt(lastTrigger))) / 60000);
+        await editTelegramMessage(env, chatId, messageId,
+            `⏳ <b>Cooldown Active</b>\n\nNext check available in <b>${remaining} minute(s)</b>.`, {
+            inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+        });
+        return;
+    }
+
+    await env.AZTRACKER_DB.put("global:last_trigger", now.toString());
     await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
     try {
       const triggered = await triggerWorkflow(env);
