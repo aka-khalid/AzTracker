@@ -98,7 +98,7 @@ def fetch_product(asin, retries=3):
 
         except Exception as e:
             print(f"  [Attempt {attempt+1}] API error: {e}")
-            time.sleep(2)
+            time.sleep(2 * (attempt + 1))  # Waits 2s on attempt 1, 4s on attempt 2, etc.
 
     return None, None
 
