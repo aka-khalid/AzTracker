@@ -1,7 +1,8 @@
 """
-Amazon.eg Price Tracker
+Amazon.eg Price Tracker (Batched Version)
 Uses the Amazon Creators API for real prices — no scraping, no honeypots.
 Sends a Telegram notification immediately when a price drop is detected.
+Optimized for batch requests (up to 10 products per API call) to prevent rate limiting.
 """
 
 import os
@@ -10,7 +11,6 @@ import time
 import requests
 from datetime import datetime
 import pytz
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource
 
@@ -63,44 +63,47 @@ def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
 
 
-# ── Amazon Creators API fetch ─────────────────────────────────────────────────
+# ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
 
-def fetch_product(asin, retries=3):
-    """Returns (name, price) or (None, None) on failure."""
+def fetch_batch(asin_list, retries=3):
+    """Fetches a batch of up to 10 ASINs in a single API call.
+    Returns a dict mapping {asin: (name, price)}."""
+    batch_results = {}
     for attempt in range(retries):
         try:
-            items = api.get_items([asin], resources=RESOURCES)
+            items = api.get_items(asin_list, resources=RESOURCES)
             if not items:
-                print(f"  [Attempt {attempt+1}] No items returned for {asin}.")
+                print(f"  [Attempt {attempt+1}] No items returned for this batch.")
                 continue
 
-            item = items[0]
+            for item in items:
+                asin = getattr(item, 'asin', None)
+                if not asin:
+                    continue
 
-            name = None
-            try:
-                name = item.item_info.title.display_value
-            except:
-                pass
+                name = None
+                try:
+                    name = item.item_info.title.display_value
+                except:
+                    pass
 
-            price = None
-            try:
-                price = item.offers.listings[0].price.money.amount
-            except:
-                pass
+                price = None
+                try:
+                    price = item.offers.listings[0].price.money.amount
+                except:
+                    pass
 
-            if name and price:
-                return name, float(price)
+                if name and price:
+                    batch_results[asin] = (name, float(price))
 
-            missing = []
-            if not name: missing.append("name")
-            if not price: missing.append("price")
-            print(f"  [Attempt {attempt+1}] Could not find: {', '.join(missing)}.")
+            # If the API call succeeded, return what we found (even if partial)
+            return batch_results
 
         except Exception as e:
-            print(f"  [Attempt {attempt+1}] API error: {e}")
-            time.sleep(2 * (attempt + 1))  # Waits 2s on attempt 1, 4s on attempt 2, etc.
+            print(f"  [Attempt {attempt+1}] API error for batch: {e}")
+            time.sleep(2)
 
-    return None, None
+    return batch_results
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -118,22 +121,6 @@ def send_telegram(message: str):
         print(f"  ⚠️  Telegram error: {resp.text}")
 
 
-# ── Per-product fetch (runs in parallel) ──────────────────────────────────────
-
-def initial_fetch(product):
-    url    = product["url"]
-    paused = product.get("paused", False)
-    product_id = get_product_id(url)
-
-    if paused:
-        print(f"\n⏸ Skipping (paused): {url}")
-        return product_id, None, None, None
-
-    print(f"\nChecking: {url}")
-    name, price = fetch_product(product_id)
-    return product_id, name, price, url
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -145,24 +132,59 @@ def main():
     now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
     updates = {}
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(initial_fetch, p): p for p in products}
-        fetch_results = [future.result() for future in as_completed(futures)]
+    # 1. Filter out paused products and map tracking info
+    active_products = []
+    for p in products:
+        url = p["url"]
+        paused = p.get("paused", False)
+        product_id = get_product_id(url)
 
-    for product_id, name, price, url in fetch_results:
-        if url is None:
+        if paused:
+            print(f"⏸ Skipping (paused): {url}")
             continue
 
-        if price is None:
+        active_products.append({"asin": product_id, "url": url})
+
+    if not active_products:
+        print("No active products to track.")
+        return
+
+    # 2. Divide active products into batches of up to 10 ASINs
+    BATCH_SIZE = 10
+    batches = [active_products[i:i + BATCH_SIZE] for i in range(0, len(active_products), BATCH_SIZE)]
+    
+    all_fetched_results = {}
+    print(f"📋 Found {len(active_products)} active products. Splitting into {len(batches)} batches.")
+
+    # 3. Fetch each batch sequentially with a polite delay to prevent throttling
+    for idx, batch in enumerate(batches):
+        print(f"\n🚀 Fetching batch {idx+1}/{len(batches)} ({len(batch)} items)...")
+        asin_list = [p["asin"] for p in batch]
+        
+        results = fetch_batch(asin_list)
+        all_fetched_results.update(results)
+        
+        # Anti-throttling delay between API calls (Amazon allows 1 request per second)
+        if idx < len(batches) - 1:
+            time.sleep(1)
+
+    # 4. Evaluate prices and send alerts
+    for p in active_products:
+        product_id = p["asin"]
+        url = p["url"]
+
+        res = all_fetched_results.get(product_id)
+        if res is None:
             print(f"\n  ❌ Could not fetch {url}")
-            label = truncate_name(name) if name else url
             send_telegram(
-                f"⚠️ <b>{label}</b>\n"
+                f"⚠️ <b>{url}</b>\n"
                 f"Could not fetch price at {now}.\n"
                 f'<a href="{url}">View on Amazon.eg</a>'
             )
+            time.sleep(1) # Protect Telegram API limits
             continue
 
+        name, price = res
         price = round(price, 2)
         display_name = truncate_name(name)
         print(f"\n  📦 {display_name}")
@@ -190,6 +212,9 @@ def main():
             f"🕐 {now}\n"
             f'<a href="{url}">View on Amazon.eg</a>'
         )
+        
+        # Anti-flooding delay to prevent spamming the Telegram API on massive drops
+        time.sleep(1)
 
         updates[product_id] = price
 
@@ -199,4 +224,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
