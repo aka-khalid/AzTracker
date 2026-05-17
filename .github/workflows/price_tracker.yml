@@ -9,6 +9,10 @@ env:
 jobs:
   track-price:
     runs-on: ubuntu-latest
+    # ── THE LOCK GUARD ────────────────────────────────────────────────────────
+    # If the bot is writing data, this entire execution skips silently
+    if: vars.TRACKER_LOCK != 'true'
+    # ──────────────────────────────────────────────────────────────────────────
     permissions:
       contents: write
 
