@@ -75,7 +75,7 @@ In your GitHub Repo, go to **Settings → Secrets and variables → Actions** an
 | `AMAZON_API_VERSION` | Exact API Version generated (e.g., `2.2`) |
 | `CF_ACCOUNT_ID` | Found on your main Cloudflare Dashboard right sidebar |
 | `CF_NAMESPACE_ID` | Found in your Cloudflare KV `AZTRACKER_DB` settings |
-| `CF_API_TOKEN` | Generated CF Token (Needs Account + Workers KV Storage Edit permissions) |
+| `CF_API_TOKEN` | Custom API Token. Requires: `Workers Scripts: Edit`, `Workers KV Storage: Edit`, `Account Settings: Read`, and `User Details: Read` to bypass Code 10000 errors. |
 
 ### Step 5 — Set up the Scheduler
 Use [cron-job.org](https://cron-job.org) to trigger the workflow.
