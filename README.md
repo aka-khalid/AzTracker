@@ -52,11 +52,11 @@ Edit `products.json` with the Amazon.eg URLs you want to track. You can pause tr
 ```json
 [
   { 
-    "url": "[https://www.amazon.eg/dp/B0CX1234XY](https://www.amazon.eg/dp/B0CX1234XY)",
+    "url": "https://www.amazon.eg/dp/B0CX1234XY",
     "paused": false
   },
   { 
-    "url": "[https://www.amazon.eg/dp/B0CXXXX8AB](https://www.amazon.eg/dp/B0CXXXX8AB)",
+    "url": "https://www.amazon.eg/dp/B0CXXXX8AB",
     "paused": true
   }
 ]
