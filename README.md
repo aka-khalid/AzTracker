@@ -10,6 +10,7 @@
 
 - 👥 **Multi-Tenant VIP Access:** Share the bot with friends. Each user gets their own isolated tracking database.
 - 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system. Admins can view users with live name resolution, approve, revoke access, or modify roles entirely through interactive buttons.
+- 👁️ **Admin God Mode:** Remotely inspect, pause, or force-delete tracked products from any user's registry directly from their management card.
 - ☁️ **Millisecond Serverless Database:** Powered by Cloudflare KV. Zero file-locking or concurrency issues, even with hundreds of users.
 - 📱 **Mobile App Support:** Automatically resolves and extracts ASINs from `amzn.eu` short links shared directly from the Amazon mobile app.
 - 🤖 **Auto-Naming:** Product titles are fetched automatically via URL extraction and API validation.
@@ -95,6 +96,7 @@ AzTracker is a closed VIP system. Random users cannot use it without your permis
 2. When they click Start, the bot will reject them and provide their `Telegram ID`.
 3. Click **👑 Admin Panel** inside your bot, select **👥 View Approved Users** to inspect your active directory registry with live name resolution, or simply paste their raw numeric ID directly into the chat window to pull up their permission card instantly.
 4. Click **✅ Approve User** to grant access, or **🗑️ Revoke User** to instantly detach them from your tracking system.
+5. For already approved users, click **📦 View User's Products** to open their specific tracking registry. From there, you can remotely pause or force-delete items on their behalf.
 
 ---
 
