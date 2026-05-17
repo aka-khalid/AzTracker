@@ -84,6 +84,12 @@ def fetch_product(url, retries=3):
                     params={"api_key": next_api_key(), "url": url, "country_code": "eg"},
                     timeout=60
                 )
+                if resp.status_code == 401:
+                    print(f"  [Attempt {attempt+1}] ScraperAPI key quota exceeded or invalid.")
+                    continue
+                if resp.status_code == 403:
+                    print(f"  [Attempt {attempt+1}] ScraperAPI key forbidden — check your plan.")
+                    continue
             else:
                 resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
             resp.raise_for_status()
