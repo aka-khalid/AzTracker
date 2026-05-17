@@ -50,6 +50,9 @@ AzTracker operates on a hybrid serverless architecture. A **Cloudflare Worker** 
 3. Replace the default code with the `worker.js` script (handling the UI and Routing).
 4. Go to your Worker's **Settings → Variables**:
    * Add a text variable: `ALLOWED_USERS` = `[Your Telegram ID]` (This makes you the Root Admin).
+   * Add a text variable: `GITHUB_OWNER` = `[Your GitHub Username]`
+   * Add a text variable: `GITHUB_REPO` = `AzTracker`
+   * Add a secret variable: `GITHUB_PAT` = `[Your Personal Access Token]`
 5. Go to **Settings → Bindings**:
    * Add a KV binding. Variable name: `AZTRACKER_DB`. Select your created namespace.
 
@@ -103,6 +106,7 @@ AzTracker is a closed VIP system. Random users cannot use it without your permis
 AzTracker/
 ├── price_tracker.py        # Background engine (Throttled & Batched)
 ├── requirements.txt        # Uses a custom Amazon PAAPI fork for .eg support
+├── worker.js               # Router logic (ChatOps GUI UI Backend)
 └── .github/
     └── workflows/
         └── price_tracker.yml # Serverless execution pipeline
