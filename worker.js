@@ -1,0 +1,465 @@
+// AzTracker Cloudflare ChatOps Router - GHOST INPUT INLINE GUI PRO
+// Features: Auto-Deleting Text Inputs, Zero-Trace Callbacks, and Inline UI Editing
+
+//const GITHUB_BRANCH = "feature/chatops-interactive-bot";
+const GITHUB_BRANCH = "main";
+
+export default {
+  async fetch(request, env, ctx) {
+    if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+    try {
+      const payload = await request.json();
+      if (payload.callback_query) {
+        await handleCallback(payload.callback_query, env);
+      } else if (payload.message && payload.message.text) {
+        await handleMessage(payload.message, env);
+      }
+      return new Response("OK", { status: 200 });
+    } catch (err) {
+      console.error(err);
+      return new Response("OK", { status: 200 });
+    }
+  }
+};
+
+// ── Interceptors ────────────────────────────────────────────────────────────
+
+async function handleMessage(message, env) {
+  const text = message.text.trim();
+  const chatId = message.chat.id.toString();
+  const messageId = message.message_id;
+
+  // ── ROLE-BASED SECURITY BOUNCER ───────────────────────────────────────────
+  const rootAdmins = (env.ALLOWED_USERS || "").split(",");
+  const isRootAdmin = rootAdmins.includes(chatId);
+  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+  const isAdmin = isRootAdmin || admins.includes(chatId);
+  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  const isApproved = isAdmin || approvedUsers.includes(chatId);
+
+  if (!isApproved) {
+    await sendTelegram(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
+    return;
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // 🧹 GHOST INPUTS: If input is raw data, vaporize the message instantly
+  const isNumericId = /^\d{6,15}$/.test(text);
+  const isAmazonLink = text.includes("amazon.eg") || text.includes("amzn.to") || text.includes("amzn.eu");
+
+  if (isNumericId || isAmazonLink) {
+    await deleteTelegramMessage(env, chatId, messageId);
+  }
+
+  // 👑 ADMIN CARD GENERATOR (Triggers when an Admin pastes a numeric User ID)
+  if (isAdmin && isNumericId) {
+    const targetId = text;
+    const isTargetRoot = rootAdmins.includes(targetId);
+    const isTargetAdmin = isTargetRoot || admins.includes(targetId);
+    const isTargetApproved = isTargetAdmin || approvedUsers.includes(targetId);
+
+    let buttons = [];
+    if (isRootAdmin) {
+      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `promote_${targetId}` }]);
+      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `demote_${targetId}` }]);
+    } else if (isAdmin) {
+      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
+      if (isTargetAdmin) {
+        await sendTelegram(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
+        return;
+      }
+    }
+
+    if (buttons.length > 0) {
+      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
+      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
+      await sendTelegram(env, chatId, statusMsg, { inline_keyboard: buttons });
+    }
+    return;
+  }
+
+  // 🛒 LINK PASTE HANDLER (Triggers when a user drops an Amazon URL)
+  if (isAmazonLink) {
+    const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
+    const inputUrl = urlMatch ? urlMatch[1] : text;
+
+    const sentMsg = await sendTelegram(env, chatId, `⏳ <b>Processing Amazon link...</b>`);
+    const tempMessageId = sentMsg.result.message_id;
+
+    const expandedUrl = await expandAmazonUrl(inputUrl);
+    const pid = getAsinFromUrl(expandedUrl);
+    
+    if (!pid) {
+      await editTelegramMessage(env, chatId, tempMessageId, "❌ <b>Could not parse a valid 10-digit ASIN.</b>", {
+        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      });
+      return;
+    }
+
+    const userDbKey = `user:${chatId}:products`;
+    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    
+    if (products.some(p => getAsinFromUrl(p.url) === pid)) {
+      await editTelegramMessage(env, chatId, tempMessageId, "⚠️ <b>You are already tracking this product!</b>", {
+        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      });
+      return;
+    }
+
+    const extractedName = extractNameFromUrl(expandedUrl);
+    products.push({ url: `https://www.amazon.eg/dp/${pid}`, paused: false, name: extractedName });
+    await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+
+    const title = extractedName ? extractedName : pid;
+    const successText = `✅ <b>Successfully Added!</b>\n\n📦 <b>Name:</b> ${title}\n🆔 <b>ASIN:</b> <code>${pid}</code>\n\n<i>The tracker will fetch its live price on the next automated pipeline run.</i>`;
+    await editTelegramMessage(env, chatId, tempMessageId, successText, {
+      inline_keyboard: [
+        [{ text: "📦 View My Products", callback_data: "list_products" }],
+        [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+      ]
+    });
+    return;
+  }
+
+  if (text === "/start" || text === "/manage") {
+    await renderMainMenu(env, chatId);
+    return;
+  }
+
+  await deleteTelegramMessage(env, chatId, messageId);
+  await sendTelegram(env, chatId, "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.", {
+    inline_keyboard: [[{ text: "🏠 Open Main Menu", callback_data: "main_menu" }]]
+  });
+}
+
+async function handleCallback(callback, env) {
+  const data = callback.data;
+  const messageId = callback.message.message_id;
+  const chatId = callback.message.chat.id.toString();
+  
+  const rootAdmins = (env.ALLOWED_USERS || "").split(",");
+  const isRootAdmin = rootAdmins.includes(chatId);
+  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+  const isAdmin = isRootAdmin || admins.includes(chatId);
+  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  const isApproved = isAdmin || approvedUsers.includes(chatId);
+
+  if (!isApproved) return;
+
+  const userDbKey = `user:${chatId}:products`;
+
+  if (data.startsWith("approve_") && isAdmin) {
+    const targetId = data.replace("approve_", "");
+    if (!approvedUsers.includes(targetId)) {
+      approvedUsers.push(targetId);
+      await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
+      await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
+      await sendTelegram(env, targetId, `🎉 <b>You have been approved!</b>\nAn admin has granted you access to AzTracker. Run /start to boot your control console.`);
+    }
+  }
+  else if (data.startsWith("revoke_") && isAdmin) {
+    const targetId = data.replace("revoke_", "");
+    if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
+    const updatedUsers = approvedUsers.filter(id => id !== targetId);
+    await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
+    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked!</b>\nID <code>${targetId}</code> has been detached from the database.`);
+  }
+  else if (data.startsWith("promote_") && isRootAdmin) {
+    const targetId = data.replace("promote_", "");
+    if (!admins.includes(targetId)) {
+      admins.push(targetId);
+      await env.AZTRACKER_DB.put("global:admins", JSON.stringify(admins));
+      await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`);
+      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
+    }
+  }
+  else if (data.startsWith("demote_") && isRootAdmin) {
+    const targetId = data.replace("demote_", "");
+    const updatedAdmins = admins.filter(id => id !== targetId);
+    await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
+    await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
+  }
+  else if (data === "main_menu") {
+    await renderMainMenu(env, chatId, messageId);
+  }
+  else if (data === "list_products") {
+    await renderProductList(env, chatId, messageId);
+  }
+  else if (data === "admin_panel" && isAdmin) {
+    let text = `👑 <b>Admin Dashboard</b>\n\n` +
+               `👥 <b>Total Approved Guests:</b> ${approvedUsers.length}\n` +
+               `🛡️ <b>Total Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
+               `💡 <b>To manage access parameters:</b>\nSimply drop a user's Telegram ID text into this chat panel. The application will catch it and map it to interface controls automatically.`;
+    
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [[{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]]
+    });
+  }
+  else if (data === "global_track") {
+    await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
+    try {
+      const triggered = await triggerWorkflow(env);
+      if (triggered) {
+        await editTelegramMessage(env, chatId, messageId, "✅ <b>Workflow successfully triggered!</b>\nChecks are running in the background.", {
+          inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+        });
+      }
+    } catch (error) {
+      await editTelegramMessage(env, chatId, messageId, `❌ <b>GitHub API Error:</b>\n<code>${error.message}</code>`, {
+        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      });
+    }
+  }
+  else if (data === "help_add") {
+    const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [[{ text: "⬅️ Back", callback_data: "main_menu" }]]
+    });
+  }
+  else if (data.startsWith("view_")) {
+    const pid = data.replace("view_", "");
+    await renderProductView(env, chatId, messageId, pid);
+  }
+  else if (data.startsWith("pause_") || data.startsWith("resume_")) {
+    const action = data.split("_")[0];
+    const pid = data.split("_")[1];
+
+    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+    if (idx !== -1) {
+      products[idx].paused = (action === "pause");
+      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+    }
+    await renderProductView(env, chatId, messageId, pid); 
+  }
+  else if (data.startsWith("remove_")) {
+    const pid = data.replace("remove_", "");
+    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    const filteredProducts = products.filter(p => getAsinFromUrl(p.url) !== pid);
+    await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(filteredProducts));
+    
+    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
+      inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products" }]]
+    });
+  }
+  else if (data.startsWith("stats_")) {
+    const pid = data.replace("stats_", "");
+    const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+    let lastPrice = "No data logged yet.";
+    let displayName = pid;
+    
+    if (prices[pid]) {
+      if (typeof prices[pid] === 'object') {
+        lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
+        if (prices[pid].name) displayName = prices[pid].name;
+      } else {
+        lastPrice = `${prices[pid].toLocaleString()} EGP`;
+      }
+    }
+    
+    const text = `📊 <b>Statistics for ${pid}</b>\n\n📌 <b>Name:</b> ${displayName}\n💰 <b>Current Saved Price:</b> ${lastPrice}\n\n<i>More advanced history logs will generate over operational iterations.</i>`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [[{ text: "⬅️ Back to Product", callback_data: `view_${pid}` }]]
+    });
+  }
+}
+
+// ── UI Renderers ────────────────────────────────────────────────────────────
+
+async function renderMainMenu(env, chatId, messageId = null) {
+  const userDbKey = `user:${chatId}:products`;
+  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+  
+  const rootAdmins = (env.ALLOWED_USERS || "").split(",");
+  const isRootAdmin = rootAdmins.includes(chatId);
+  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+  const isAdmin = isRootAdmin || admins.includes(chatId);
+  
+  const total = products.length;
+  const active = products.filter(p => !p.paused).length;
+  const paused = total - active;
+
+  const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Tracked Items:</b> ${total}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "📦 My Products", callback_data: "list_products" }],
+      [{ text: "🚀 Force Price Check", callback_data: "global_track" }],
+      [{ text: "➕ How to Add Products", callback_data: "help_add" }]
+    ]
+  };
+
+  if (isAdmin) {
+    keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", callback_data: "admin_panel" }]);
+  }
+
+  if (messageId) {
+    await editTelegramMessage(env, chatId, messageId, text, keyboard);
+  } else {
+    await sendTelegram(env, chatId, text, keyboard);
+  }
+}
+
+async function renderProductList(env, chatId, messageId) {
+  const userDbKey = `user:${chatId}:products`;
+  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  
+  if (products.length === 0) {
+    const text = `❌ <b>Your tracking list is empty.</b>\n\nPaste an Amazon.eg link in the chat box to begin tracking!`;
+    const keyboard = { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] };
+    await editTelegramMessage(env, chatId, messageId, text, keyboard);
+    return;
+  }
+
+  const keyboard = { inline_keyboard: [] };
+  products.forEach((p) => {
+    const pid = getAsinFromUrl(p.url);
+    let name = pid;
+    if (prices[pid] && typeof prices[pid] === 'object' && prices[pid].name) {
+      name = prices[pid].name;
+    } else if (p.name) {
+      name = p.name;
+    }
+    if (name.length > 30) name = name.substring(0, 27) + "...";
+    
+    const statusIcon = p.paused ? "⏸️" : "✅";
+    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${name}`, callback_data: `view_${pid}` }]);
+  });
+  keyboard.inline_keyboard.push([{ text: "🏠 Main Menu", callback_data: "main_menu" }]);
+
+  const text = `📦 <b>My Tracked Products</b>\n\n<i>Select an item below to modify its tracking parameters:</i>`;
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
+
+async function renderProductView(env, chatId, messageId, pid) {
+  const userDbKey = `user:${chatId}:products`;
+  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  const product = products.find(p => getAsinFromUrl(p.url) === pid);
+
+  if (!product) return;
+
+  const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
+  let lastPrice = "⏳ Waiting for next tracker run...";
+  let title = product.name ? product.name : "Amazon Product";
+
+  if (prices[pid]) {
+    if (typeof prices[pid] === 'object') {
+      lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
+      if (prices[pid].name) title = prices[pid].name;
+    } else {
+      lastPrice = `${prices[pid].toLocaleString()} EGP`;
+    }
+  }
+
+  const text = `📦 <b>Product Management</b>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
+      [
+        { text: "📊 Stats & History", callback_data: `stats_${pid}` },
+        { text: "🗑️ Delete Product", callback_data: `remove_${pid}` }
+      ],
+      [
+        { text: "⬅️ Back to Products", callback_data: "list_products" },
+        { text: "🏠 Main Menu", callback_data: "main_menu" }
+      ]
+    ]
+  };
+
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
+
+// ── Core Helpers ────────────────────────────────────────────────────────────
+
+async function deleteTelegramMessage(env, chatId, messageId) {
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/deleteMessage`;
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+  });
+}
+
+async function expandAmazonUrl(url) {
+  let currentUrl = url;
+  try {
+    if (currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || /amazon\.eg\/d\//.test(currentUrl)) {
+      const res = await fetch(currentUrl, { method: "GET", redirect: "manual" });
+      const location = res.headers.get("location");
+      if (location) currentUrl = location;
+    }
+  } catch (e) {
+    console.error("Short link expansion failure:", e);
+  }
+  return currentUrl;
+}
+
+function getAsinFromUrl(url) {
+  if (!url) return null;
+  const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
+  if (dpMatch) return dpMatch[1].toUpperCase();
+  const gpMatch = url.match(/\/gp\/product\/([A-Z0-9]{10})/i);
+  if (gpMatch) return gpMatch[1].toUpperCase();
+  return null;
+}
+
+async function triggerWorkflow(env) {
+  const url = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/price_tracker.yml/dispatches`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${env.GITHUB_PAT}`,
+      "User-Agent": "AzTracker-Bot",
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ ref: GITHUB_BRANCH })
+  });
+  if (!res.ok) {
+    let details = "";
+    try { const json = await res.json(); details = json.message || JSON.stringify(json); } 
+    catch { details = await res.text() || res.statusText; }
+    throw new Error(`Status ${res.status} - ${details}`);
+  }
+  return true;
+}
+
+async function sendTelegram(env, chatId, text, replyMarkup = null) {
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`;
+  const body = { chat_id: chatId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/editMessageText`;
+  const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+}
+
+function extractNameFromUrl(url) {
+  try {
+     const clean = url.split("?")[0].replace(/\/$/, "");
+     const match = clean.match(/amazon\.eg\/([^\/]+)\/dp\//);
+     if (match && match[1]) {
+         return decodeURIComponent(match[1]).replace(/-/g, ' ');
+     }
+  } catch(e) {}
+  return null;
+}

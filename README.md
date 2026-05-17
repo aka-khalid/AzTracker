@@ -1,199 +1,126 @@
 # 📉 AzTracker (Amazon.eg Price Tracker)
 
-> Track Amazon.eg product prices and get instant Telegram alerts when they drop — no server, no cost.
+> A multi-tenant, serverless Amazon.eg price tracking bot. Track products, share access with friends via an RBAC admin panel, and get instant Telegram push notifications when deals drop.
 
-AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add your product URLs, set up a Telegram bot, and you'll get notified the moment a price drops. No device needs to stay on.
-
----
-
-## Features
-
-- 🔔 **Telegram notifications** on price drops — instant, no spam
-- 📦 **Track multiple products** from a single file (with the ability to pause specific items)
-- 🤖 **Product names fetched automatically** — no manual labeling
-- ☁️ **Fully serverless** — runs on GitHub Actions
-- 🛰️ **Uses Amazon's official Creators API** — real prices, no scraping, no honeypots
-- ⚡ **Optimized Batch Requests** — groups products in batches of 10 to avoid rate limits and throttling
-- 🕐 **Cairo timezone (EET/EEST)** — automatically adjusts for daylight saving
-- 💸 **100% free** with the right setup
+AzTracker operates on a hybrid serverless architecture. A **Cloudflare Worker** and **Cloudflare KV** database handle instant, multi-user Telegram ChatOps (UI, adding/removing products, and admin approvals). A scheduled **GitHub Actions** pipeline runs the heavy Python scraper, intelligently batching requests to Amazon's official Creators API to check for price drops in the background.
 
 ---
 
-## How It Works
+## ✨ Features
 
-1. Gathers all active product IDs from `products.json` and splits them into chunks of 10 (the maximum allowed by Amazon's Creators API).
-2. Fetches product details sequentially with a 1-second rate-limiting guard between batches.
-3. Compares fetched prices with the last known prices in `prices.json`.
-4. If a price drop is detected → sends a Telegram notification instantly, spacing them out by 1 second to prevent spamming the Telegram API.
-5. Saves latest prices to `prices.json` for the next run.
+- 👥 **Multi-Tenant VIP Access:** Share the bot with friends. Each user gets their own isolated tracking database.
+- 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system. Root Admins can approve users, revoke access, and promote Sub-Admins entirely through Telegram buttons.
+- ☁️ **Millisecond Serverless Database:** Powered by Cloudflare KV. Zero file-locking or concurrency issues, even with hundreds of users.
+- 📱 **Mobile App Support:** Automatically resolves and extracts ASINs from `amzn.eu` short links shared directly from the Amazon mobile app.
+- 🤖 **Auto-Naming:** Product titles are fetched automatically via URL extraction and API validation.
+- 🛰️ **Amazon Creators API:** Fetches real prices securely without HTML scraping or honeypot blocks. Batch-optimized (10 items/request) to respect rate limits.
+- 💸 **100% Free Architecture:** Utilizes the generous free tiers of Cloudflare, GitHub Actions, and Cron-job.org.
 
 ---
 
-## Quick Start
+## 🛠️ Architecture Flow
+
+1. **The Frontend (Cloudflare Worker):** Intercepts Telegram messages. If a user pastes an Amazon link, the Worker resolves it, extracts the ASIN, and saves it instantly to their profile in Cloudflare KV.
+2. **The Bouncer (RBAC):** If an unauthorized user messages the bot, they are rejected and given an ID. Admins can paste this ID into the chat to generate a management card and approve them.
+3. **The Engine (GitHub Actions):** Triggered on a schedule (e.g., every 30-60 minutes). It wakes up, pulls everyone's tracking lists from Cloudflare KV, deduplicates the items to prevent rate-limiting, and queries the Amazon API.
+4. **The Notifier (Python):** Compares live prices against the global price history in KV. If a drop is detected, it routes personalized Telegram push notifications only to the users tracking that specific item.
+
+---
+
+## 🚀 Quick Start Guide
 
 ### What you'll need
 - A [GitHub](https://github.com) account
+- A [Cloudflare](https://dash.cloudflare.com/) account (Free tier)
 - A [Telegram](https://telegram.org) account
 - An Amazon Associates account with Creators API access
-- A [cron-job.org](https://cron-job.org) account (free)
+- A [cron-job.org](https://cron-job.org) account (Free)
 
 ---
 
-### Step 1 — Fork or clone this repo
+### Step 1 — Setup Telegram & The Repo
+1. Fork or clone this repository.
+2. Open Telegram, search **@BotFather**, send `/newbot`, and copy the **Bot Token**.
+3. Search **@userinfobot**, send `/start`, and copy your personal **Telegram ID**.
+4. *(Optional but recommended)* In @BotFather, use `/setcommands` and add: `start - Open Control Center`.
 
-```text
-https://github.com/aka-khalid/AzTracker
-```
+### Step 2 — Setup Cloudflare KV & Worker
+1. Log into Cloudflare → **Storage & Databases** → **KV** → Create a namespace called `AZTRACKER_DB`.
+2. Go to **Workers & Pages** → Create a new Worker.
+3. Replace the default code with the `worker.js` script (handling the UI and Routing).
+4. Go to your Worker's **Settings → Variables**:
+   * Add a text variable: `ALLOWED_USERS` = `[Your Telegram ID]` (This makes you the Root Admin).
+   * Add a text variable: `GITHUB_OWNER` = `[Your GitHub Username]`
+   * Add a text variable: `GITHUB_REPO` = `AzTracker`
+   * Add a secret variable: `GITHUB_PAT` = `[Your Personal Access Token]`
+5. Go to **Settings → Bindings**:
+   * Add a KV binding. Variable name: `AZTRACKER_DB`. Select your created namespace.
 
----
+### Step 3 — Get Amazon Creators API Credentials
+1. Log in at [affiliate-program.amazon.eg](https://affiliate-program.amazon.eg).
+2. Go to **Tools → Creators API**.
+3. Generate credentials and copy your **Access Key**, **Secret Key**, **Partner Tag** (e.g., `yourname-21`), and **API Version** (e.g., `2.2`).
 
-### Step 2 — Add your products
-
-Edit `products.json` with the Amazon.eg URLs you want to track. You can pause tracking for specific items without deleting them by setting `"paused": true`:
-
-```json
-[
-  { 
-    "url": "https://www.amazon.eg/dp/B0CX1234XY",
-    "paused": false
-  },
-  { 
-    "url": "https://www.amazon.eg/dp/B0CXXXX8AB",
-    "paused": true
-  }
-]
-```
-
-> ⚠️ Use full product URLs only. Shortened links like `amzn.eu/...` won't work.
-
----
-
-### Step 3 — Create a Telegram bot
-
-1. Open Telegram → search **@BotFather** → send `/newbot` → follow the steps → copy the **token**
-2. Search **@userinfobot** → send `/start` → copy your **Chat ID**
-3. Open your new bot and send it any message so it can reply to you
-
----
-
-### Step 4 — Get Amazon Creators API credentials
-
-You need an Amazon Associates account with Creators API access:
-
-1. Log in at [affiliate-program.amazon.eg](https://affiliate-program.amazon.eg)
-2. Go to **Tools → Creators API**
-3. Create an app and generate credentials
-4. Copy your **Access Key** (Client ID), **Secret Key**, **Partner Tag** (your Associates store ID, e.g. `yourname-21`), and note your **API Version** (e.g., `2.2`).
-
-> ⚠️ API access requires at least 10 qualifying sales in the past 30 days. It may take up to 48 hours after generating credentials before access is granted.
-
----
-
-### Step 5 — Add GitHub Secrets
-
-Go to your repo → **Settings → Secrets and variables → Actions → New repository secret** and add:
+### Step 4 — Configure GitHub Secrets
+In your GitHub Repo, go to **Settings → Secrets and variables → Actions** and add:
 
 | Secret | Value |
 |---|---|
-| `TELEGRAM_TOKEN` | from @BotFather |
-| `TELEGRAM_CHAT_ID` | from @userinfobot |
-| `AMAZON_ACCESS_KEY` | from Creators API dashboard (Starts with `amzn1...`) |
-| `AMAZON_SECRET_KEY` | from Creators API dashboard |
-| `AMAZON_PARTNER_TAG` | your Associates store ID |
-| `AMAZON_API_VERSION` | The Creators API version generated in Step 4 |
+| `TELEGRAM_TOKEN` | From @BotFather |
+| `TELEGRAM_CHAT_ID` | Your Root Admin Telegram ID |
+| `AMAZON_ACCESS_KEY` | From Amazon Creators API |
+| `AMAZON_SECRET_KEY` | From Amazon Creators API |
+| `AMAZON_PARTNER_TAG` | Your Amazon Associates ID |
+| `AMAZON_API_VERSION` | API Version (e.g., `2.2`) |
+| `CF_ACCOUNT_ID` | Found on your main Cloudflare Dashboard right sidebar |
+| `CF_NAMESPACE_ID` | Found in your Cloudflare KV `AZTRACKER_DB` settings |
+| `CF_API_TOKEN` | Generated CF Token (Needs Account + Workers KV Storage Edit permissions) |
+
+### Step 5 — Set up the Scheduler
+Use [cron-job.org](https://cron-job.org) to trigger the workflow.
+1. Generate a GitHub Fine-Grained Token with **Actions: Read & Write** permissions.
+2. Create a POST request to: `https://api.github.com/repos/YOUR_USERNAME/AzTracker/actions/workflows/price_tracker.yml/dispatches`
+3. Add Headers:
+   * `Authorization: Bearer YOUR_GITHUB_TOKEN`
+   * `Accept: application/vnd.github+json`
+4. Add Body: `{"ref":"main"}`
+5. **Schedule:** Every 30 to 60 minutes is highly recommended to respect Amazon API rate limits and GitHub Actions free-tier quotas.
 
 ---
 
-### Step 6 — Set up the scheduler
+## 👑 Admin Guide: Adding Friends
 
-GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-job.org to trigger the `Amazon Price Tracker` workflow dispatches instead.
-
-1. Sign up at [cron-job.org](https://cron-job.org)
-2. Create a GitHub Personal Access Token:
-   - GitHub → **Settings → Developer settings → Fine-grained personal access tokens**
-   - Select your repo → add **Actions: Read and write** and **Workflows: Read and write** permissions → generate and copy the token
-3. Create a new cronjob on cron-job.org with these settings:
-
-| Setting | Value |
-|---|---|
-| URL | `https://api.github.com/repos/aka-khalid/AzTracker/actions/workflows/price_tracker.yml/dispatches` |
-| Method | `POST` |
-| Header 1 | `Authorization: Bearer YOUR_GITHUB_TOKEN` |
-| Header 2 | `Accept: application/vnd.github+json` |
-| Body | `{"ref":"main"}` |
-| Schedule | *(See note below)* |
-
-> 💡 **Important: Choosing an Execution Schedule**
-> Your schedule interval depends heavily on whether your GitHub repository is **Public** or **Private**:
-> 
-> * **🌍 Public Repositories:** GitHub Actions is 100% free and completely unlimited. You can safely set your cron-job.org schedule to **Every 15 minutes** (or even faster) without ever running into limits or costs.
-> * **🔒 Private Repositories:** GitHub limits free accounts to **2,000 compute minutes per month** for private repos. Because GitHub rounds every single execution up to 1 full minute, your choice matters:
->   * *Every 15 minutes* = ~2,880 runs/month ❌ (**Exceeds the 2,000 free minutes limit**)
->   * *Every 30 minutes* = ~1,440 runs/month  (**Safe** — leaves a buffer of ~560 minutes)
->   * *Every 1 hour* = ~720 runs/month  (**Highly recommended** — very safe and perfectly fine for standard price tracking)
+AzTracker is a closed VIP system. Random users cannot use it without your permission.
+1. Share your bot's `@username` with a friend.
+2. When they click Start, the bot will reject them and give them their `Telegram ID`.
+3. They send that ID to you.
+4. **Copy and paste their ID directly into your bot chat.**
+5. A User Management Card will appear. Click **✅ Approve User**.
+6. They will instantly receive a welcome notification and gain full tracking access!
 
 ---
 
-## Repo Structure
+## 📂 Repo Structure
 
 ```text
 AzTracker/
-├── price_tracker.py        # main script (batched & throttled version)
-├── products.json           # your product URLs
-├── requirements.txt        # uses my custom fork: git+https://github.com/aka-khalid/python-amazon-paapi.git essential for Amazon.eg
-├── prices.json             # auto-generated price history
+├── price_tracker.py        # Background engine (Throttled & Batched)
+├── requirements.txt        # Uses a custom Amazon PAAPI fork for .eg support
+├── worker.js               # Router logic (ChatOps GUI UI Backend)
 └── .github/
     └── workflows/
-        └── price_tracker.yml
+        └── price_tracker.yml # Serverless execution pipeline
 ```
 
----
-
-## Notification Format
-
-```text
-📉 Samsung 55" QLED TV
-💰 18,999.00 EGP
-Down 2,000.00 EGP (9.5% off, was 20,999.00)
-🕐 2026-05-17 10:00 EEST
-View on Amazon.eg
-```
+*(Note: Data is stored entirely in Cloudflare KV. There are no local JSON files in this repository.)*
 
 ---
 
-## What Happens During a Run
+## 👨‍💻 Author & Acknowledgements
 
-### Success Flow
-- ✅ Dependencies are installed automatically using `pip install -r requirements.txt`.
-- ✅ Active items are grouped into batches of up to 10 ASINs.
-- ✅ Batches are requested sequentially from the Creators API with a 1-second delay between requests to keep execution perfectly within rate limits.
-- ✅ Price compared with last known price.
-- 📈 Price went up or stayed the same → no notification.
-- 📉 Price dropped → **sends notification immediately**, applying a 1-second safety delay between individual alerts to satisfy Telegram API flooding constraints.
-- 💾 Price saved for next run. The workflow configures git as `price-bot` and pushes a `chore: update prices` commit to save the state.
+Architected and engineered by **Khalid Ibrahim**.
 
-### Skip Scenarios
-- First run → saves price, no notification.
-- Price went up or unchanged → skips silently.
-- Item marked as `"paused": true` → completely skips fetching.
-- API fetch fails → sends a warning notification.
-
----
-
-## Troubleshooting
-
-| Problem | Likely cause | Fix |
-|---|---|---|
-| "Could not fetch product" | Invalid URL or API error | Use full `amazon.eg/dp/...` URLs; check API credentials |
-| "invalid_client" error | Bad credentials or spaces | Ensure `AMAZON_API_VERSION` matches your dash, and secrets have no trailing spaces |
-| "AssociateNotEligible" error | API access not yet granted | Wait up to 48 hours after generating credentials, or ensure sales quota is met |
-| "chat not found" from Telegram | Bot not activated | Send your bot any message first |
-| 401 on cron-job.org test | Bad GitHub token | Regenerate with Actions: Read and write |
-| 403 on cron-job.org test | Wrong token permission | Make sure Actions (not just Workflows) is Read and write |
-
----
-
-## Acknowledgements
+Special thanks to **[Abdelrahman Elkhayat](https://www.facebook.com/bodaa.elkhayat)** for generously providing the Amazon Creators API Credentials that power the core tracking engine.
 
 Built with the help of [Claude](https://claude.ai) by Anthropic and [Gemini](https://gemini.google.com) by Google.
 
