@@ -191,14 +191,14 @@ def check_product(product, prices, now):
         print("  📈 Price went up or unchanged — no notification sent.")
         return product_id, price
 
-    # Price drop detected — confirm with direct request
-    print("  🔄 Price drop detected, confirming directly...")
+    # ── Layer 1: Direct request confirmation (60s) ────────────────────────
+    print("  🔄 Price drop detected, confirming directly in 60s...")
     time.sleep(60)
 
     try:
         resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
         soup = BeautifulSoup(resp.text, "lxml")
-        confirmed_price = None
+        direct_price_1 = None
         for tag, attrs in [
             ("span", {"class": "a-price-whole"}),
             ("span", {"id": "priceblock_ourprice"}),
@@ -207,22 +207,55 @@ def check_product(product, prices, now):
         ]:
             el = soup.find(tag, attrs)
             if el:
-                confirmed_price = parse_price(el.get_text().strip())
-                if confirmed_price:
-                    confirmed_price = round(confirmed_price, 2)
+                direct_price_1 = parse_price(el.get_text().strip())
+                if direct_price_1:
+                    direct_price_1 = round(direct_price_1, 2)
                     break
     except Exception as e:
-        print(f"  ❌ Direct confirmation failed: {e}")
+        print(f"  ❌ Direct request 1 failed: {e}")
         return product_id, last_price
 
-    if confirmed_price is None:
-        print("  ❌ Could not parse price from direct request — skipping.")
+    if direct_price_1 is None:
+        print("  ❌ Could not parse price from direct request 1 — skipping.")
         return product_id, last_price
 
-    if confirmed_price != price:
-        print(f"  ❌ Price mismatch: ScraperAPI={price}, Direct={confirmed_price} — skipping.")
-        return product_id, confirmed_price
+    if direct_price_1 != price:
+        print(f"  ❌ Direct request 1: price mismatch {direct_price_1:,.2f} — skipping.")
+        return product_id, direct_price_1
 
+    # ── Layer 2: Second direct request confirmation (30s) ─────────────────
+    print("  🔄 Direct request 1 confirmed, second direct request in 30s...")
+    time.sleep(30)
+
+    try:
+        resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
+        soup = BeautifulSoup(resp.text, "lxml")
+        direct_price_2 = None
+        for tag, attrs in [
+            ("span", {"class": "a-price-whole"}),
+            ("span", {"id": "priceblock_ourprice"}),
+            ("span", {"id": "priceblock_dealprice"}),
+            ("span", {"class": "a-offscreen"}),
+        ]:
+            el = soup.find(tag, attrs)
+            if el:
+                direct_price_2 = parse_price(el.get_text().strip())
+                if direct_price_2:
+                    direct_price_2 = round(direct_price_2, 2)
+                    break
+    except Exception as e:
+        print(f"  ❌ Direct request 2 failed: {e}")
+        return product_id, last_price
+
+    if direct_price_2 is None:
+        print("  ❌ Could not parse price from direct request 2 — skipping.")
+        return product_id, last_price
+
+    if direct_price_2 != price:
+        print(f"  ❌ Direct request 2: price mismatch {direct_price_2:,.2f} — skipping.")
+        return product_id, direct_price_2
+
+    # ── Both layers confirmed — notify ────────────────────────────────────
     diff = last_price - price
     pct  = (diff / last_price) * 100
 
