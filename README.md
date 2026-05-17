@@ -52,7 +52,6 @@
    [vars]
    GITHUB_OWNER = "your-github-username"
    GITHUB_REPO = "AzTracker"
-   ALLOWED_USERS = "your-telegram-numeric-id"
    ```
 4. Go to your Cloudflare Worker's **Settings → Variables** in the web dashboard:
    * Add a secret variable: `GITHUB_PAT` = `[Your GitHub Personal Access Token]`
@@ -76,6 +75,7 @@ In your GitHub Repo, go to **Settings → Secrets and variables → Actions** an
 | `CF_ACCOUNT_ID` | Found on your main Cloudflare Dashboard right sidebar |
 | `CF_NAMESPACE_ID` | Found in your Cloudflare KV `AZTRACKER_DB` settings |
 | `CF_API_TOKEN` | Custom API Token. Requires: `Workers Scripts: Edit`, `Workers KV Storage: Edit`, `Account Settings: Read`, and `User Details: Read` to bypass Code 10000 errors. |
+| `ALLOWED_USERS` | Your Root Admin Telegram ID |
 
 ### Step 5 — Set up the Scheduler
 Use [cron-job.org](https://cron-job.org) to trigger the workflow.
