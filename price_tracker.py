@@ -15,7 +15,6 @@ from amazon_creatorsapi.models import GetItemsResource
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN     = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
 AMAZON_ACCESS_KEY  = os.environ["AMAZON_ACCESS_KEY"]
 AMAZON_SECRET_KEY  = os.environ["AMAZON_SECRET_KEY"]
 AMAZON_PARTNER_TAG = os.environ["AMAZON_PARTNER_TAG"]
