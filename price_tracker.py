@@ -1,12 +1,11 @@
 """
-Amazon.eg Price Tracker (Batched Version)
+AzTracker Amazon.eg Price Tracker Engine
 Uses the Amazon Creators API for real prices — no scraping, no honeypots.
 Sends a Telegram notification immediately when a price drop is detected.
 Optimized for batch requests (up to 10 products per API call) to prevent rate limiting.
 """
 
 import os
-import json
 import time
 import requests
 from datetime import datetime
@@ -23,7 +22,6 @@ AMAZON_PARTNER_TAG = os.environ["AMAZON_PARTNER_TAG"]
 AMAZON_API_VERSION = os.environ["AMAZON_API_VERSION"]
 # ─────────────────────────────────────────────────────────────────────────────
 
-PRICES_FILE  = "prices.json"
 MAX_NAME_LEN = 60
 
 api = AmazonCreatorsApi(
@@ -39,21 +37,7 @@ RESOURCES = [
     GetItemsResource.OFFERS_V2_DOT_LISTINGS_DOT_PRICE,
 ]
 
-
-# ── Price store ───────────────────────────────────────────────────────────────
-
-def load_prices():
-    try:
-        with open(PRICES_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-
-def save_prices(prices: dict):
-    with open(PRICES_FILE, "w") as f:
-        json.dump(prices, f, indent=2)
-
+# ── Core Helpers ──────────────────────────────────────────────────────────────
 
 def get_product_id(url):
     return url.rstrip("/").split("/")[-1]
@@ -96,12 +80,11 @@ def fetch_batch(asin_list, retries=3):
                 if name and price:
                     batch_results[asin] = (name, float(price))
 
-            # If the API call succeeded, return what we found (even if partial)
             return batch_results
 
         except Exception as e:
             print(f"  [Attempt {attempt+1}] API error for batch: {e}")
-            time.sleep(2 * (attempt + 1))  # Waits 2s on attempt 1, 4s on attempt 2, etc.
+            time.sleep(2 * (attempt + 1))
 
     return batch_results
 
@@ -171,7 +154,7 @@ def main():
 
     active_products = [{"asin": a[0], "url": a[1]} for a in unique_asins]
 
-    # 2. Batch and Fetch (Optimized deduplicated list)
+    # 2. Batch and Fetch
     BATCH_SIZE = 10
     batches = [active_products[i:i + BATCH_SIZE] for i in range(0, len(active_products), BATCH_SIZE)]
     all_fetched_results = {}
@@ -215,7 +198,6 @@ def main():
                 last_price = last_entry
 
             if last_price is None or price >= last_price:
-                # Price hasn't dropped, just mark it for the global DB update
                 updates[product_id] = {"price": price, "name": name}
                 continue
 
