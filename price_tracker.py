@@ -185,19 +185,36 @@ def check_product(product, prices, now):
         print("  📈 Price went up or unchanged — no notification sent.")
         return product_id, price
 
-    # Price drop detected — confirm after 60s
-    print("  🔄 Price drop detected, confirming in 60s...")
+    # Price drop detected — confirm with direct request
+    print("  🔄 Price drop detected, confirming directly...")
     time.sleep(60)
-    _, confirmed_price, _ = fetch_product(url)
 
-    if confirmed_price is None:
-        print("  ❌ Could not confirm price — skipping.")
+    try:
+        resp = requests.get(url, headers=random.choice(HEADERS_LIST), timeout=15)
+        soup = BeautifulSoup(resp.text, "lxml")
+        confirmed_price = None
+        for tag, attrs in [
+            ("span", {"class": "a-price-whole"}),
+            ("span", {"id": "priceblock_ourprice"}),
+            ("span", {"id": "priceblock_dealprice"}),
+            ("span", {"class": "a-offscreen"}),
+        ]:
+            el = soup.find(tag, attrs)
+            if el:
+                confirmed_price = parse_price(el.get_text().strip())
+                if confirmed_price:
+                    confirmed_price = round(confirmed_price, 2)
+                    break
+    except Exception as e:
+        print(f"  ❌ Direct confirmation failed: {e}")
         return product_id, last_price
 
-    confirmed_price = round(confirmed_price, 2)
+    if confirmed_price is None:
+        print("  ❌ Could not parse price from direct request — skipping.")
+        return product_id, last_price
 
     if confirmed_price != price:
-        print(f"  ❌ Price reverted to {confirmed_price:,.2f} — skipping.")
+        print(f"  ❌ Price mismatch: ScraperAPI={price}, Direct={confirmed_price} — skipping.")
         return product_id, confirmed_price
 
     diff = last_price - price
