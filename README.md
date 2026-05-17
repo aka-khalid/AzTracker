@@ -40,7 +40,7 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 ### Step 1 — Fork or clone this repo
 
 ```text
-[https://github.com/YOUR_USERNAME/AzTracker](https://github.com/YOUR_USERNAME/AzTracker)
+https://github.com/aka-khalid/AzTracker
 ```
 
 ---
@@ -138,7 +138,7 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 AzTracker/
 ├── price_tracker.py        # main script
 ├── products.json           # your product URLs
-├── requirements.txt        # uses your custom fork: git+[https://github.com/aka-khalid/python-amazon-paapi.git](https://github.com/aka-khalid/python-amazon-paapi.git)
+├── requirements.txt        # uses your custom fork: git+https://github.com/aka-khalid/python-amazon-paapi.git
 ├── prices.json             # auto-generated price history
 └── .github/
     └── workflows/
