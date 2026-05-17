@@ -151,89 +151,21 @@ def send_telegram(message: str):
         print(f"  ⚠️  Telegram error: {resp.text}")
 
 
-# ── Per-product check ─────────────────────────────────────────────────────────
+# ── Initial fetch (runs in parallel) ─────────────────────────────────────────
 
-def check_product(product, prices, now):
+def initial_fetch(product):
     url    = product["url"]
     paused = product.get("paused", False)
     product_id = get_product_id(url)
 
     if paused:
         print(f"\n⏸ Skipping (paused): {url}")
-        return product_id, None
+        return product_id, None, None, None, None
 
     print(f"\nChecking: {url}")
-
     name, price, attempts = fetch_product(url)
+    return product_id, name, price, attempts, url
 
-    if price is None:
-        print("  ❌ Could not fetch product.")
-        label = truncate_name(name) if name else url
-        send_telegram(
-            f"⚠️ <b>{label}</b>\n"
-            f"Could not fetch price after {attempts} attempt(s) at {now}.\n"
-            f'<a href="{url}">View on Amazon.eg</a>'
-        )
-        return product_id, None
-
-    price = round(price, 2)
-    display_name = truncate_name(name)
-    print(f"  📦 {display_name}")
-    print(f"  💰 {price:,.2f} EGP")
-
-    last_price = prices.get(product_id)
-
-    if last_price is None:
-        print("  📝 First run — price saved, no notification sent.")
-        return product_id, price
-
-    if price >= last_price:
-        print("  📈 Price went up or unchanged — no notification sent.")
-        return product_id, price
-
-    # ── Layer 1: ScraperAPI confirmation (60s) ────────────────────────────
-    print("  🔄 Price drop detected, ScraperAPI confirmation 1 in 60s...")
-    time.sleep(60)
-    _, confirmed_price_1, _ = fetch_product(url)
-
-    if confirmed_price_1 is None:
-        print("  ❌ ScraperAPI confirmation 1 failed — skipping.")
-        return product_id, last_price
-
-    confirmed_price_1 = round(confirmed_price_1, 2)
-
-    if confirmed_price_1 != price:
-        print(f"  ❌ ScraperAPI 1: price reverted to {confirmed_price_1:,.2f} — skipping.")
-        return product_id, confirmed_price_1
-
-    # ── Layer 2: ScraperAPI confirmation (30s) ────────────────────────────
-    print("  🔄 ScraperAPI 1 confirmed, ScraperAPI confirmation 2 in 30s...")
-    time.sleep(30)
-    _, confirmed_price_2, _ = fetch_product(url)
-
-    if confirmed_price_2 is None:
-        print("  ❌ ScraperAPI confirmation 2 failed — skipping.")
-        return product_id, last_price
-
-    confirmed_price_2 = round(confirmed_price_2, 2)
-
-    if confirmed_price_2 != price:
-        print(f"  ❌ ScraperAPI 2: price reverted to {confirmed_price_2:,.2f} — skipping.")
-        return product_id, confirmed_price_2
-
-    # ── All layers confirmed — notify ─────────────────────────────────────
-    diff = last_price - price
-    pct  = (diff / last_price) * 100
-
-    send_telegram(
-        f"📉 <b>{display_name}</b>\n"
-        f"💰 <b>{price:,.2f} EGP</b>\n"
-        f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
-        f"🕐 {now}\n"
-        f'<a href="{url}">View on Amazon.eg</a>'
-    )
-
-    return product_id, price
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -246,15 +178,90 @@ def main():
     now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
     updates = {}
 
+    # ── Phase 1: Fetch all prices in parallel ─────────────────────────────
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {
-            executor.submit(check_product, p, prices, now): p["url"]
-            for p in products
-        }
-        for future in as_completed(futures):
-            product_id, new_price = future.result()
-            if new_price is not None:
-                updates[product_id] = new_price
+        futures = {executor.submit(initial_fetch, p): p for p in products}
+        fetch_results = [future.result() for future in as_completed(futures)]
+
+    # ── Phase 2: Handle drops sequentially ───────────────────────────────
+    for product_id, name, price, attempts, url in fetch_results:
+        if url is None:
+            continue
+
+        if price is None:
+            print(f"\n  ❌ Could not fetch {url}")
+            label = truncate_name(name) if name else url
+            send_telegram(
+                f"⚠️ <b>{label}</b>\n"
+                f"Could not fetch price after {attempts} attempt(s) at {now}.\n"
+                f'<a href="{url}">View on Amazon.eg</a>'
+            )
+            continue
+
+        price = round(price, 2)
+        display_name = truncate_name(name)
+        print(f"\n  📦 {display_name}")
+        print(f"  💰 {price:,.2f} EGP")
+
+        last_price = prices.get(product_id)
+
+        if last_price is None:
+            print("  📝 First run — price saved, no notification sent.")
+            updates[product_id] = price
+            continue
+
+        if price >= last_price:
+            print("  📈 Price went up or unchanged — no notification sent.")
+            updates[product_id] = price
+            continue
+
+        # ── Layer 1: ScraperAPI confirmation (60s) ────────────────────────
+        print("  🔄 Price drop detected, ScraperAPI confirmation 1 in 60s...")
+        time.sleep(60)
+        _, confirmed_price_1, _ = fetch_product(url)
+
+        if confirmed_price_1 is None:
+            print("  ❌ ScraperAPI confirmation 1 failed — skipping.")
+            updates[product_id] = last_price
+            continue
+
+        confirmed_price_1 = round(confirmed_price_1, 2)
+
+        if confirmed_price_1 != price:
+            print(f"  ❌ ScraperAPI 1: price reverted to {confirmed_price_1:,.2f} — skipping.")
+            updates[product_id] = confirmed_price_1
+            continue
+
+        # ── Layer 2: ScraperAPI confirmation (30s) ────────────────────────
+        print("  🔄 ScraperAPI 1 confirmed, ScraperAPI confirmation 2 in 30s...")
+        time.sleep(30)
+        _, confirmed_price_2, _ = fetch_product(url)
+
+        if confirmed_price_2 is None:
+            print("  ❌ ScraperAPI confirmation 2 failed — skipping.")
+            updates[product_id] = last_price
+            continue
+
+        confirmed_price_2 = round(confirmed_price_2, 2)
+
+        if confirmed_price_2 != price:
+            print(f"  ❌ ScraperAPI 2: price reverted to {confirmed_price_2:,.2f} — skipping.")
+            updates[product_id] = confirmed_price_2
+            continue
+
+        # ── All layers confirmed — notify ─────────────────────────────────
+        diff = last_price - price
+        pct  = (diff / last_price) * 100
+
+        send_telegram(
+            f"📉 <b>{display_name}</b>\n"
+            f"💰 <b>{price:,.2f} EGP</b>\n"
+            f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
+            f"🕐 {now}\n"
+            f'<a href="{url}">View on Amazon.eg</a>'
+        )
+
+        updates[product_id] = price
 
     prices.update(updates)
     save_prices(prices)
@@ -262,3 +269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
