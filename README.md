@@ -8,22 +8,24 @@ AzTracker runs entirely on GitHub Actions, triggered by cron-job.org. Just add y
 
 ## Features
 
-- 🔔 Telegram notifications on price drops — instant, no spam
-- 📦 Track multiple products from a single file (with the ability to pause specific items)
-- 🤖 Product names fetched automatically — no manual labeling
-- ☁️ Fully serverless — runs on GitHub Actions
-- 🛰️ Uses Amazon's official Creators API — real prices, no scraping, no honeypots
-- 🕐 Cairo timezone (EET/EEST) — automatically adjusts for daylight saving
-- 💸 100% free with the right setup
+- 🔔 **Telegram notifications** on price drops — instant, no spam
+- 📦 **Track multiple products** from a single file (with the ability to pause specific items)
+- 🤖 **Product names fetched automatically** — no manual labeling
+- ☁️ **Fully serverless** — runs on GitHub Actions
+- 🛰️ **Uses Amazon's official Creators API (v2.2)** — real prices, no scraping, no honeypots
+- ⚡ **Optimized Batch Requests** — groups products in batches of 10 to avoid rate limits and throttling
+- 🕐 **Cairo timezone (EET/EEST)** — automatically adjusts for daylight saving
+- 💸 **100% free** with the right setup
 
 ---
 
 ## How It Works
 
-1. Fetches product name and price directly from Amazon via the official Creators API.
-2. Compares with last known price.
-3. If price dropped → sends Telegram notification instantly.
-4. Saves latest price for next run.
+1. Gathers all active product IDs from `products.json` and splits them into chunks of 10 (the maximum allowed by Amazon's Creators API).
+2. Fetches product details sequentially with a 1-second rate-limiting guard between batches.
+3. Compares fetched prices with the last known prices in `prices.json`.
+4. If a price drop is detected → sends a Telegram notification instantly, spacing them out by 1 second to prevent spamming the Telegram API.
+5. Saves latest prices to `prices.json` for the next run.
 
 ---
 
@@ -114,7 +116,7 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 
 | Setting | Value |
 |---|---|
-| URL | `https://api.github.com/repos/YOUR_USERNAME/AzTracker/actions/workflows/price_tracker.yml/dispatches` |
+| URL | `https://api.github.com/repos/aka-khalid/AzTracker/actions/workflows/price_tracker.yml/dispatches` |
 | Method | `POST` |
 | Header 1 | `Authorization: Bearer YOUR_GITHUB_TOKEN` |
 | Header 2 | `Accept: application/vnd.github+json` |
@@ -136,9 +138,9 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 
 ```text
 AzTracker/
-├── price_tracker.py        # main script
+├── price_tracker.py        # main script (batched & throttled version)
 ├── products.json           # your product URLs
-├── requirements.txt        # uses your custom fork: git+https://github.com/aka-khalid/python-amazon-paapi.git
+├── requirements.txt        # uses your custom fork: git+[https://github.com/aka-khalid/python-amazon-paapi.git](https://github.com/aka-khalid/python-amazon-paapi.git)
 ├── prices.json             # auto-generated price history
 └── .github/
     └── workflows/
@@ -163,10 +165,11 @@ View on Amazon.eg
 
 ### Success Flow
 - ✅ Dependencies are installed automatically using `pip install -r requirements.txt`.
-- ✅ Product fetched via Amazon Creators API.
+- ✅ Active items are grouped into batches of up to 10 ASINs.
+- ✅ Batches are requested sequentially from the Creators API with a 1-second delay between requests to keep execution perfectly within rate limits.
 - ✅ Price compared with last known price.
 - 📈 Price went up or stayed the same → no notification.
-- 📉 Price dropped → **sends notification immediately**.
+- 📉 Price dropped → **sends notification immediately**, applying a 1-second safety delay between individual alerts to satisfy Telegram API flooding constraints.
 - 💾 Price saved for next run. The workflow configures git as `price-bot` and pushes a `chore: update prices` commit to save the state.
 
 ### Skip Scenarios
