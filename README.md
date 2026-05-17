@@ -47,11 +47,14 @@
 ### Step 2 — Setup Cloudflare KV & Wrangler Configuration
 1. Log into Cloudflare → **Storage & Databases** → **KV** → Create a namespace called `AZTRACKER_DB`. Copy its **Namespace ID** string.
 2. Go to **Workers & Pages** → Create a new Worker named `aztracker-bot`. 
-3. Open your local repository files, locate `wrangler.toml`, and paste your KV Namespace ID string into the ID field.
+3. Open your local repository files, locate `wrangler.toml`, and fill out your KV Namespace ID along with your configurations under the `[vars]` block:
+   ```toml
+   [vars]
+   GITHUB_OWNER = "your-github-username"
+   GITHUB_REPO = "AzTracker"
+   ALLOWED_USERS = "your-telegram-numeric-id"
+   ```
 4. Go to your Cloudflare Worker's **Settings → Variables** in the web dashboard:
-   * Add a text variable: `ALLOWED_USERS` = `[Your Telegram ID]` (This makes you the Root Admin).
-   * Add a text variable: `GITHUB_OWNER` = `[Your GitHub Username]`
-   * Add a text variable: `GITHUB_REPO` = `AzTracker`
    * Add a secret variable: `GITHUB_PAT` = `[Your GitHub Personal Access Token]`
 
 ### Step 3 — Get Amazon Creators API Credentials
