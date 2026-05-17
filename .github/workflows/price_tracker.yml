@@ -1,4 +1,4 @@
-name: Hourly Price Tracker
+name: Amazon Price Tracker
 
 on:
   workflow_dispatch:
@@ -26,9 +26,11 @@ jobs:
 
       - name: Run price tracker
         env:
-          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SCRAPER_API_KEY:  ${{ secrets.SCRAPER_API_KEY }}
+          TELEGRAM_TOKEN:     ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          AMAZON_ACCESS_KEY:  ${{ secrets.AMAZON_ACCESS_KEY }}
+          AMAZON_SECRET_KEY:  ${{ secrets.AMAZON_SECRET_KEY }}
+          AMAZON_PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
         run: python price_tracker.py
 
       - name: Save prices to repo
