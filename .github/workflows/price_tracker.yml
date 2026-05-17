@@ -29,7 +29,6 @@ jobs:
       - name: Run price tracker
         env:
           TELEGRAM_TOKEN:     ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           AMAZON_ACCESS_KEY:  ${{ secrets.AMAZON_ACCESS_KEY }}
           AMAZON_SECRET_KEY:  ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
