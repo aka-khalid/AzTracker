@@ -226,7 +226,7 @@ async function handleCallback(callback, env) {
     const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
     await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
   }
-  else if (data === "global_track") {
+  else if (data === "global_track" && isAdmin) {
     await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
     try {
       const triggered = await triggerWorkflow(env);
@@ -356,15 +356,17 @@ async function renderMainMenu(env, chatId, messageId = null) {
 
   const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Tracked Items:</b> ${total}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
 
+  // Standard user keyboard menu configuration
   const keyboard = {
     inline_keyboard: [
       [{ text: "📦 My Products", callback_data: "list_products" }],
-      [{ text: "🚀 Force Price Check", callback_data: "global_track" }],
       [{ text: "➕ How to Add Products", callback_data: "help_add" }]
     ]
   };
 
+  // Restrict operational administrative triggers strictly to verified admin tiers
   if (isAdmin) {
+    keyboard.inline_keyboard.push([{ text: "🚀 Force Price Check", callback_data: "global_track" }]);
     keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", callback_data: "admin_panel" }]);
   }
 
