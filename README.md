@@ -140,7 +140,7 @@ GitHub's built-in cron scheduler is unreliable on free accounts, so we use cron-
 AzTracker/
 ├── price_tracker.py        # main script (batched & throttled version)
 ├── products.json           # your product URLs
-├── requirements.txt        # uses your custom fork: git+[https://github.com/aka-khalid/python-amazon-paapi.git](https://github.com/aka-khalid/python-amazon-paapi.git)
+├── requirements.txt        # uses your custom fork: git+https://github.com/aka-khalid/python-amazon-paapi.git
 ├── prices.json             # auto-generated price history
 └── .github/
     └── workflows/
