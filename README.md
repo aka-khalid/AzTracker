@@ -4,6 +4,8 @@
 
 AzTracker operates on a hybrid serverless architecture. A **Cloudflare Worker** and **Cloudflare KV** database handle instant, multi-user Telegram ChatOps (UI, adding/removing products, and admin approvals). A scheduled **GitHub Actions** pipeline runs the heavy Python scraper, intelligently batching requests to Amazon's official Creators API to check for price drops in the background.
 
+🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
+
 ---
 
 ## ✨ Features
