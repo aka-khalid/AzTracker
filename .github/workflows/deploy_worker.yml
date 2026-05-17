@@ -23,9 +23,11 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          secrets: |
-            TELEGRAM_TOKEN
-            ALLOWED_USERS
+
+      - name: Upload Worker Secrets
+        run: |
+          echo "${{ secrets.TELEGRAM_TOKEN }}" | npx wrangler secret put TELEGRAM_TOKEN --name aztracker-bot
+          echo "${{ secrets.ALLOWED_USERS }}" | npx wrangler secret put ALLOWED_USERS --name aztracker-bot
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          ALLOWED_USERS: ${{ secrets.ALLOWED_USERS }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
