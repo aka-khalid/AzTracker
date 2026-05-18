@@ -2,8 +2,9 @@
 // Features: Auto-Deleting Text Inputs, Zero-Trace Callbacks, and Inline UI Editing
 
 //const GITHUB_BRANCH = "feature/chatops-interactive-bot";
-//const GITHUB_BRANCH = "main";
-const GITHUB_BRANCH = "feature/randomized-scheduler";
+//const GITHUB_BRANCH = "feature/randomized-scheduler";
+const GITHUB_BRANCH = "main";
+
 
 export default {
   async fetch(request, env, ctx) {
