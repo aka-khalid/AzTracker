@@ -13,6 +13,7 @@
 - 👁️ **Admin God Mode:** Remotely inspect, pause, or force-delete tracked products from any user's registry directly from their management card.
 - 🎯 **Target Price Thresholds:** Users can set a custom "desired maximum price" for any item. The engine intelligently filters out minor price fluctuations and only sends a push notification when the deal actually meets their specific budget.
 - 📄 **Smart UI Pagination:** Seamlessly handles large tracking lists with dynamically generated pages (5 items per page) to bypass Telegram's inline keyboard limitations while keeping the ChatOps interface clean.
+- 🧹 **Zero-Clutter UI (SPA):** Implements a Single-Page Application style interface inside Telegram. The bot automatically sweeps away old menus, executed commands, and ghost inputs, ensuring your chat history stays pristine with only your active control card and deal notifications visible.
 - ☁️ **Millisecond Serverless Database:** Powered by Cloudflare KV. Zero file-locking or concurrency issues, even with hundreds of users.
 - 📱 **Mobile App Support:** Automatically resolves and extracts ASINs from `amzn.eu` short links shared directly from the Amazon mobile app.
 - 🤖 **Auto-Naming:** Product titles are fetched automatically via URL extraction and API validation.
