@@ -24,7 +24,7 @@ AzTracker decouples user tracking registries from the core price database. If Us
 
 ### 📉 Delta-Only Time-Series Logging
 Storing 96 identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts. 
-* Limits array sizes to the last 150 price changes (up to ~3 years of drops).
+* Limits array sizes to the last 150 price changes (up to ~3 years of historical fluctuations).
 * Keeps historical payloads under **4.6 KB**, guaranteeing sub-10ms read times at the edge.
 
 ### 📊 Edge-Rendered Mini App Analytics
