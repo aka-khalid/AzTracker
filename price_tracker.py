@@ -192,10 +192,50 @@ def main():
         if idx < len(batches) - 1:
             time.sleep(3) # Increased throttle to respect Amazon limits
 
-    # 3. Fetch Global Price History from Cloudflare
+        # 3. Fetch Global Price History from Cloudflare
     gp_res = requests.get(f"{cf_base_url}/values/global_prices", headers=cf_headers)
     global_prices = gp_res.json() if gp_res.status_code == 200 else {}
     updates = {}
+
+    # ── MILESTONE 1: DELTA HISTORY LOGGER ──
+    print("📊 Evaluating price deltas for history logs...")
+    history_updates = 0
+    unix_now = int(time.time())
+
+    for asin, (name, current_price) in all_fetched_results.items():
+        current_price = round(current_price, 2)
+        
+        # Safely extract last price
+        last_entry = global_prices.get(asin)
+        last_price = None
+        if isinstance(last_entry, dict):
+            last_price = last_entry.get("price")
+        elif isinstance(last_entry, (int, float)):
+            last_price = last_entry
+
+        # IF brand new OR price changed -> Log a Delta!
+        if last_price is None or current_price != last_price:
+            hist_key = f"history:{asin}"
+            hist_url = f"{cf_base_url}/values/{hist_key}"
+            
+            # Fetch existing history array
+            hist_res = requests.get(hist_url, headers=cf_headers)
+            history_data = hist_res.json() if hist_res.status_code == 200 else []
+            
+            # Append new data point (p = price, t = unix timestamp)
+            history_data.append({"p": current_price, "t": unix_now})
+            
+            # Keep array lean (Max 150 entries per ASIN)
+            history_data = history_data[-150:]
+            
+            # Save back to KV
+            requests.put(hist_url, headers=cf_headers, json=history_data)
+            print(f"    📝 Logged new delta for {asin}: {current_price} EGP")
+            history_updates += 1
+
+    if history_updates == 0:
+        print("    ➖ No price changes detected. History logs untouched.")
+    # ───────────────────────────────────────
 
     # 4. Evaluate prices & route personalized Telegram notifications
     for chat_id, products in users_data.items():
