@@ -234,12 +234,15 @@ def main():
 
             target_price = p.get("target_price")
 
+            # Calculate "Down" text only if there is an actual difference
+            down_text = f" (Down {diff:,.2f} EGP)" if diff > 0 else ""
+            
             # 4. Notification Logic: Check Target first (Highest priority)
             if target_price and price <= target_price:
                 send_telegram(chat_id,
                     f"🎯 <b>TARGET MET: {display_name}</b>\n"
                     f"💰 <b>{price:,.2f} EGP</b>\n"
-                    f"Target was {target_price:,.2f} EGP (Down {diff:,.2f} EGP)\n"
+                    f"Target was {target_price:,.2f} EGP{down_text}\n"
                     f"🕐 {now}\n"
                     f'<a href="{url}">View on Amazon.eg</a>'
                 )
