@@ -44,11 +44,13 @@ export default {
     }
     // ─────────────────────────────────────
 
-    if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+        if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
     try {
       const payload = await request.json();
+      const baseUrl = url.origin; // ⬅️ We capture the worker's domain here
+      
       if (payload.callback_query) {
-        await handleCallback(payload.callback_query, env);
+        await handleCallback(payload.callback_query, env, baseUrl); // ⬅️ Pass it down
       } else if (payload.message && payload.message.text) {
         await handleMessage(payload.message, env);
       }
@@ -219,7 +221,7 @@ async function handleMessage(message, env) {
   });
 }
 
-async function handleCallback(callback, env) {
+async function handleCallback(callback, env, baseUrl) {
   const data = callback.data;
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
@@ -334,7 +336,7 @@ async function handleCallback(callback, env) {
     const parts = data.split("_");
     const targetId = parts[1];
     const pid = parts[2];
-    await renderAdminProductView(env, chatId, messageId, targetId, pid);
+    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
   }
   else if (data.startsWith("admTog_") && isAdmin) {
     const parts = data.split("_");
@@ -347,7 +349,7 @@ async function handleCallback(callback, env) {
       products[idx].paused = !products[idx].paused;
       await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
     }
-    await renderAdminProductView(env, chatId, messageId, targetId, pid);
+    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
   }
   else if (data.startsWith("admDel_") && isAdmin) {
     const parts = data.split("_");
@@ -414,12 +416,12 @@ async function handleCallback(callback, env) {
       delete products[pIndex].alert_sent; // Clean up the ghost flag
       await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
     }
-    await renderProductView(env, chatId, messageId, pid); 
+    await renderProductView(env, chatId, messageId, pid, baseUrl);
   }
   else if (data.startsWith("view_")) {
     const pid = data.replace("view_", "");
     await env.AZTRACKER_DB.delete(`state:${chatId}`); // Clear any hanging target states
-    await renderProductView(env, chatId, messageId, pid);
+    await renderProductView(env, chatId, messageId, pid, baseUrl);
   }
   else if (data.startsWith("pause_") || data.startsWith("resume_")) {
     const action = data.split("_")[0];
@@ -431,7 +433,7 @@ async function handleCallback(callback, env) {
       products[idx].paused = (action === "pause");
       await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
     }
-    await renderProductView(env, chatId, messageId, pid); 
+    await renderProductView(env, chatId, messageId, pid, baseUrl);
   }
   else if (data.startsWith("remove_")) {
     const pid = data.replace("remove_", "");
@@ -441,33 +443,6 @@ async function handleCallback(callback, env) {
     
     await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
       inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
-    });
-  }
-  else if (data.startsWith("stats_")) {
-    const pid = data.replace("stats_", "");
-    const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
-    let lastPrice = "No data logged yet.";
-    let displayName = pid;
-    
-    if (prices[pid]) {
-      if (typeof prices[pid] === 'object') {
-        lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
-        if (prices[pid].last_updated) lastPrice += `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
-        if (prices[pid].name) displayName = prices[pid].name;
-      } else {
-        lastPrice = `${prices[pid].toLocaleString()} EGP`;
-      }
-    }
-    
-    const cleanTitle = displayName.length > 50 ? displayName.substring(0, 47) + "..." : displayName;
-    
-    const text = `📊 <b>Statistics for ASIN:</b> <code>${pid}</code>\n\n` +
-                 `📌 <b>Name:</b> ${cleanTitle}\n` +
-                 `💰 <b>Saved Price:</b> ${lastPrice}\n\n` +
-                 `<i>More advanced history logs will generate over operational iterations.</i>`;
-                 
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [[{ text: "⬅️ Back to Product", callback_data: `view_${pid}` }]]
     });
   }
 }
@@ -506,7 +481,7 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId) {
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
+async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl) {
   const targetDbKey = `user:${targetId}:products`;
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
   const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
@@ -538,13 +513,15 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
                `📡 <b>Status:</b> ${statusStr}\n\n` +
                `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
 
-  const keyboard = {
+    const keyboard = {
     inline_keyboard: [
       [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
+      [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
       [{ text: "🗑️ Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
       [{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}` }]
     ]
   };
+
 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
@@ -690,7 +667,7 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderProductView(env, chatId, messageId, pid) {
+async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
@@ -727,12 +704,13 @@ async function renderProductView(env, chatId, messageId, pid) {
     ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
     : { text: "🎯 Set Target", callback_data: `settarget_${pid}` };
 
-  const keyboard = {
+    const keyboard = {
     inline_keyboard: [
       [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
         targetBtn,
-        { text: "📊 Stats & History", callback_data: `stats_${pid}` }
+        // ── MILESTONE 4: LAUNCH THE WEB APP ──
+        { text: "📊 Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }
       ],
       [
         { text: "🗑️ Delete Product", callback_data: `remove_${pid}` }
