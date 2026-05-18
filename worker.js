@@ -15,25 +15,34 @@ export default {
       return await handleScheduler(request, env);
     }
 
-    // ── MILESTONE 2: HISTORY API ENDPOINT ──
+        // ── MILESTONE 2: HISTORY API ENDPOINT ──
     if (url.pathname.startsWith("/api/history/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
       if (!asin || asin.length < 10) {
         return new Response(JSON.stringify({ error: "Invalid ASIN" }), { status: 400 });
       }
 
-      // Fetch the array we just created in Python
       const historyData = await env.AZTRACKER_DB.get(`history:${asin}`, "json") || [];
       
       return new Response(JSON.stringify(historyData), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*" // Allows our Web App to read it
+          "Access-Control-Allow-Origin": "*"
         }
       });
     }
-    // ───────────────────────────────────────
+
+    // ── MILESTONE 3: WEB APP CHART HTML ──
+    if (url.pathname.startsWith("/chart/") && request.method === "GET") {
+      const asin = url.pathname.split("/").pop();
+      const html = renderChartHTML(asin);
+      return new Response(html, {
+        status: 200,
+        headers: { "Content-Type": "text/html;charset=UTF-8" }
+      });
+    }
+    // ─────────────────────────────────────
 
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
     try {
@@ -931,3 +940,147 @@ async function sendAppMessage(env, chatId, text, replyMarkup = null) {
   }
   return res;
 }
+
+// ── Web App HTML Renderer ───────────────────────────────────────────────────
+
+function renderChartHTML(asin) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Price History - ${asin}</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #chart-container {
+            width: 100%;
+            max-width: 600px;
+            position: relative;
+            margin-top: 20px;
+        }
+        .loading { text-align: center; margin-top: 50px; font-size: 16px; opacity: 0.7; }
+        .header-title { margin-bottom: 5px; text-align: center; font-weight: 600; font-size: 20px; }
+        .header-sub { font-size: 14px; opacity: 0.7; margin-bottom: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="header-title">Price Trend</div>
+    <div class="header-sub">ASIN: ${asin}</div>
+    
+    <div id="chart-container">
+        <div id="loading" class="loading">Fetching database...</div>
+        <canvas id="priceChart" style="display: none;"></canvas>
+    </div>
+
+    <script>
+        // Initialize Telegram Web App SDK
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand(); 
+        tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
+
+        async function loadData() {
+            try {
+                const response = await fetch('/api/history/${asin}');
+                const data = await response.json();
+                
+                document.getElementById('loading').style.display = 'none';
+                
+                if (!data || data.length === 0) {
+                    document.getElementById('chart-container').innerHTML = '<div class="loading">No price history available yet.<br><br>Check back after the next scan!</div>';
+                    return;
+                }
+
+                // MAGIC TRICK: Duplicate the last data point and set its time to "Right Now"
+                // This forces the chart line to extend completely to the right side of the screen
+                const currentUnix = Math.floor(Date.now() / 1000);
+                const lastPoint = data[data.length - 1];
+                if (lastPoint.t < currentUnix - 60) {
+                    data.push({ p: lastPoint.p, t: currentUnix });
+                }
+
+                document.getElementById('priceChart').style.display = 'block';
+
+                const labels = data.map(point => {
+                    const date = new Date(point.t * 1000);
+                    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + 
+                           date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                });
+                
+                const prices = data.map(point => point.p);
+                const ctx = document.getElementById('priceChart').getContext('2d');
+                
+                // Smart Theme Integration (Matches the user's Telegram colors)
+                const gridColor = tg.themeParams.hint_color ? tg.themeParams.hint_color + '40' : '#cccccc40';
+                const textColor = tg.themeParams.text_color || '#000000';
+                const lineColor = tg.themeParams.button_color || '#2481cc';
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Price (EGP)',
+                            data: prices,
+                            borderColor: lineColor,
+                            backgroundColor: lineColor + '20',
+                            borderWidth: 2,
+                            pointBackgroundColor: lineColor,
+                            pointRadius: data.length === 1 ? 4 : 0, // Only show dots if there's just 1 data point
+                            stepped: true, // The flat-line delta visualizer
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index',
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.parsed.y.toLocaleString() + ' EGP';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                ticks: { color: textColor },
+                                grid: { color: gridColor }
+                            },
+                            x: {
+                                ticks: { color: textColor, maxRotation: 45, minRotation: 45, maxTicksLimit: 6 },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+            } catch (err) {
+                document.getElementById('loading').innerText = 'Failed to load chart data.';
+            }
+        }
+        
+        loadData();
+    </script>
+</body>
+</html>
+  `;
+}
+
