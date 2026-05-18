@@ -224,7 +224,7 @@ def main():
 
             # 2. Always update the price in the master 'updates' list 
             #    (This ensures database stays current)
-            updates[product_id] = {"price": price, "name": name}
+            updates[product_id] = {"price": price, "name": name, "last_updated": now}
 
             # 3. Calculate drop metrics (for the message)
             # Use 0 if there was no last_price to avoid math errors
