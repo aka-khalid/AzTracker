@@ -121,7 +121,7 @@ async function handleMessage(message, env) {
     const successText = `✅ <b>Successfully Added!</b>\n\n📦 <b>Name:</b> ${title}\n🆔 <b>ASIN:</b> <code>${pid}</code>\n\n<i>The tracker will fetch its live price on the next automated pipeline run.</i>`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
-        [{ text: "📦 View My Products", callback_data: "list_products" }],
+        [{ text: "📦 View My Products", callback_data: "list_products_0" }],
         [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
       ]
     });
@@ -189,8 +189,12 @@ async function handleCallback(callback, env) {
   else if (data === "main_menu") {
     await renderMainMenu(env, chatId, messageId);
   }
-  else if (data === "list_products") {
-    await renderProductList(env, chatId, messageId);
+  else if (data.startsWith("list_products_")) {
+    const page = parseInt(data.replace("list_products_", "")) || 0;
+    await renderProductList(env, chatId, messageId, page);
+  }
+  else if (data === "ignore") {
+    return;
   }
   else if (data === "admin_panel" && isAdmin) {
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
@@ -328,7 +332,7 @@ async function handleCallback(callback, env) {
     await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(filteredProducts));
     
     await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
-      inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products" }]]
+      inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
     });
   }
   else if (data.startsWith("stats_")) {
@@ -483,7 +487,7 @@ async function renderMainMenu(env, chatId, messageId = null) {
   // Standard user keyboard menu configuration
   const keyboard = {
     inline_keyboard: [
-      [{ text: "📦 My Products", callback_data: "list_products" }],
+      [{ text: "📦 My Products", callback_data: "list_products_0" }],
       [{ text: "➕ How to Add Products", callback_data: "help_add" }]
     ]
   };
@@ -501,7 +505,7 @@ async function renderMainMenu(env, chatId, messageId = null) {
   }
 }
 
-async function renderProductList(env, chatId, messageId) {
+async function renderProductList(env, chatId, messageId, page = 0) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
@@ -513,8 +517,19 @@ async function renderProductList(env, chatId, messageId) {
     return;
   }
 
+  // --- Pagination Logic ---
+  const ITEMS_PER_PAGE = 5;
+  const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
+  
+  // Safety check: if they delete an item and the current page becomes empty, push them back a page
+  if (page >= totalPages) page = Math.max(0, totalPages - 1);
+
+  const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+
   const keyboard = { inline_keyboard: [] };
-  products.forEach((p) => {
+  
+  // Render only the 5 products for this specific page
+  pagedProducts.forEach((p) => {
     const pid = getAsinFromUrl(p.url);
     let name = pid;
     if (prices[pid] && typeof prices[pid] === 'object' && prices[pid].name) {
@@ -527,9 +542,26 @@ async function renderProductList(env, chatId, messageId) {
     const statusIcon = p.paused ? "⏸️" : "✅";
     keyboard.inline_keyboard.push([{ text: `${statusIcon} ${name}`, callback_data: `view_${pid}` }]);
   });
+
+  // --- Navigation Controls ---
+  if (totalPages > 1) {
+    let navRow = [];
+    if (page > 0) {
+      navRow.push({ text: "⬅️ Prev", callback_data: `list_products_${page - 1}` });
+    }
+    
+    // Middle visual indicator (does nothing when clicked)
+    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
+    
+    if (page < totalPages - 1) {
+      navRow.push({ text: "Next ➡️", callback_data: `list_products_${page + 1}` });
+    }
+    keyboard.inline_keyboard.push(navRow);
+  }
+
   keyboard.inline_keyboard.push([{ text: "🏠 Main Menu", callback_data: "main_menu" }]);
 
-  const text = `📦 <b>My Tracked Products</b>\n\n<i>Select an item below to modify its tracking parameters:</i>`;
+  const text = `📦 <b>My Tracked Products</b> (Page ${page + 1} of ${totalPages})\n\n<i>Select an item below to modify its tracking parameters:</i>`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
@@ -564,7 +596,7 @@ async function renderProductView(env, chatId, messageId, pid) {
         { text: "🗑️ Delete Product", callback_data: `remove_${pid}` }
       ],
       [
-        { text: "⬅️ Back to Products", callback_data: "list_products" },
+        { text: "⬅️ Back to Products", callback_data: "list_products_0" },
         { text: "🏠 Main Menu", callback_data: "main_menu" }
       ]
     ]
