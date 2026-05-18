@@ -215,6 +215,7 @@ def main():
             price = round(price, 2)
             display_name = truncate_name(name)
 
+            # 1. Calculate the Last Price
             last_entry = global_prices.get(product_id)
             last_price = None
             if isinstance(last_entry, dict):
@@ -222,27 +223,32 @@ def main():
             elif isinstance(last_entry, (int, float)):
                 last_price = last_entry
 
-            if last_price is None or price >= last_price:
-                updates[product_id] = {"price": price, "name": name}
-                continue
+            # 2. Always update the price in the master 'updates' list 
+            #    (This ensures database stays current)
+            updates[product_id] = {"price": price, "name": name}
 
-            # IT'S A PRICE DROP! Notify THIS specific user
-            diff = last_price - price
-            pct  = (diff / last_price) * 100
-            
+            # 3. Calculate drop metrics (for the message)
+            # Use 0 if there was no last_price to avoid math errors
+            diff = (last_price - price) if last_price is not None else 0
+            pct  = (diff / last_price * 100) if last_price and last_price > 0 else 0
+
             target_price = p.get("target_price")
 
-            if target_price:
-                if price <= target_price:
-                    send_telegram(chat_id,
-                        f"🎯 <b>TARGET MET: {display_name}</b>\n"
-                        f"💰 <b>{price:,.2f} EGP</b>\n"
-                        f"Target was {target_price:,.2f} EGP (Down {diff:,.2f} EGP)\n"
-                        f"🕐 {now}\n"
-                        f'<a href="{url}">View on Amazon.eg</a>'
-                    )
-                    time.sleep(0.5)
-            else:
+            # 4. Notification Logic: Check Target first (Highest priority)
+            if target_price and price <= target_price:
+                send_telegram(chat_id,
+                    f"🎯 <b>TARGET MET: {display_name}</b>\n"
+                    f"💰 <b>{price:,.2f} EGP</b>\n"
+                    f"Target was {target_price:,.2f} EGP (Down {diff:,.2f} EGP)\n"
+                    f"🕐 {now}\n"
+                    f'<a href="{url}">View on Amazon.eg</a>'
+                )
+                time.sleep(0.5)
+
+            # 5. Notification Logic: Check Price Drop (Lower priority)
+            # Only trigger if NOT the first time we see the price (last_price is not None)
+            # and if the price is strictly lower than before
+            elif last_price is not None and price < last_price:
                 send_telegram(chat_id,
                     f"📉 <b>{display_name}</b>\n"
                     f"💰 <b>{price:,.2f} EGP</b>\n"
