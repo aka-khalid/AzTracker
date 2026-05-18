@@ -151,7 +151,7 @@ async function handleMessage(message, env) {
     await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
 
     const title = extractedName ? extractedName : pid;
-    const cleanTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+    const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
     
     const successText = `✅ <b>Successfully Added!</b>\n\n📌 <b>${cleanTitle}</b>\n🆔 ASIN: <code>${pid}</code>\n\n<i>The tracker will fetch its live price on the next automated pipeline run.</i>`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
@@ -481,7 +481,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
     }
   }
 
-  const cleanTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+  const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>User's Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n` +
@@ -664,7 +664,7 @@ async function renderProductView(env, chatId, messageId, pid) {
     }
   }
 
-  const cleanTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+  const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>Target Price:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   const text = `📦 <b>Product Management</b>\n\n` +
