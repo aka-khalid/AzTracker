@@ -38,7 +38,7 @@ async function handleMessage(message, env) {
   const isApproved = isAdmin || approvedUsers.includes(chatId);
 
   if (!isApproved) {
-    await sendTelegram(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
+    await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
     return;
   }
   // ──────────────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ async function handleMessage(message, env) {
     
     if (isNaN(num) || num <= 0) {
       await deleteTelegramMessage(env, chatId, messageId);
-      await sendTelegram(env, chatId, "⚠️ <b>Invalid amount.</b> Please enter a valid number.", {
+      await sendAppMessage(env, chatId, "⚠️ <b>Invalid amount.</b> Please enter a valid number.", {
         inline_keyboard: [[{ text: "⬅️ Back", callback_data: `view_${pid}` }]]
       });
       return;
@@ -70,7 +70,7 @@ async function handleMessage(message, env) {
     await env.AZTRACKER_DB.delete(stateKey);
     await deleteTelegramMessage(env, chatId, messageId);
     
-    await sendTelegram(env, chatId, `🎯 <b>Target Price Set!</b>\n\nYou will only be notified when ASIN <code>${pid}</code> drops to or below <b>${num.toLocaleString()} EGP</b>.`, {
+    await sendAppMessage(env, chatId, `🎯 <b>Target Price Set!</b>\n\nYou will only be notified when ASIN <code>${pid}</code> drops to or below <b>${num.toLocaleString()} EGP</b>.`, {
       inline_keyboard: [[{ text: "⬅️ Back to Product", callback_data: `view_${pid}` }]]
     });
     return;
@@ -101,7 +101,7 @@ async function handleMessage(message, env) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
       if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
       if (isTargetAdmin) {
-        await sendTelegram(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
+        await sendAppMessage(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
         return;
       }
     }
@@ -113,7 +113,7 @@ async function handleMessage(message, env) {
     if (buttons.length > 0) {
       const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
       const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
-      await sendTelegram(env, chatId, statusMsg, { inline_keyboard: buttons });
+      await sendAppMessage(env, chatId, statusMsg, { inline_keyboard: buttons });
     }
     return;
   }
@@ -123,7 +123,7 @@ async function handleMessage(message, env) {
     const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
     const inputUrl = urlMatch ? urlMatch[1] : text;
 
-    const sentMsg = await sendTelegram(env, chatId, `⏳ <b>Processing Amazon link...</b>`);
+    const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Processing Amazon link...</b>`);
     const tempMessageId = sentMsg.result.message_id;
 
     const expandedUrl = await expandAmazonUrl(inputUrl);
@@ -162,12 +162,14 @@ async function handleMessage(message, env) {
   }
 
   if (text === "/start" || text === "/manage") {
+    await deleteTelegramMessage(env, chatId, messageId);
     await renderMainMenu(env, chatId);
     return;
   }
 
+
   await deleteTelegramMessage(env, chatId, messageId);
-  await sendTelegram(env, chatId, "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.", {
+  await sendAppMessage(env, chatId, "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.", {
     inline_keyboard: [[{ text: "🏠 Open Main Menu", callback_data: "main_menu" }]]
   });
 }
@@ -555,7 +557,7 @@ async function renderMainMenu(env, chatId, messageId = null) {
   if (messageId) {
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
   } else {
-    await sendTelegram(env, chatId, text, keyboard);
+    await sendAppMessage(env, chatId, text, keyboard);
   }
 }
 
@@ -745,6 +747,8 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
+  // Track this edited message as the active UI
+  await env.AZTRACKER_DB.put(`ui:${chatId}`, messageId.toString());
 }
 
 function extractNameFromUrl(url) {
@@ -758,7 +762,16 @@ function extractNameFromUrl(url) {
   return null;
 }
 
+async function sendAppMessage(env, chatId, text, replyMarkup = null) {
+  const key = `ui:${chatId}`;
+  const oldMsgId = await env.AZTRACKER_DB.get(key);
+  if (oldMsgId) {
+    await deleteTelegramMessage(env, chatId, oldMsgId);
+  }
+  const res = await sendTelegram(env, chatId, text, replyMarkup);
+  if (res && res.result) {
+    await env.AZTRACKER_DB.put(key, res.result.message_id.toString());
+  }
+  return res;
+}
 
-
-
-      
