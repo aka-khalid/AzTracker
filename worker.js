@@ -64,6 +64,7 @@ async function handleMessage(message, env) {
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       products[pIndex].target_price = num;
+      products[pIndex].alert_sent = false; // Force a reset so the new target is fresh
       await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
     }
     
@@ -367,6 +368,7 @@ async function handleCallback(callback, env) {
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       delete products[pIndex].target_price;
+      delete products[pIndex].alert_sent; // Clean up the ghost flag
       await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
     }
     await renderProductView(env, chatId, messageId, pid); 
