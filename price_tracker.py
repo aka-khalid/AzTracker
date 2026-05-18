@@ -102,7 +102,7 @@ def fetch_batch(asin_list, retries=3):
 
                 price = None
                 try:
-                    price = item.offers.listings[0].price.money.amount
+                    price = item.offers_v2.listings[0].price.amount
                 except:
                     pass
 
