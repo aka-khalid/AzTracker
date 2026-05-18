@@ -81,14 +81,12 @@ In your GitHub Repo, go to **Settings → Secrets and variables → Actions** an
 | `CF_API_TOKEN` | Custom API Token. Requires: `Workers Scripts: Edit`, `Workers KV Storage: Edit`, `Account Settings: Read`, and `User Details: Read` to bypass Code 10000 errors. |
 
 ### Step 5 — Set up the Scheduler
-Use [cron-job.org](https://cron-job.org) to trigger the workflow.
-1. Generate a GitHub Fine-Grained Token with **Actions: Read & Write** permissions.
-2. Create a POST request to: `https://api.github.com/repos/YOUR_USERNAME/AzTracker/actions/workflows/price_tracker.yml/dispatches`
-3. Add Headers:
-   * `Authorization: Bearer YOUR_GITHUB_TOKEN`
-   * `Accept: application/vnd.github+json`
-4. Add Body: `{"ref":"main"}`
-5. **Schedule:** Every 30 to 60 minutes is highly recommended to respect Amazon API rate limits and GitHub Actions free-tier quotas.
+Use [cron-job.org](https://cron-job.org) to ping your Worker once per minute.
+1. Add a new secret in GitHub Actions named `SCHEDULER_SECRET` and give it a long random value.
+2. Let the deploy workflow push that secret into Cloudflare along with the existing Worker secrets.
+3. Create a GET request to: `https://YOUR_WORKER.workers.dev/scheduler?key=YOUR_SCHEDULER_SECRET`
+4. **Schedule:** Every 1 minute.
+5. The Worker will randomly choose 4 minutes inside each hour and only trigger GitHub when the current minute matches one of them.
 
 ---
 
