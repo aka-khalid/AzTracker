@@ -203,15 +203,28 @@ def main():
             # IT'S A PRICE DROP! Notify THIS specific user
             diff = last_price - price
             pct  = (diff / last_price) * 100
+            
+            target_price = p.get("target_price")
 
-            send_telegram(chat_id,
-                f"📉 <b>{display_name}</b>\n"
-                f"💰 <b>{price:,.2f} EGP</b>\n"
-                f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
-                f"🕐 {now}\n"
-                f'<a href="{url}">View on Amazon.eg</a>'
-            )
-            time.sleep(0.5)
+            if target_price:
+                if price <= target_price:
+                    send_telegram(chat_id,
+                        f"🎯 <b>TARGET MET: {display_name}</b>\n"
+                        f"💰 <b>{price:,.2f} EGP</b>\n"
+                        f"Target was {target_price:,.2f} EGP (Down {diff:,.2f} EGP)\n"
+                        f"🕐 {now}\n"
+                        f'<a href="{url}">View on Amazon.eg</a>'
+                    )
+                    time.sleep(0.5)
+            else:
+                send_telegram(chat_id,
+                    f"📉 <b>{display_name}</b>\n"
+                    f"💰 <b>{price:,.2f} EGP</b>\n"
+                    f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
+                    f"🕐 {now}\n"
+                    f'<a href="{url}">View on Amazon.eg</a>'
+                )
+                time.sleep(0.5)
 
     # 5. Push updated master price list back to Cloudflare
     global_prices.update(updates)
