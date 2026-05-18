@@ -8,17 +8,19 @@ Optimized for batch requests (up to 10 products per API call) to prevent rate li
 import os
 import time
 import requests
+import traceback
 from datetime import datetime
 import pytz
 from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
-TELEGRAM_TOKEN     = os.environ["TELEGRAM_TOKEN"]
-AMAZON_ACCESS_KEY  = os.environ["AMAZON_ACCESS_KEY"]
-AMAZON_SECRET_KEY  = os.environ["AMAZON_SECRET_KEY"]
-AMAZON_PARTNER_TAG = os.environ["AMAZON_PARTNER_TAG"]
-AMAZON_API_VERSION = os.environ["AMAZON_API_VERSION"]
+TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_TOKEN", "")
+ALLOWED_USERS      = os.environ.get("ALLOWED_USERS", "")
+AMAZON_ACCESS_KEY  = os.environ.get("AMAZON_ACCESS_KEY", "")
+AMAZON_SECRET_KEY  = os.environ.get("AMAZON_SECRET_KEY", "")
+AMAZON_PARTNER_TAG = os.environ.get("AMAZON_PARTNER_TAG", "")
+AMAZON_API_VERSION = os.environ.get("AMAZON_API_VERSION", "")
 # ─────────────────────────────────────────────────────────────────────────────
 
 MAX_NAME_LEN = 60
@@ -44,6 +46,34 @@ def get_product_id(url):
 
 def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
+
+
+# ── Telegram ──────────────────────────────────────────────────────────────────
+
+def send_telegram(chat_id, text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Telegram error: {e}")
+
+def notify_admins_of_error(error_message):
+    """Sends a fatal error alert to all Root Admins."""
+    if not ALLOWED_USERS:
+        return
+    
+    admin_ids = [uid.strip() for uid in ALLOWED_USERS.split(",") if uid.strip()]
+    for admin_id in admin_ids:
+        # Truncate error message if it exceeds Telegram's 4096 char limit
+        safe_msg = error_message[:4000]
+        alert_text = f"🚨 <b>AzTracker Engine Crash</b>\n\nThe background workflow encountered a fatal error:\n\n<pre>{safe_msg}</pre>"
+        send_telegram(admin_id, alert_text)
 
 
 # ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
@@ -88,23 +118,6 @@ def fetch_batch(asin_list, retries=3):
     return batch_results
 
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
-
-def send_telegram(chat_id, text):
-    token = os.environ.get("TELEGRAM_TOKEN")
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print(f"Telegram error: {e}")
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -113,7 +126,9 @@ def main():
     CF_API_TOKEN = os.environ.get("CF_API_TOKEN")
     
     if not all([CF_ACCOUNT_ID, CF_NAMESPACE_ID, CF_API_TOKEN]):
-        print("❌ Missing Cloudflare API credentials. Cannot sync database.")
+        err_msg = "❌ Missing Cloudflare API credentials. Cannot sync database."
+        print(err_msg)
+        notify_admins_of_error(err_msg)
         return
 
     cf_headers = {"Authorization": f"Bearer {CF_API_TOKEN}", "Content-Type": "application/json"}
@@ -126,7 +141,9 @@ def main():
     print("🔍 Fetching multi-tenant data from Cloudflare KV...")
     keys_res = requests.get(f"{cf_base_url}/keys?prefix=user:", headers=cf_headers)
     if keys_res.status_code != 200:
-        print("❌ Failed to connect to KV.")
+        err_msg = f"❌ Failed to connect to KV. HTTP {keys_res.status_code}: {keys_res.text}"
+        print(err_msg)
+        notify_admins_of_error(err_msg)
         return
         
     user_keys = keys_res.json().get("result", [])
@@ -232,4 +249,11 @@ def main():
     print("\n✅ Global database synced to Cloudflare KV.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Catch ANY unhandled exception and send the traceback to the Admin
+        error_trace = traceback.format_exc()
+        print("FATAL ERROR:")
+        print(error_trace)
+        notify_admins_of_error(str(e) + "\n\n" + error_trace)
