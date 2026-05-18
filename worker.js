@@ -154,7 +154,11 @@ async function handleMessage(message, env) {
     const title = extractedName ? extractedName : pid;
     const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
     
-    const successText = `✅ <b>Successfully Added!</b>\n\n📌 <b>${cleanTitle}</b>\n🆔 ASIN: <code>${pid}</code>\n\n<i>The tracker will fetch its live price on the next automated pipeline run.</i>`;
+    const successText = `✅ <b>Product Registered!</b>\n\n` +
+                    `📌 <b>${cleanTitle}</b>\n` +
+                    `🆔 ASIN: <code>${pid}</code>\n\n` +
+                    `<i>The tracker is now aware of this item. It will pull the live price during the next automated check.</i>\n\n` +
+                    `🕐 <b>Status:</b> ⏳ Pending initial scan...`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
         [{ text: "📦 View My Products", callback_data: "list_products_0" }],
