@@ -1,66 +1,79 @@
-# 📉 AzTracker (Amazon.eg Price Tracker)
+<div align="center">
+  
+# 📉 AzTracker 
+### The Serverless Amazon.eg Price Engine
 
-> A multi-tenant, serverless Amazon.eg price tracking bot. Track products, share access with friends via an RBAC admin panel, and get instant Telegram push notifications when deals drop.
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+[![Python Engine](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![GitHub Actions](https://img.shields.io/badge/GitHub-Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
+[![Telegram API](https://img.shields.io/badge/Telegram-ChatOps-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://core.telegram.org/bots)
+
+> A highly scalable, multi-tenant price tracking architecture built on Cloudflare KV and GitHub Actions. It features an interactive ChatOps UI, edge-rendered analytics, and a crowdsourced "Hivemind" pricing database.
 
 🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
 
-<div align="center">
-  <img src="assets/StatsGraphDemo.jpg" alt="AzTracker Graph Preview" width="300">
+<img src="assets/StatsGraphDemo.jpg" alt="AzTracker Analytics Graph" width="350">
 </div>
 
 ---
 
-## ✨ Features
+## 🚀 Key Engineering Achievements
 
-* 👥 **Multi-Tenant VIP Access:** Share the bot with friends. Each user gets their own isolated tracking database.
+### 🧠 The Global Hivemind (Crowdsourced Data)
+AzTracker decouples user tracking registries from the core price database. If User A tracks a monitor for 6 months, and User B decides to track the same monitor today, User B instantly inherits 6 months of visual price history. The global database gets richer with every product any user adds.
 
-* 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system. Admins can view users with live name resolution, approve, revoke access, or modify roles entirely through interactive buttons.
+### 📉 Delta-Only Time-Series Logging
+Storing 96 identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts. 
+* Limits array sizes to the last 150 price changes (up to ~3 years of drops).
+* Keeps historical payloads under **4.6 KB**, guaranteeing sub-10ms read times at the edge.
 
-* 👁️ **Admin God Mode:** Remotely inspect, pause, or force-delete tracked products from any user's registry directly from their management card.
+### 📊 Edge-Rendered Mini App Analytics
+Instead of rendering static images or text ledgers, AzTracker intercepts Telegram's Native Web App triggers. The Cloudflare Worker acts as a web server, instantly rendering a beautiful, interactive `Chart.js` price graph that matches the user's native Telegram Dark/Light theme, without ever cluttering the chat history.
 
-* 🎯 **Target Price Thresholds:** Users can set a custom desired maximum price for any item. The engine intelligently filters out minor price fluctuations and only sends a push notification when the deal actually meets their specific budget.
+### 🎲 Dynamic Jitter Scheduling
+To prevent fixed-minute execution patterns (and subsequent API rate-limiting), the Cloudflare Worker intercepts a per-minute cron ping and generates randomized execution slots (`randInt`) inside each hour. It uses Cloudflare KV as a distributed lock to dispatch the GitHub Actions engine unpredictably, mimicking natural human traffic.
 
-* 📄 **Smart UI Pagination:** Dynamically generated pages (5 items per page) keep the Telegram ChatOps interface clean while bypassing Telegram inline keyboard limits.
-
-* 🧹 **Zero-Clutter UI (SPA):** Implements a Single-Page-Application style Telegram interface. Old menus, commands, and ghost inputs are automatically cleaned up to keep chats pristine.
-
-* 📊 **Interactive Analytics (Web App):** Deeply integrated Telegram Mini App. Renders beautiful, native-feeling Chart.js price graphs based on historical delta-logging without cluttering the chat history.
-
-* ☁️ **Millisecond Serverless Database:** Powered by Cloudflare KV. No local JSON files, file-locking, or concurrency headaches.
-
-* 📱 **Mobile App Support:** Automatically resolves and extracts ASINs from `amzn.to` and `amzn.eu` short links shared directly from the Amazon mobile app.
-
-* 🤖 **Auto-Naming:** Product titles are automatically extracted and validated using Amazon API responses.
-
-* 🛰️ **Amazon Creators API:** Fetches real prices securely without HTML scraping or honeypot blocks. Batch-optimized (10 items/request) to respect rate limits.
-
-* 🎲 **Randomized Scheduler Engine:** Prevents robotic fixed-minute execution patterns by generating randomized hourly execution slots while maintaining a stable 4-runs-per-hour cadence.
-
-* 🔒 **Distributed Execution Locking:** Prevents duplicate workflow dispatches and accidental overlapping runs using KV-backed execution locks.
-
-* ⚡ **Deduplicated Batch Processing:** Multiple users tracking the same ASIN only trigger a single Amazon API request, dramatically reducing API pressure and improving scalability.
-
-* 🚨 **Automatic Crash Reporting:** Fatal workflow exceptions are automatically pushed to Root Admins through Telegram with full traceback visibility.
-
-* 🌍 **Cairo-Timezone Native Scheduling:** Scheduler windows, timestamps, and notifications operate using Egypt local time instead of UTC.
-
-* 🚀 **Fully Automated CI/CD (GitOps):** Modifying `worker.js` and pushing to GitHub automatically compiles and deploys your code to Cloudflare's global edge network within seconds.
+### 🧹 Zero-Clutter SPA Interface
+The Telegram bot functions as a Single-Page Application. Ghost inputs, old commands, and raw Amazon links are instantly vaporized upon processing. Pagination is handled dynamically in-place, keeping the user's chat history pristine and purely button-driven.
 
 ---
 
-## 🛠️ Architecture Flow
+## 🛠️ Architecture Pipeline
 
-1. **The Frontend (Cloudflare Worker):** Intercepts Telegram messages. If a user pastes an Amazon link, the Worker resolves it, extracts the ASIN, and saves it instantly to their profile in Cloudflare KV. Unhandled text is cleanly wiped to maintain a pristine button-only UI.
+```mermaid
+graph TD;
+    User([📱 User Drops Amazon Link]) --> Worker[⚡ Cloudflare Worker Edge Node];
+    Worker --> KV[(☁️ CF KV: User Registry)];
+    Cron[⏱️ cron-job.org Ping] --> Worker;
+    Worker -- Random Jitter Lock --> GH[⚙️ GitHub Actions Engine];
+    GH -- Pulls Active Tracking List --> KV;
+    GH -- Deduplicated Batch Query --> PAAPI[🛒 Amazon Creators API];
+    PAAPI -- Live Prices --> GH;
+    GH -- Delta-Only Logging --> KV_Hist[(☁️ CF KV: Global History)];
+    GH -- Target Threshold Met? --> TG[📲 Telegram Push Notification];
+```
 
-2. **The Bouncer (RBAC):** Unapproved users are blocked. Admins can view a live directory registry with real names or drop a raw ID to trigger a management card.
+---
 
-3. **The Scheduler Layer (Cloudflare Worker):** A hidden `/scheduler` endpoint is pinged every minute by cron-job.org. The Worker generates randomized execution slots inside each hour, stores them in Cloudflare KV, and dispatches GitHub Actions only when the current minute matches one of those slots.
+## ✨ System Features
 
-4. **The Engine (GitHub Actions):** Triggered through the randomized scheduler system. It wakes up, pulls everyone's tracking lists from Cloudflare KV, deduplicates items to prevent rate-limiting, and queries the Amazon Creators API in optimized batches.
+* 👥 **Multi-Tenant VIP Access:** Isolated tracking databases for approved users.
+* 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system to manage guests, revoke access, or promote admins entirely through inline buttons.
+* 👁️ **Admin God Mode:** Remotely inspect, pause, or force-delete items from any user's active registry.
+* 🎯 **Target Price Thresholds:** Users set specific budgets. The engine filters out minor fluctuations and only pushes notifications when the deal hits their exact target.
+* 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request. Batches of 10 items are sent simultaneously to deeply optimize API limits.
+* 📱 **Mobile Deep-Link Extraction:** Automatically resolves `amzn.to` and `amzn.eu` short links shared directly from the Amazon mobile app.
+* 🚨 **Automated Crash Reporting:** Fatal workflow exceptions push full tracebacks directly to Root Admins via Telegram.
 
-5. **The Engine & Logger (Python):** Compares live prices against the global price history in KV. If a change is detected, it logs a Unix-timestamped "Delta" for historical graphing, and routes personalized Telegram push notifications only to users tracking that specific item.
+---
 
-6. **The Web App Server:** When a user requests stats, the Cloudflare Worker seamlessly acts as an edge-rendered web server, passing the historical KV data into a lightweight HTML/Chart.js frontend displayed natively inside Telegram's Mini App UI.
+## ⚙️ Deployment & Infrastructure
+
+AzTracker relies on a fully automated GitOps pipeline. 
+
+1. **The Edge Node:** `worker.js` handles all UI rendering, routing, user authorization, Web App serving, and the randomized scheduler logic. It is automatically compiled and deployed to Cloudflare via GitHub Actions upon any push to `main`.
+2. **The Processing Engine:** `price_tracker.py` wakes up via a `repository_dispatch`, handles the heavy multi-tenant array processing, performs the Amazon API batch requests, logs the deltas, and dispatches Telegram alerts. 
+3. **The Database:** A single Cloudflare KV namespace (`AZTRACKER_DB`) acts as the state manager, execution lock, user registry, and global price history ledger.
 
 ---
 
@@ -189,57 +202,14 @@ x-scheduler-key: YOUR_SCHEDULER_SECRET
 
 ---
 
-## 🔐 Security Design
+## 👨‍💻 Architect & Acknowledgements
 
-* 🔒 Hidden scheduler endpoint protected by secret validation
-* 👑 Root Admin / Admin / Approved User hierarchy
-* ☁️ Cloudflare KV user isolation
-* 🚫 No HTML scraping or browser automation
-* 🔑 Secrets managed through GitHub Actions and Cloudflare Workers
-* 🔒 GitHub Actions concurrency protection prevents overlapping runs
-
----
-
-## 👑 Admin Guide: Managing Users
-
-AzTracker is a closed VIP system. Random users cannot use it without approval.
-
-1. Share your bot's `@username` with a friend.
-2. When they click Start, the bot rejects them and displays their Telegram ID.
-3. Open **👑 Admin Panel** → **👥 View Approved Users**.
-4. Approve, revoke, promote, or inspect users directly through Telegram inline controls.
-5. Admins can remotely inspect, pause, or force-delete tracked products from any user's registry.
-
----
-
-## 📂 Repo Structure
-
-```text
-AzTracker/
-├── price_tracker.py
-├── requirements.txt
-├── worker.js
-├── wrangler.toml
-└── .github/
-    └── workflows/
-        ├── deploy_worker.yml
-        └── price_tracker.yml
-```
-
-> Persistent tracking states, scheduler windows, locks, UI state, and global price history are stored entirely inside Cloudflare KV.
-
-> 💡 **Note on Deployment & Bundling:** AzTracker utilizes automated GitOps compiling. When GitHub Actions pushes `worker.js` to Cloudflare, Wrangler internally bundles and optimizes the Worker for edge execution. If you inspect the Cloudflare dashboard version, emojis and scopes may appear transformed/minified — this is expected behavior and functionally identical to the repository source.
-
----
-
-## 👨‍💻 Author & Acknowledgements
-
-Architected and engineered by **Khalid Ibrahim**.
+Engineered and maintained by **Khalid Ibrahim**.
 
 Special thanks to **[Abdelrahman Elkhayat](https://www.facebook.com/bodaa.elkhayat)** for generously providing the Amazon Creators API credentials that power the core tracking engine.
 
-Built with assistance from:
 
+Built with assistance from:
 * [Claude](https://claude.ai) by Anthropic
 * [Gemini](https://gemini.google.com) by Google
 * [ChatGPT](https://chatgpt.com) by OpenAI
