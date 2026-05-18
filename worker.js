@@ -748,14 +748,23 @@ async function handleScheduler(request, env) {
   }
 
   if (slots.includes(currentMinute)) {
-    await env.AZTRACKER_DB.put(lockKey, "1", { expirationTtl: 7200 });
-    try {
-      await triggerWorkflow(env);
-      return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
-    } catch (e) {
-      return new Response(`Trigger failed: ${e.message}`, { status: 500 });
-    }
+  try {
+    await triggerWorkflow(env);
+
+    await env.AZTRACKER_DB.put(lockKey, "1", {
+      expirationTtl: 7200
+    });
+
+    return new Response(`Workflow triggered at minute ${currentMinute}`, {
+      status: 200
+    });
+
+  } catch (e) {
+    return new Response(`Trigger failed: ${e.message}`, {
+      status: 500
+    });
   }
+}
 
   return new Response(`No run this minute (${currentMinute})`, { status: 200 });
 }
