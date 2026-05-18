@@ -39,6 +39,5 @@ jobs:
           CF_NAMESPACE_ID:    ${{ secrets.CF_NAMESPACE_ID }}
           CF_API_TOKEN:       ${{ secrets.CF_API_TOKEN }}
         run: python price_tracker.py
-        run: python price_tracker.py
         
       # Notice: The "Save prices to repo" git commit block is completely gone!
