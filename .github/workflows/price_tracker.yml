@@ -3,6 +3,10 @@ name: Amazon Price Tracker
 on:
   workflow_dispatch:
 
+concurrency:
+  group: aztracker-price-check
+  cancel-in-progress: false
+  
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
