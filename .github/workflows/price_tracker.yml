@@ -29,6 +29,7 @@ jobs:
       - name: Run price tracker
         env:
           TELEGRAM_TOKEN:     ${{ secrets.TELEGRAM_TOKEN }}
+          ALLOWED_USERS:      ${{ secrets.ALLOWED_USERS }}
           AMAZON_ACCESS_KEY:  ${{ secrets.AMAZON_ACCESS_KEY }}
           AMAZON_SECRET_KEY:  ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
@@ -37,6 +38,7 @@ jobs:
           CF_ACCOUNT_ID:      ${{ secrets.CF_ACCOUNT_ID }}
           CF_NAMESPACE_ID:    ${{ secrets.CF_NAMESPACE_ID }}
           CF_API_TOKEN:       ${{ secrets.CF_API_TOKEN }}
+        run: python price_tracker.py
         run: python price_tracker.py
         
       # Notice: The "Save prices to repo" git commit block is completely gone!
