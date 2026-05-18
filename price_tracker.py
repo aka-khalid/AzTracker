@@ -78,7 +78,7 @@ def notify_admins_of_error(error_message):
 
 # ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
 
-def fetch_batch(asin_list, retries=5):
+def fetch_batch(asin_list, retries=3):
     """Fetches a batch of up to 10 ASINs in a single API call.
     Returns a dict mapping {asin: (name, price)}."""
     batch_results = {}
@@ -113,7 +113,7 @@ def fetch_batch(asin_list, retries=5):
 
         except Exception as e:
             print(f"  [Attempt {attempt+1}] API error for batch: {e}")
-            # Dynamic backoff: 5s, 10s, 15s, 20s, 25s
+            # Dynamic backoff: 5s, 10s, 15s
             wait_time = 5 * (attempt + 1)
             print(f"  ⏳ Cooling down for {wait_time} seconds before retrying...")
             time.sleep(wait_time)
