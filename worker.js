@@ -15,6 +15,26 @@ export default {
       return await handleScheduler(request, env);
     }
 
+    // ── MILESTONE 2: HISTORY API ENDPOINT ──
+    if (url.pathname.startsWith("/api/history/") && request.method === "GET") {
+      const asin = url.pathname.split("/").pop();
+      if (!asin || asin.length < 10) {
+        return new Response(JSON.stringify({ error: "Invalid ASIN" }), { status: 400 });
+      }
+
+      // Fetch the array we just created in Python
+      const historyData = await env.AZTRACKER_DB.get(`history:${asin}`, "json") || [];
+      
+      return new Response(JSON.stringify(historyData), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*" // Allows our Web App to read it
+        }
+      });
+    }
+    // ───────────────────────────────────────
+
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
     try {
       const payload = await request.json();
