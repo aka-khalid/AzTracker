@@ -36,7 +36,7 @@ api = AmazonCreatorsApi(
 
 RESOURCES = [
     GetItemsResource.ITEM_INFO_DOT_TITLE,
-    GetItemsResource.OFFERSV2_LISTINGS_PRICE,
+    GetItemsResource.OFFERS_V2_DOT_LISTINGS_DOT_PRICE,
 ]
 
 # ── Core Helpers ──────────────────────────────────────────────────────────────
