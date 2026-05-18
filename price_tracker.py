@@ -103,7 +103,7 @@ def fetch_batch(asin_list, retries=3):
 
                 price = None
                 try:
-                    price = item.offers_v2.listings[0].price.amount
+                    price = item.offers_v2.listings[0].price.money.amount
                 except Exception as e:
                     print(f"    🚨 [ASIN: {asin}] PRICE PARSE ERROR!")
                     # This prints the exact line and reason it failed:
