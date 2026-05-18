@@ -7,6 +7,7 @@ Optimized for batch requests (up to 10 products per API call) to prevent rate li
 
 import os
 import time
+import traceback
 import requests
 import traceback
 from datetime import datetime
@@ -35,7 +36,7 @@ api = AmazonCreatorsApi(
 
 RESOURCES = [
     GetItemsResource.ITEM_INFO_DOT_TITLE,
-    GetItemsResource.OFFERS_V2_DOT_LISTINGS_DOT_PRICE,
+    GetItemsResource.OFFERSV2_LISTINGS_PRICE,
 ]
 
 # ── Core Helpers ──────────────────────────────────────────────────────────────
@@ -97,17 +98,22 @@ def fetch_batch(asin_list, retries=3):
                 name = None
                 try:
                     name = item.item_info.title.display_value
-                except:
-                    pass
+                except Exception as e:
+                    print(f"    ⚠️ [ASIN: {asin}] Name Parse Error: {repr(e)}")
 
                 price = None
                 try:
                     price = item.offers_v2.listings[0].price.amount
-                except:
-                    pass
+                except Exception as e:
+                    print(f"    🚨 [ASIN: {asin}] PRICE PARSE ERROR!")
+                    # This prints the exact line and reason it failed:
+                    print(traceback.format_exc()) 
 
                 if name and price:
                     batch_results[asin] = (name, float(price))
+                    print(f"    ✅ Parsed: {name[:30]}... | {price} EGP")
+                else:
+                    print(f"    ❌ Skipping {asin} - Missing data (Name: {bool(name)}, Price: {bool(price)})")
 
             return batch_results
 
