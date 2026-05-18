@@ -43,6 +43,39 @@ async function handleMessage(message, env) {
   }
   // ──────────────────────────────────────────────────────────────────────────
 
+  // 🎯 TARGET PRICE STATE INTERCEPTOR
+  const stateKey = `state:${chatId}`;
+  const activeState = await env.AZTRACKER_DB.get(stateKey);
+
+  if (activeState) {
+    const pid = activeState;
+    const num = parseFloat(text);
+    
+    if (isNaN(num) || num <= 0) {
+      await deleteTelegramMessage(env, chatId, messageId);
+      await sendTelegram(env, chatId, "⚠️ <b>Invalid amount.</b> Please enter a valid number.", {
+        inline_keyboard: [[{ text: "⬅️ Back", callback_data: `view_${pid}` }]]
+      });
+      return;
+    }
+
+    const userDbKey = `user:${chatId}:products`;
+    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+    if (pIndex !== -1) {
+      products[pIndex].target_price = num;
+      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+    }
+    
+    await env.AZTRACKER_DB.delete(stateKey);
+    await deleteTelegramMessage(env, chatId, messageId);
+    
+    await sendTelegram(env, chatId, `🎯 <b>Target Price Set!</b>\n\nYou will only be notified when ASIN <code>${pid}</code> drops to or below <b>${num.toLocaleString()} EGP</b>.`, {
+      inline_keyboard: [[{ text: "⬅️ Back to Product", callback_data: `view_${pid}` }]]
+    });
+    return;
+  }
+
   // 🧹 GHOST INPUTS: If input is raw data, vaporize the message instantly
   const isNumericId = /^\d{6,15}$/.test(text);
   const isAmazonLink = text.includes("amazon.eg") || text.includes("amzn.to") || text.includes("amzn.eu");
@@ -309,8 +342,27 @@ async function handleCallback(callback, env) {
       inline_keyboard: [[{ text: "⬅️ Back", callback_data: "main_menu" }]]
     });
   }
+  else if (data.startsWith("settarget_")) {
+    const pid = data.replace("settarget_", "");
+    await env.AZTRACKER_DB.put(`state:${chatId}`, pid, { expirationTtl: 300 }); // 5 minute lock
+    const text = `🎯 <b>Set Target Price</b>\n\nASIN: <code>${pid}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [[{ text: "❌ Cancel", callback_data: `view_${pid}` }]]
+    });
+  }
+  else if (data.startsWith("cleartarget_")) {
+    const pid = data.replace("cleartarget_", "");
+    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+    if (pIndex !== -1) {
+      delete products[pIndex].target_price;
+      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+    }
+    await renderProductView(env, chatId, messageId, pid); 
+  }
   else if (data.startsWith("view_")) {
     const pid = data.replace("view_", "");
+    await env.AZTRACKER_DB.delete(`state:${chatId}`); // Clear any hanging target states
     await renderProductView(env, chatId, messageId, pid);
   }
   else if (data.startsWith("pause_") || data.startsWith("resume_")) {
@@ -412,7 +464,9 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
     }
   }
 
-  const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+  let targetText = product.target_price ? `\n🎯 User's Target: <b>${product.target_price.toLocaleString()} EGP</b>` : "";
+
+  const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>${targetText}\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -540,7 +594,8 @@ async function renderProductList(env, chatId, messageId, page = 0) {
     if (name.length > 30) name = name.substring(0, 27) + "...";
     
     const statusIcon = p.paused ? "⏸️" : "✅";
-    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${name}`, callback_data: `view_${pid}` }]);
+    const targetIcon = p.target_price ? "🎯 " : "";
+    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${targetIcon}${name}`, callback_data: `view_${pid}` }]);
   });
 
   // --- Navigation Controls ---
@@ -586,13 +641,22 @@ async function renderProductView(env, chatId, messageId, pid) {
     }
   }
 
-  const text = `📦 <b>Product Management</b>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+  let targetText = product.target_price ? `\n🎯 Target Price: <b>${product.target_price.toLocaleString()} EGP</b>` : "";
+
+  const text = `📦 <b>Product Management</b>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>${targetText}\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+
+  const targetBtn = product.target_price 
+    ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
+    : { text: "🎯 Set Target", callback_data: `settarget_${pid}` };
 
   const keyboard = {
     inline_keyboard: [
       [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
-        { text: "📊 Stats & History", callback_data: `stats_${pid}` },
+        targetBtn,
+        { text: "📊 Stats & History", callback_data: `stats_${pid}` }
+      ],
+      [
         { text: "🗑️ Delete Product", callback_data: `remove_${pid}` }
       ],
       [
@@ -693,3 +757,8 @@ function extractNameFromUrl(url) {
   } catch(e) {}
   return null;
 }
+
+
+
+
+      
