@@ -78,7 +78,7 @@ def notify_admins_of_error(error_message):
 
 # ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
 
-def fetch_batch(asin_list, retries=3):
+def fetch_batch(asin_list, retries=5):
     """Fetches a batch of up to 10 ASINs in a single API call.
     Returns a dict mapping {asin: (name, price)}."""
     batch_results = {}
@@ -113,7 +113,10 @@ def fetch_batch(asin_list, retries=3):
 
         except Exception as e:
             print(f"  [Attempt {attempt+1}] API error for batch: {e}")
-            time.sleep(2 * (attempt + 1))
+            # Dynamic backoff: 5s, 10s, 15s, 20s, 25s
+            wait_time = 5 * (attempt + 1)
+            print(f"  ⏳ Cooling down for {wait_time} seconds before retrying...")
+            time.sleep(wait_time)
 
     return batch_results
 
@@ -182,7 +185,7 @@ def main():
         results = fetch_batch(asin_list)
         all_fetched_results.update(results)
         if idx < len(batches) - 1:
-            time.sleep(1)
+            time.sleep(3) # Increased throttle to respect Amazon limits
 
     # 3. Fetch Global Price History from Cloudflare
     gp_res = requests.get(f"{cf_base_url}/values/global_prices", headers=cf_headers)
