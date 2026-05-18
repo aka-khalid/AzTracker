@@ -257,9 +257,9 @@ async function handleCallback(callback, env) {
   else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
-               `👥 <b>Total Approved Guests:</b> ${approvedGuests.length}\n` +
-               `🛡️ <b>Total Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
-               `💡 <b>To manage access parameters:</b>\nSelect the directory register button below to view active users, or drop a user's raw Telegram ID text directly into this chat layout.`;
+           `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
+           `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
+           `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
     
     await editTelegramMessage(env, chatId, messageId, text, {
       inline_keyboard: [
