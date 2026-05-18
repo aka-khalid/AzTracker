@@ -202,9 +202,15 @@ async function handleCallback(callback, env) {
   else if (data.startsWith("revoke_") && isAdmin) {
     const targetId = data.replace("revoke_", "");
     if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
+    
+    // 1. Remove them from the approved directory
     const updatedUsers = approvedUsers.filter(id => id !== targetId);
     await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
-    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked!</b>\nID <code>${targetId}</code> has been detached from the database.`);
+    
+    // 2. HARD DELETE: Nuke their entire product registry from Cloudflare KV
+    await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
+    
+    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their tracking database have been permanently erased.`);
   }
   else if (data.startsWith("promote_") && isRootAdmin) {
     const targetId = data.replace("promote_", "");
