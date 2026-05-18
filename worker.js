@@ -207,10 +207,11 @@ async function handleCallback(callback, env) {
     const updatedUsers = approvedUsers.filter(id => id !== targetId);
     await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
     
-    // 2. HARD DELETE: Nuke their entire product registry from Cloudflare KV
+    // 2. TOTAL PURGE: Nuke their product registry AND their active UI state
     await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
+    await env.AZTRACKER_DB.delete(`ui:${targetId}`);
     
-    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their tracking database have been permanently erased.`);
+    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
   }
   else if (data.startsWith("promote_") && isRootAdmin) {
     const targetId = data.replace("promote_", "");
