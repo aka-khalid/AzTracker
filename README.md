@@ -4,6 +4,10 @@
 
 🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
 
+<div align="center">
+  <img src="assets/StatsGraphDemo.jpg" alt="AzTracker Graph Preview" width="300">
+</div>
+
 ---
 
 ## ✨ Features
@@ -19,6 +23,8 @@
 * 📄 **Smart UI Pagination:** Dynamically generated pages (5 items per page) keep the Telegram ChatOps interface clean while bypassing Telegram inline keyboard limits.
 
 * 🧹 **Zero-Clutter UI (SPA):** Implements a Single-Page-Application style Telegram interface. Old menus, commands, and ghost inputs are automatically cleaned up to keep chats pristine.
+
+* 📊 **Interactive Analytics (Web App):** Deeply integrated Telegram Mini App. Renders beautiful, native-feeling Chart.js price graphs based on historical delta-logging without cluttering the chat history.
 
 * ☁️ **Millisecond Serverless Database:** Powered by Cloudflare KV. No local JSON files, file-locking, or concurrency headaches.
 
@@ -52,7 +58,9 @@
 
 4. **The Engine (GitHub Actions):** Triggered through the randomized scheduler system. It wakes up, pulls everyone's tracking lists from Cloudflare KV, deduplicates items to prevent rate-limiting, and queries the Amazon Creators API in optimized batches.
 
-5. **The Notifier (Python):** Compares live prices against the global price history in KV. If a drop is detected, it routes personalized Telegram push notifications only to users tracking that specific item.
+5. **The Engine & Logger (Python):** Compares live prices against the global price history in KV. If a change is detected, it logs a Unix-timestamped "Delta" for historical graphing, and routes personalized Telegram push notifications only to users tracking that specific item.
+
+6. **The Web App Server:** When a user requests stats, the Cloudflare Worker seamlessly acts as an edge-rendered web server, passing the historical KV data into a lightweight HTML/Chart.js frontend displayed natively inside Telegram's Mini App UI.
 
 ---
 
