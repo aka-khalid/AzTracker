@@ -7,7 +7,6 @@ Optimized for batch requests (up to 10 products per API call) to prevent rate li
 
 import os
 import time
-import traceback
 import requests
 import traceback
 from datetime import datetime
@@ -237,8 +236,12 @@ def main():
             # Calculate "Down" text only if there is an actual difference
             down_text = f" (Down {diff:,.2f} EGP)" if diff > 0 else ""
             
-            # 4. Notification Logic: Check Target first (Highest priority)
-            if target_price and price <= target_price:
+            # 4. State Management: Reset alert flag if price goes back above target
+            if target_price and price > target_price:
+                p["alert_sent"] = False
+
+            # 5. Notification Logic
+            if target_price and price <= target_price and not p.get("alert_sent", False):
                 send_telegram(chat_id,
                     f"🎯 <b>TARGET MET: {display_name}</b>\n"
                     f"💰 <b>{price:,.2f} EGP</b>\n"
@@ -246,11 +249,10 @@ def main():
                     f"🕐 {now}\n"
                     f'<a href="{url}">View on Amazon.eg</a>'
                 )
+                p["alert_sent"] = True
                 time.sleep(0.5)
-
-            # 5. Notification Logic: Check Price Drop (Lower priority)
-            # Only trigger if NOT the first time we see the price (last_price is not None)
-            # and if the price is strictly lower than before
+            
+            # Only trigger generic drop if NOT a target event
             elif last_price is not None and price < last_price:
                 send_telegram(chat_id,
                     f"📉 <b>{display_name}</b>\n"
@@ -265,6 +267,15 @@ def main():
     global_prices.update(updates)
     requests.put(f"{cf_base_url}/values/global_prices", headers=cf_headers, json=global_prices)
     print("\n✅ Global database synced to Cloudflare KV.")
+
+    # After the loop, persist user product changes (like the alert_sent flag) back to KV
+    print("💾 Syncing user states to Cloudflare...")
+    for chat_id, products in users_data.items():
+        requests.put(f"{cf_base_url}/values/user:{chat_id}:products", 
+                     headers=cf_headers, 
+                     json=products)
+    print("✅ All user states saved.")
+
 
 if __name__ == "__main__":
     try:
