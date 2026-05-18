@@ -6,6 +6,13 @@ const GITHUB_BRANCH = "main";
 
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    // Hidden scheduler endpoint for cron-job.org
+    if (url.pathname === "/scheduler") {
+      return await handleScheduler(request, env);
+    }
+
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
     try {
       const payload = await request.json();
@@ -706,6 +713,87 @@ async function renderProductView(env, chatId, messageId, pid) {
   };
 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
+
+
+// ── Scheduler Endpoint ──────────────────────────────────────────────────────
+
+async function handleScheduler(request, env) {
+  const url = new URL(request.url);
+  const providedKey = url.searchParams.get("key") || request.headers.get("x-scheduler-key");
+
+  if (!env.SCHEDULER_SECRET || providedKey !== env.SCHEDULER_SECRET) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const now = getCairoParts(new Date());
+  const hourKey = `${now.year}-${now.month}-${now.day}-${now.hour}`;
+  const currentMinute = parseInt(now.minute, 10);
+
+  const scheduleKey = `schedule:${hourKey}`;
+  let slots = await env.AZTRACKER_DB.get(scheduleKey, "json");
+
+  if (!slots) {
+    slots = buildHourlySlots();
+    await env.AZTRACKER_DB.put(scheduleKey, JSON.stringify(slots), { expirationTtl: 7200 });
+    console.log("Generated hourly slots:", slots);
+  }
+
+  const lockKey = `runlock:${hourKey}:${currentMinute}`;
+  const alreadyRan = await env.AZTRACKER_DB.get(lockKey);
+  if (alreadyRan) {
+    return new Response("Already executed", { status: 200 });
+  }
+
+  if (slots.includes(currentMinute)) {
+    await env.AZTRACKER_DB.put(lockKey, "1", { expirationTtl: 7200 });
+    try {
+      await triggerWorkflow(env);
+      return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
+    } catch (e) {
+      return new Response(`Trigger failed: ${e.message}`, { status: 500 });
+    }
+  }
+
+  return new Response(`No run this minute (${currentMinute})`, { status: 200 });
+}
+
+function buildHourlySlots() {
+  return [
+    randInt(0, 14),
+    randInt(15, 29),
+    randInt(30, 44),
+    randInt(45, 59),
+  ].sort((a, b) => a - b);
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getCairoParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const map = {};
+  for (const part of parts) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+
+  return {
+    year: map.year,
+    month: map.month,
+    day: map.day,
+    hour: map.hour,
+    minute: map.minute,
+  };
 }
 
 // ── Core Helpers ────────────────────────────────────────────────────────────
