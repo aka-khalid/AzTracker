@@ -151,7 +151,9 @@ async function handleMessage(message, env) {
     await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
 
     const title = extractedName ? extractedName : pid;
-    const successText = `✅ <b>Successfully Added!</b>\n\n📦 <b>Name:</b> ${title}\n🆔 <b>ASIN:</b> <code>${pid}</code>\n\n<i>The tracker will fetch its live price on the next automated pipeline run.</i>`;
+    const cleanTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+    
+    const successText = `✅ <b>Successfully Added!</b>\n\n📌 <b>${cleanTitle}</b>\n🆔 ASIN: <code>${pid}</code>\n\n<i>The tracker will fetch its live price on the next automated pipeline run.</i>`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
         [{ text: "📦 View My Products", callback_data: "list_products_0" }],
@@ -411,7 +413,13 @@ async function handleCallback(callback, env) {
       }
     }
     
-    const text = `📊 <b>Statistics for ${pid}</b>\n\n📌 <b>Name:</b> ${displayName}\n💰 <b>Current Saved Price:</b> ${lastPrice}\n\n<i>More advanced history logs will generate over operational iterations.</i>`;
+    const cleanTitle = displayName.length > 50 ? displayName.substring(0, 47) + "..." : displayName;
+    
+    const text = `📊 <b>Statistics for ASIN:</b> <code>${pid}</code>\n\n` +
+                 `📌 <b>Name:</b> ${cleanTitle}\n` +
+                 `💰 <b>Saved Price:</b> ${lastPrice}\n\n` +
+                 `<i>More advanced history logs will generate over operational iterations.</i>`;
+                 
     await editTelegramMessage(env, chatId, messageId, text, {
       inline_keyboard: [[{ text: "⬅️ Back to Product", callback_data: `view_${pid}` }]]
     });
@@ -473,9 +481,15 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
     }
   }
 
-  let targetText = product.target_price ? `\n🎯 User's Target: <b>${product.target_price.toLocaleString()} EGP</b>` : "";
+  const cleanTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+  let targetText = product.target_price ? `\n🎯 <b>User's Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>${targetText}\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+  const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n` +
+               `📌 <b>${cleanTitle}</b>\n` +
+               `🆔 ASIN: <code>${pid}</code>\n\n` +
+               `💰 <b>Saved Price:</b> ${lastPrice}${targetText}\n` +
+               `📡 <b>Status:</b> ${statusStr}\n\n` +
+               `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -650,9 +664,15 @@ async function renderProductView(env, chatId, messageId, pid) {
     }
   }
 
-  let targetText = product.target_price ? `\n🎯 Target Price: <b>${product.target_price.toLocaleString()} EGP</b>` : "";
+  const cleanTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+  let targetText = product.target_price ? `\n🎯 <b>Target Price:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  const text = `📦 <b>Product Management</b>\n\n📌 <b>${title}</b>\n🆔 <code>${pid}</code>\n\n💰 Current Saved Price: <b>${lastPrice}</b>${targetText}\n📡 Status: <b>${statusStr}</b>\n\n🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+  const text = `📦 <b>Product Management</b>\n\n` +
+               `📌 <b>${cleanTitle}</b>\n` +
+               `🆔 ASIN: <code>${pid}</code>\n\n` +
+               `💰 <b>Saved Price:</b> ${lastPrice}${targetText}\n` +
+               `📡 <b>Status:</b> ${statusStr}\n\n` +
+               `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
 
   const targetBtn = product.target_price 
     ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
@@ -781,4 +801,3 @@ async function sendAppMessage(env, chatId, text, replyMarkup = null) {
   }
   return res;
 }
-
