@@ -409,6 +409,7 @@ async function handleCallback(callback, env) {
     if (prices[pid]) {
       if (typeof prices[pid] === 'object') {
         lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
+        if (prices[pid].last_updated) lastPrice += `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
         if (prices[pid].name) displayName = prices[pid].name;
       } else {
         lastPrice = `${prices[pid].toLocaleString()} EGP`;
@@ -477,6 +478,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid) {
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
       lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
+      if (prices[pid].last_updated) lastPrice += `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
       if (prices[pid].name) title = prices[pid].name;
     } else {
       lastPrice = `${prices[pid].toLocaleString()} EGP`;
@@ -655,12 +657,14 @@ async function renderProductView(env, chatId, messageId, pid) {
 
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next tracker run...";
+  let lastUpdated = "";
   let title = product.name ? product.name : "Amazon Product";
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
       lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
       if (prices[pid].name) title = prices[pid].name;
+      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
     } else {
       lastPrice = `${prices[pid].toLocaleString()} EGP`;
     }
@@ -672,7 +676,7 @@ async function renderProductView(env, chatId, messageId, pid) {
   const text = `📦 <b>Product Management</b>\n\n` +
                `📌 <b>${cleanTitle}</b>\n` +
                `🆔 ASIN: <code>${pid}</code>\n\n` +
-               `💰 <b>Saved Price:</b> ${lastPrice}${targetText}\n` +
+               `💰 <b>Saved Price:</b> ${lastPrice}${lastUpdated}${targetText}\n` +
                `📡 <b>Status:</b> ${statusStr}\n\n` +
                `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
 
