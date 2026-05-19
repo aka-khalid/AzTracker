@@ -237,9 +237,6 @@ def main():
             # Append new data point (p = price, t = unix timestamp)
             history_data.append({"p": current_price, "t": unix_now})
             
-            # Append new data point (p = price, t = unix timestamp)
-            history_data.append({"p": current_price, "t": unix_now})
-            
             # Keep array lean (Max 150 entries per ASIN)
             history_data = history_data[-150:]
             
@@ -253,6 +250,7 @@ def main():
     # ───────────────────────────────────────
 
     # 4. Evaluate prices & route personalized Telegram notifications
+    dirty_users = set()
     for chat_id, products in users_data.items():
         for p in products:
             if p.get("paused", False):
@@ -297,7 +295,9 @@ def main():
             
             # 4. State Management: Reset alert flag if price fluctuates back above target
             if target_price and price > target_price:
-                p["alert_sent"] = False
+                if p.get("alert_sent", False): # Only flag if it actually changes
+                    p["alert_sent"] = False
+                    dirty_users.add(chat_id)
 
             # 5. Notification Logic (Mutually Exclusive Routing)
             if target_price:
@@ -313,6 +313,7 @@ def main():
                     # ONLY flag as sent if Telegram actually delivered it
                     if success:
                         p["alert_sent"] = True
+                        dirty_users.add(chat_id)
                         time.sleep(0.5)
             else:
                 # SCENARIO B: No target set. Evaluate for general price drops.
@@ -326,18 +327,24 @@ def main():
                     )
                     time.sleep(0.5)
 
-    # 5. Push updated master price list back to Cloudflare
-    global_prices.update(updates)
-    requests.put(f"{cf_base_url}/values/global_prices", headers=cf_headers, json=global_prices)
-    print("\n✅ Global database synced to Cloudflare KV.")
+    # 5. Push updated master price list back to Cloudflare ONLY if there are updates
+    if updates:
+        global_prices.update(updates)
+        requests.put(f"{cf_base_url}/values/global_prices", headers=cf_headers, json=global_prices)
+        print("\n✅ Global database synced to Cloudflare KV.")
+    else:
+        print("\n➖ Global database unchanged. Skipping KV write.")
 
-    # After the loop, persist user product changes (like the alert_sent flag) back to KV
-    print("💾 Syncing user states to Cloudflare...")
-    for chat_id, products in users_data.items():
-        requests.put(f"{cf_base_url}/values/user:{chat_id}:products", 
-                     headers=cf_headers, 
-                     json=products)
-    print("✅ All user states saved.")
+    # 6. Persist user product changes ONLY for users whose state changed (Dirty tracking)
+    if dirty_users:
+        print(f"💾 Syncing {len(dirty_users)} updated user states to Cloudflare...")
+        for chat_id in dirty_users:
+            requests.put(f"{cf_base_url}/values/user:{chat_id}:products", 
+                         headers=cf_headers, 
+                         json=users_data[chat_id])
+        print("✅ Dirty user states saved.")
+    else:
+        print("➖ No user states modified. Skipping KV writes.")
 
 
 if __name__ == "__main__":
