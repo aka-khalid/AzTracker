@@ -778,16 +778,27 @@ async function handleScheduler(request, env) {
 }
 
 function buildHourlySlots() {
-  return [
-    randInt(0, 14),
-    randInt(15, 29),
-    randInt(30, 44),
-    randInt(45, 59),
-  ].sort((a, b) => a - b);
-}
+  const TOTAL_RUNS_PER_HOUR = 8;
+  const MINIMUM_GAP = 3;
+  const runMinutes = [];
 
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  // Failsafe counter to prevent infinite loops
+  let attempts = 0; 
+
+  while (runMinutes.length < TOTAL_RUNS_PER_HOUR && attempts < 1000) {
+    attempts++;
+    // Generate a random minute between 0 and 59
+    const randomMin = Math.floor(Math.random() * 60);
+    
+    // Ensure the new minute is at least 3 minutes away from all existing scheduled minutes
+    const isSpacedOut = runMinutes.every(existingMin => Math.abs(existingMin - randomMin) >= MINIMUM_GAP);
+    
+    if (isSpacedOut) {
+      runMinutes.push(randomMin);
+    }
+  }
+
+  return runMinutes.sort((a, b) => a - b);
 }
 
 function getCairoParts(date = new Date()) {
