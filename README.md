@@ -36,6 +36,9 @@ To prevent fixed-minute execution patterns (and subsequent API rate-limiting), t
 ### 🧹 Zero-Clutter SPA Interface
 The Telegram bot functions as a Single-Page Application. Ghost inputs, old commands, and raw Amazon links are instantly vaporized upon processing. Pagination is handled dynamically in-place, keeping the user's chat history pristine and purely button-driven.
 
+### 🧠 Dirty State Write Optimization
+To bypass Cloudflare KV's strict daily write limits, the Python engine implements a "dirty state" tracker. It strictly monitors the state machine of each user's profile and only executes a database `PUT` request if a user's tracking parameters (like an `alert_sent` flag) physically changed during that specific execution minute, resulting in near-zero wasted database writes.
+
 ---
 
 ## 🛠️ Architecture Pipeline
