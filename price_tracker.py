@@ -271,6 +271,12 @@ def main():
             price = round(price, 2)
             display_name = truncate_name(name)
 
+            # --- AUTO-HEAL: Update the user's personal database if the name is missing/wrong
+            if p.get("name") != name:
+                p["name"] = name
+                dirty_users.add(chat_id)
+            # -----------------------------------------------------------------------------
+
             # 1. Calculate the Last Price
             last_entry = global_prices.get(product_id)
             last_price = None
