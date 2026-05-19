@@ -103,10 +103,11 @@ def fetch_batch(asin_list, retries=3):
                 price = None
                 try:
                     price = item.offers_v2.listings[0].price.money.amount
+                except (AttributeError, IndexError, TypeError):
+                    # Silently catch items that are Out of Stock or missing a Buy Box
+                    pass 
                 except Exception as e:
-                    print(f"    🚨 [ASIN: {asin}] PRICE PARSE ERROR!")
-                    # This prints the exact line and reason it failed:
-                    print(traceback.format_exc()) 
+                    print(f"    🚨 [ASIN: {asin}] Unexpected PRICE ERROR: {repr(e)}")
 
                 if name and price:
                     batch_results[asin] = (name, float(price))
@@ -276,32 +277,34 @@ def main():
             # Calculate "Down" text only if there is an actual difference
             down_text = f" (Down {diff:,.2f} EGP)" if diff > 0 else ""
             
-            # 4. State Management: Reset alert flag if price goes back above target
+            # 4. State Management: Reset alert flag if price fluctuates back above target
             if target_price and price > target_price:
                 p["alert_sent"] = False
 
-            # 5. Notification Logic
-            if target_price and price <= target_price and not p.get("alert_sent", False):
-                send_telegram(chat_id,
-                    f"🎯 <b>TARGET MET: {display_name}</b>\n"
-                    f"💰 <b>{price:,.2f} EGP</b>\n"
-                    f"Target was {target_price:,.2f} EGP{down_text}\n"
-                    f"🕐 {now}\n"
-                    f'<a href="{url}">View on Amazon.eg</a>'
-                )
-                p["alert_sent"] = True
-                time.sleep(0.5)
-            
-            # Only trigger generic drop if NOT a target event
-            elif last_price is not None and price < last_price:
-                send_telegram(chat_id,
-                    f"📉 <b>{display_name}</b>\n"
-                    f"💰 <b>{price:,.2f} EGP</b>\n"
-                    f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
-                    f"🕐 {now}\n"
-                    f'<a href="{url}">View on Amazon.eg</a>'
-                )
-                time.sleep(0.5)
+            # 5. Notification Logic (Mutually Exclusive Routing)
+            if target_price:
+                # SCENARIO A: Target is set. Suppress all noise until target is crossed.
+                if price <= target_price and not p.get("alert_sent", False):
+                    send_telegram(chat_id,
+                        f"🎯 <b>TARGET MET: {display_name}</b>\n"
+                        f"💰 <b>{price:,.2f} EGP</b>\n"
+                        f"Target was {target_price:,.2f} EGP{down_text}\n"
+                        f"🕐 {now}\n"
+                        f'<a href="{url}">View on Amazon.eg</a>'
+                    )
+                    p["alert_sent"] = True
+                    time.sleep(0.5)
+            else:
+                # SCENARIO B: No target set. Evaluate for general price drops.
+                if last_price is not None and price < last_price:
+                    send_telegram(chat_id,
+                        f"📉 <b>{display_name}</b>\n"
+                        f"💰 <b>{price:,.2f} EGP</b>\n"
+                        f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
+                        f"🕐 {now}\n"
+                        f'<a href="{url}">View on Amazon.eg</a>'
+                    )
+                    time.sleep(0.5)
 
     # 5. Push updated master price list back to Cloudflare
     global_prices.update(updates)
