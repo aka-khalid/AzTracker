@@ -59,9 +59,11 @@ def send_telegram(chat_id, text):
         "disable_web_page_preview": True
     }
     try:
-        requests.post(url, json=payload)
+        res = requests.post(url, json=payload, timeout=10)
+        return res.status_code == 200
     except Exception as e:
         print(f"Telegram error: {e}")
+        return False
 
 def notify_admins_of_error(error_message):
     """Sends a fatal error alert to all Root Admins."""
@@ -169,9 +171,12 @@ def main():
             users_data[chat_id] = products
             for p in products:
                 if not p.get("paused", False):
-                    asin = get_product_id(p["url"])
-                    if asin:
-                        unique_asins.add((asin, p["url"]))
+                    # Use .get() instead of strict ["url"]
+                    url = p.get("url")
+                    if url:
+                        asin = get_product_id(url)
+                        if asin:
+                            unique_asins.add((asin, url))
 
     if not unique_asins:
         print("No active products to track across any users.")
@@ -219,9 +224,18 @@ def main():
             hist_key = f"history:{asin}"
             hist_url = f"{cf_base_url}/values/{hist_key}"
             
-            # Fetch existing history array
+            # Fetch existing history array safely
             hist_res = requests.get(hist_url, headers=cf_headers)
-            history_data = hist_res.json() if hist_res.status_code == 200 else []
+            try:
+                history_data = hist_res.json() if hist_res.status_code == 200 else []
+                # If the database got corrupted into a dict or string, force it back to a list
+                if not isinstance(history_data, list):
+                    history_data = []
+            except Exception:
+                history_data = []
+            
+            # Append new data point (p = price, t = unix timestamp)
+            history_data.append({"p": current_price, "t": unix_now})
             
             # Append new data point (p = price, t = unix timestamp)
             history_data.append({"p": current_price, "t": unix_now})
@@ -243,9 +257,13 @@ def main():
         for p in products:
             if p.get("paused", False):
                 continue
+            
+            # Safely grab the URL, skip if corrupted
+            url = p.get("url")
+            if not url:
+                continue
 
-            product_id = get_product_id(p["url"])
-            url = p["url"]
+            product_id = get_product_id(url)
             res = all_fetched_results.get(product_id)
             
             if not res:
@@ -285,15 +303,17 @@ def main():
             if target_price:
                 # SCENARIO A: Target is set. Suppress all noise until target is crossed.
                 if price <= target_price and not p.get("alert_sent", False):
-                    send_telegram(chat_id,
+                    success = send_telegram(chat_id,
                         f"🎯 <b>TARGET MET: {display_name}</b>\n"
                         f"💰 <b>{price:,.2f} EGP</b>\n"
                         f"Target was {target_price:,.2f} EGP{down_text}\n"
                         f"🕐 {now}\n"
                         f'<a href="{url}">View on Amazon.eg</a>'
                     )
-                    p["alert_sent"] = True
-                    time.sleep(0.5)
+                    # ONLY flag as sent if Telegram actually delivered it
+                    if success:
+                        p["alert_sent"] = True
+                        time.sleep(0.5)
             else:
                 # SCENARIO B: No target set. Evaluate for general price drops.
                 if last_price is not None and price < last_price:
