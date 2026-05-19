@@ -778,27 +778,38 @@ async function handleScheduler(request, env) {
 }
 
 function buildHourlySlots() {
-  const TOTAL_RUNS_PER_HOUR = 8;
-  const MINIMUM_GAP = 3;
+  // 1. Define the 8 chunks of the hour
+  const bounds = [
+    [0, 7], [8, 15], [16, 22], [23, 29],
+    [30, 37], [38, 44], [45, 52], [53, 59]
+  ];
+  
   const runMinutes = [];
 
-  // Failsafe counter to prevent infinite loops
-  let attempts = 0; 
+  for (let i = 0; i < bounds.length; i++) {
+    let min = bounds[i][0];
+    const max = bounds[i][1];
 
-  while (runMinutes.length < TOTAL_RUNS_PER_HOUR && attempts < 1000) {
-    attempts++;
-    // Generate a random minute between 0 and 59
-    const randomMin = Math.floor(Math.random() * 60);
-    
-    // Ensure the new minute is at least 3 minutes away from all existing scheduled minutes
-    const isSpacedOut = runMinutes.every(existingMin => Math.abs(existingMin - randomMin) >= MINIMUM_GAP);
-    
-    if (isSpacedOut) {
-      runMinutes.push(randomMin);
+    // 2. Anti-Clumping: Ensure at least a 3-minute gap from the previous run
+    if (i > 0) {
+      const prevRun = runMinutes[i - 1];
+      if (min - prevRun < 3) {
+        min = prevRun + 3; // Push the floor up
+      }
     }
+
+    // Failsafe to ensure valid random ranges
+    if (min > max) min = max;
+
+    runMinutes.push(randInt(min, max));
   }
 
-  return runMinutes.sort((a, b) => a - b);
+  // The array is naturally sorted chronologically by the chunking process
+  return runMinutes;
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 function getCairoParts(date = new Date()) {
