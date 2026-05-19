@@ -219,6 +219,11 @@ Built with assistance from:
 
 ---
 
+## 🗺️ Future Development
+*Check out the [v2.0 Architecture Roadmap](ROADMAP.md) to see planned features and tech debt resolutions.*
+
+---
+
 ## License
 
 MIT — free to use, modify, and distribute.
