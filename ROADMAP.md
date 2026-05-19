@@ -31,4 +31,3 @@ This document tracks the technical debt, security fortifications, and feature ex
 
 - [ ] **Multi-Marketplace Support:** Parameterize the Amazon Creators API initialization to support `Amazon.sa` and `Amazon.ae`, opening the tracker to the broader Middle East market.
 - [ ] **Group Chat / Inline Mode:** Modify the Telegram payload parsers so the bot can be dropped into group chats, allowing multiple people to query live prices natively in a shared chat.
-- [ ] 
