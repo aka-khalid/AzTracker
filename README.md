@@ -3,6 +3,9 @@
 # 📉 AzTracker 
 ### The Serverless Amazon.eg Price Engine
 
+> 🛑 **PROJECT STATUS NOTICE:** In light of the May 2026 GitHub internal codebase supply-chain incident involving TeamPCP, this repository's background automation has been deliberately frozen. Out of an abundance of caution, all integration tokens, API keys, and database secrets have been completely revoked and zeroed out. The project and its associated Telegram bot will remain offline indefinitely while infrastructure security is re-evaluated. No timeline for restoration is currently set.
+
+
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Python Engine](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![GitHub Actions](https://img.shields.io/badge/GitHub-Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
