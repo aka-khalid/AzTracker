@@ -70,7 +70,7 @@ async function handleMessage(message, env) {
   const messageId = message.message_id;
 
   // ── ROLE-BASED SECURITY BOUNCER ───────────────────────────────────────────
-  const rootAdmins = (env.ALLOWED_USERS || "").split(",");
+  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
   const isRootAdmin = rootAdmins.includes(chatId);
   const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
   const isAdmin = isRootAdmin || admins.includes(chatId);
@@ -226,7 +226,7 @@ async function handleCallback(callback, env, baseUrl) {
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
   
-  const rootAdmins = (env.ALLOWED_USERS || "").split(",");
+  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
   const isRootAdmin = rootAdmins.includes(chatId);
   const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
   const isAdmin = isRootAdmin || admins.includes(chatId);
@@ -539,7 +539,7 @@ async function renderUserList(env, chatId, messageId) {
   // ⚡ Parallel Fetch: Request profiles for all IDs from Telegram simultaneously
   const userPromises = approvedUsers.map(async (id) => {
     try {
-      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/getChat`, {
+      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: id })
@@ -574,7 +574,7 @@ async function renderMainMenu(env, chatId, messageId = null) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   
-  const rootAdmins = (env.ALLOWED_USERS || "").split(",");
+  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
   const isRootAdmin = rootAdmins.includes(chatId);
   const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
   const isAdmin = isRootAdmin || admins.includes(chatId);
@@ -732,7 +732,7 @@ async function handleScheduler(request, env) {
   const url = new URL(request.url);
   const providedKey = url.searchParams.get("key") || request.headers.get("x-scheduler-key");
 
-  if (!env.SCHEDULER_SECRET || providedKey !== env.SCHEDULER_SECRET) {
+  if (!env.CRON_AUTH_KEY || providedKey !== env.CRON_AUTH_KEY) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -840,7 +840,7 @@ function getCairoParts(date = new Date()) {
 // ── Core Helpers ────────────────────────────────────────────────────────────
 
 async function deleteTelegramMessage(env, chatId, messageId) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/deleteMessage`;
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteMessage`;
   await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -876,7 +876,7 @@ async function triggerWorkflow(env) {
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${env.GITHUB_PAT}`,
+      "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
       "User-Agent": "AzTracker-Bot",
       "Accept": "application/vnd.github+json",
       "Content-Type": "application/json"
@@ -893,7 +893,7 @@ async function triggerWorkflow(env) {
 }
 
 async function sendTelegram(env, chatId, text, replyMarkup = null) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`;
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
   const body = { chat_id: chatId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
   const res = await fetch(url, {
@@ -905,7 +905,7 @@ async function sendTelegram(env, chatId, text, replyMarkup = null) {
 }
 
 async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/editMessageText`;
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
   const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
   await fetch(url, {
