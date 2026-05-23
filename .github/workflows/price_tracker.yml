@@ -32,16 +32,13 @@ jobs:
 
       - name: Run price tracker
         env:
-          TELEGRAM_TOKEN:     ${{ secrets.TELEGRAM_TOKEN }}
-          ALLOWED_USERS:      ${{ secrets.ALLOWED_USERS }}
-          AMAZON_ACCESS_KEY:  ${{ secrets.AMAZON_ACCESS_KEY }}
-          AMAZON_SECRET_KEY:  ${{ secrets.AMAZON_SECRET_KEY }}
-          AMAZON_PARTNER_TAG: ${{ secrets.AMAZON_PARTNER_TAG }}
-          AMAZON_API_VERSION: ${{ secrets.AMAZON_API_VERSION }}
-          # ── NEW CLOUDFLARE SECRETS ──
-          CF_ACCOUNT_ID:      ${{ secrets.CF_ACCOUNT_ID }}
-          CF_NAMESPACE_ID:    ${{ secrets.CF_NAMESPACE_ID }}
-          CF_API_TOKEN:       ${{ secrets.CF_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN:         ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ROOT_ADMIN_IDS:    ${{ secrets.TELEGRAM_ROOT_ADMIN_IDS }}
+          AMZN_CREATORS_ACCESS_KEY:   ${{ secrets.AMZN_CREATORS_ACCESS_KEY }}
+          AMZN_CREATORS_SECRET_KEY:   ${{ secrets.AMZN_CREATORS_SECRET_KEY }}
+          AMZN_ASSOCIATES_TAG:        ${{ secrets.AMZN_ASSOCIATES_TAG }}
+          AMZN_API_VERSION:           ${{ secrets.AMZN_API_VERSION }}
+          CLOUDFLARE_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
+          CLOUDFLARE_API_TOKEN:       ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: python price_tracker.py
-        
-      # Notice: The "Save prices to repo" git commit block is completely gone!
