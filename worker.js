@@ -86,7 +86,30 @@ async function handleMessage(message, env) {
   // 🎯 TARGET PRICE STATE INTERCEPTOR
   const stateKey = `state:${chatId}`;
   const activeState = await env.AZTRACKER_DB.get(stateKey);
-
+  
+  // 📢 BROADCAST STATE INTERCEPTOR
+  if (activeState === 'broadcast' && isRootAdmin) {
+    await env.AZTRACKER_DB.delete(stateKey);
+    await deleteTelegramMessage(env, chatId, messageId); // Vaporize the input text
+    
+    const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Broadcasting...</b>`);
+    
+    let successCount = 0;
+    for (const userId of approvedUsers) {
+      try {
+        await sendTelegram(env, userId, `📢 <b>System Update</b>\n\n${text}`);
+        successCount++;
+      } catch (e) {
+        console.error(`Broadcast failed for ${userId}`);
+      }
+    }
+    
+    await editTelegramMessage(env, chatId, sentMsg.result.message_id, `✅ <b>Broadcast Complete!</b>\nDelivered to ${successCount} user(s).`, {
+      inline_keyboard: [[{ text: "⬅️ Back to Admin Panel", callback_data: "admin_panel" }]]
+    });
+    return;
+  }
+  
   if (activeState) {
     const pid = activeState;
     const num = parseFloat(text);
@@ -295,8 +318,16 @@ async function handleCallback(callback, env, baseUrl) {
     await editTelegramMessage(env, chatId, messageId, text, {
       inline_keyboard: [
         [{ text: "👥 View Approved Users", callback_data: "list_users" }],
+        [{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }],
         [{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]
       ]
+    });
+  }
+  else if (data === "broadcast_init" && isRootAdmin) {
+    await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
+    const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [[{ text: "❌ Cancel", callback_data: "admin_panel" }]]
     });
   }
   else if (data === "list_users" && isAdmin) {
