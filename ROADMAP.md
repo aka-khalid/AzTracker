@@ -7,7 +7,7 @@ This document tracks the technical debt, security fortifications, and feature ex
 
 - [ ] **The Regex URL Parser:** Replace the fragile `.split("/")[-1]` in `price_tracker.py` with the robust regex used in `worker.js` to ensure Amazon tracking queries (e.g., `?ref=...`) never break the API batch fetch.
 - [ ] **Zero-Trust Webhook Validation:** Implement `X-Telegram-Bot-Api-Secret-Token` header verification in `worker.js` to guarantee that only Telegram's official servers can trigger the POST endpoint.
-- [ ] **Header-Based Scheduler Auth:** Move the `SCHEDULER_SECRET` out of the query string and into the `x-scheduler-key` HTTP header in both cron-job.org and the `worker.js` routing logic.
+- [x] **Header-Based Scheduler Auth:** Move the `SCHEDULER_SECRET` out of the query string and into the `x-scheduler-key` HTTP header in both cron-job.org and the `worker.js` routing logic.
 - [ ] **Supply Chain Security:** Update `requirements.txt` to pin the custom Amazon PA-API library to a specific commit hash rather than the floating `main` branch.
 - [ ] **Clean the Python Syntax:** Fix the misleading indentation around the global prices fetch block in `price_tracker.py` to prevent future maintenance confusion.
 
