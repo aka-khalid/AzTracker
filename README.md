@@ -150,61 +150,40 @@ Tools → Creators API
 
 ### Step 4 — Configure GitHub Secrets
 
-Go to:
+Go to: `Settings → Secrets and variables → Actions`
 
-```text
-Settings → Secrets and variables → Actions
-```
+Add the following unified semantic secrets:
 
-Add the following:
-
-| Secret               | Value                                                      |
-| -------------------- | ---------------------------------------------------------- |
-| `TELEGRAM_TOKEN`     | From @BotFather                                            |
-| `ALLOWED_USERS`      | Your Root Admin Telegram ID                                |
-| `AMAZON_ACCESS_KEY`  | Amazon Creators API Access Key                             |
-| `AMAZON_SECRET_KEY`  | Amazon Creators API Secret Key                             |
-| `AMAZON_PARTNER_TAG` | Amazon Associates Tag                                      |
-| `AMAZON_API_VERSION` | API Version                                                |
-| `CF_ACCOUNT_ID`      | Cloudflare Account ID                                      |
-| `CF_NAMESPACE_ID`    | Cloudflare KV Namespace ID                                 |
-| `CF_API_TOKEN`       | Cloudflare API Token                                       |
-| `GITHUB_PAT`         | GitHub Personal Access Token used for workflow dispatching |
-| `SCHEDULER_SECRET`   | Secret protecting the hidden `/scheduler` endpoint         |
+| Secret                       | Value                                                      |
+| ---------------------------- | ---------------------------------------------------------- |
+| `TELEGRAM_BOT_TOKEN`         | From @BotFather                                            |
+| `TELEGRAM_ROOT_ADMIN_IDS`    | Your Root Admin Telegram ID                                |
+| `AMZN_CREATORS_ACCESS_KEY`   | Amazon Creators API Access Key                             |
+| `AMZN_CREATORS_SECRET_KEY`   | Amazon Creators API Secret Key                             |
+| `AMZN_ASSOCIATES_TAG`        | Amazon Associates Tag                                      |
+| `AMZN_API_VERSION`           | API Version                                                |
+| `CLOUDFLARE_ACCOUNT_ID`      | Cloudflare Account ID                                      |
+| `CLOUDFLARE_KV_NAMESPACE_ID` | Cloudflare KV Namespace ID                                 |
+| `CLOUDFLARE_API_TOKEN`       | Cloudflare API Token                                       |
+| `GH_WORKFLOW_TOKEN`          | GitHub Fine-grained PAT (Repo & Actions scope)             |
+| `CRON_AUTH_KEY`              | Custom password protecting the `/scheduler` endpoint       |
 
 ---
 
-### Step 5 — Set Up the Scheduler
+### Step 5 — Set Up the Secure Scheduler
 
-Use [cron-job.org](https://cron-job.org) to ping your Worker every minute.
+Use [cron-job.org](https://cron-job.org) to ping your Worker every minute using secure HTTP Headers.
 
-Method:
+* **Method:** `GET`
+* **URL:** `https://YOUR_WORKER.workers.dev/scheduler`
+* **Schedule:** `Every 1 minute`
 
-```text
-GET
-```
+**Advanced/Headers Section:**
+You must pass your custom security key as an HTTP header to prevent unauthorized triggers.
+* **Header Name:** `x-scheduler-key`
+* **Header Value:** `YOUR_CRON_AUTH_KEY`
 
-URL:
-
-```text
-https://YOUR_WORKER.workers.dev/scheduler?key=YOUR_SCHEDULER_SECRET
-```
-
-Schedule:
-
-```text
-Every minute
-```
-
-The Worker internally decides whether the current minute should dispatch GitHub Actions.
-
-#### Recommended Alternative Authentication
-
-Instead of exposing the secret in the query string, cron-job.org can send:
-
-```http
-x-scheduler-key: YOUR_SCHEDULER_SECRET
-```
+*(Note: The Worker internally evaluates the minute and dictates whether a GitHub Action should actually be dispatched).*
 
 ---
 
