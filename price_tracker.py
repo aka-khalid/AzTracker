@@ -15,12 +15,12 @@ from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
-TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_TOKEN", "")
-ALLOWED_USERS      = os.environ.get("ALLOWED_USERS", "")
-AMAZON_ACCESS_KEY  = os.environ.get("AMAZON_ACCESS_KEY", "")
-AMAZON_SECRET_KEY  = os.environ.get("AMAZON_SECRET_KEY", "")
-AMAZON_PARTNER_TAG = os.environ.get("AMAZON_PARTNER_TAG", "")
-AMAZON_API_VERSION = os.environ.get("AMAZON_API_VERSION", "")
+TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+ALLOWED_USERS      = os.environ.get("TELEGRAM_ROOT_ADMIN_IDS", "")
+AMAZON_ACCESS_KEY  = os.environ.get("AMZN_CREATORS_ACCESS_KEY", "")
+AMAZON_SECRET_KEY  = os.environ.get("AMZN_CREATORS_SECRET_KEY", "")
+AMAZON_PARTNER_TAG = os.environ.get("AMZN_ASSOCIATES_TAG", "")
+AMAZON_API_VERSION = os.environ.get("AMZN_API_VERSION", "")
 # ─────────────────────────────────────────────────────────────────────────────
 
 MAX_NAME_LEN = 60
@@ -132,9 +132,9 @@ def fetch_batch(asin_list, retries=3):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    CF_ACCOUNT_ID = os.environ.get("CF_ACCOUNT_ID")
-    CF_NAMESPACE_ID = os.environ.get("CF_NAMESPACE_ID")
-    CF_API_TOKEN = os.environ.get("CF_API_TOKEN")
+    CF_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    CF_NAMESPACE_ID = os.environ.get("CLOUDFLARE_KV_NAMESPACE_ID")
+    CF_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
     
     if not all([CF_ACCOUNT_ID, CF_NAMESPACE_ID, CF_API_TOKEN]):
         err_msg = "❌ Missing Cloudflare API credentials. Cannot sync database."
