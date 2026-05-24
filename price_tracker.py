@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 import pytz
 from amazon_creatorsapi import AmazonCreatorsApi, Country
-from amazon_creatorsapi.models import GetItemsResource
+from amazon_creatorsapi.models import GetItemsResource, Condition
 
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -98,7 +98,7 @@ def fetch_batch(asin_list, retries=3):
     batch_results = {}
     for attempt in range(retries):
         try:
-            items = api.get_items(asin_list, resources=RESOURCES)
+            items = api.get_items(asin_list, resources=RESOURCES, condition=Condition.ANY)
             if not items:
                 print(f"  [Attempt {attempt+1}] No items returned for this batch.")
                 continue
