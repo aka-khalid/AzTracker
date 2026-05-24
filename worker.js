@@ -75,7 +75,8 @@ export default {
 // ── Interceptors ────────────────────────────────────────────────────────────
 
 async function handleMessage(message, env) {
-  const text = message.text.trim();
+  // 🌍 LOCALIZATION INTERCEPTOR: Normalize numerals before any logic runs
+  const text = convertHindiToArabic(message.text).trim();
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
@@ -966,6 +967,12 @@ function getCairoParts(date = new Date()) {
 }
 
 // ── Core Helpers ────────────────────────────────────────────────────────────
+
+function convertHindiToArabic(text) {
+  if (!text) return "";
+  const hindiToAr = { '٠':'0', '١':'1', '٢':'2', '٣':'3', '٤':'4', '٥':'5', '٦':'6', '٧':'7', '٨':'8', '٩':'9' };
+  return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
+}
 
 async function deleteTelegramMessage(env, chatId, messageId) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteMessage`;
