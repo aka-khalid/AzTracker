@@ -19,6 +19,7 @@ This document tracks the technical debt, security fortifications, and feature ex
 - [ ] **GitHub Actions `pip` Cache:** Add the `actions/cache` step to `price_tracker.yml` to cache Python dependencies, saving ~30 seconds of compute time per run.
 - [ ] **DRY RBAC Refactor:** Extract the duplicate Admin/Root Admin validation logic in `worker.js` into a single `getUserRoles(chatId, env)` helper function.
 - [ ] **Automated KV Backups:** Add a pre-execution step in `price_tracker.yml` to download the `global_prices` and `history` JSON objects from Cloudflare KV and save them as GitHub artifacts. This ensures disaster recovery is possible if a script error corrupts the serverless database.
+- [ ] **KV Write Quota Auditing:** Refactor the `schedule` and `runlock` key generations in `worker.js`. Currently, the scheduler consumes ~216 writes per day just checking in. Transition the lock mechanism to use Cloudflare's in-memory standard caching API instead of KV to free up database quota for actual product price updates.
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
 *Improving what the user actually sees and feels.*
