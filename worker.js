@@ -401,6 +401,33 @@ async function handleCallback(callback, env, baseUrl) {
     }
     await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
   }
+  // --- USER DELETION CONFIRMATION ---
+  else if (data.startsWith("confirmDel_")) {
+    const pid = data.replace("confirmDel_", "");
+    const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your tracking list?\n\n<i>This action cannot be undone.</i>`;
+    
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [
+        [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
+        [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+      ]
+    });
+  }
+  
+  // --- ADMIN DELETION CONFIRMATION ---
+  else if (data.startsWith("admConfDel_") && isAdmin) {
+    const parts = data.split("_");
+    const targetId = parts[1];
+    const pid = parts[2];
+    const text = `⚠️ <b>Confirm Admin Deletion</b>\n\nAre you sure you want to force-delete ASIN <code>${pid}</code> from user <code>${targetId}</code>'s registry?\n\n<i>This action cannot be undone.</i>`;
+    
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [
+        [{ text: "✅ Yes, Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
+        [{ text: "❌ Cancel", callback_data: `admView_${targetId}_${pid}` }]
+      ]
+    });
+  }
   else if (data.startsWith("admDel_") && isAdmin) {
     const parts = data.split("_");
     const targetId = parts[1];
@@ -595,7 +622,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
     inline_keyboard: [
       [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
       [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
-      [{ text: "🗑️ Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
+      [{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }],
       [{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}_0` }]
     ]
   };
@@ -814,7 +841,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
         { text: "📊 Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }
       ],
       [
-        { text: "🗑️ Delete Product", callback_data: `remove_${pid}` }
+        { text: "🗑️ Delete Product", callback_data: `confirmDel_${pid}` }
       ],
       [
         { text: "⬅️ Back to Products", callback_data: "list_products_0" },
