@@ -116,22 +116,25 @@ def fetch_batch(asin_list, retries=3):
 
                 price = None
                 seller = "Unknown"
+                merchant_id = None
+
                 try:
                     listing = item.offers_v2.listings[0]
                     price = listing.price.money.amount
                     
-                    if getattr(listing, 'merchant_info', None) and getattr(listing.merchant_info, 'name', None):
-                        seller = listing.merchant_info.name
+                    if getattr(listing, 'merchant_info', None):
+                        if getattr(listing.merchant_info, 'name', None):
+                            seller = listing.merchant_info.name
+                        if getattr(listing.merchant_info, 'id', None):
+                            merchant_id = listing.merchant_info.id
                         
                 except (AttributeError, IndexError, TypeError):
-                    # Silently catch items that are Out of Stock or missing a Buy Box
                     pass 
                 except Exception as e:
                     print(f"    🚨 [ASIN: {asin}] Unexpected PRICE ERROR: {repr(e)}")
 
                 if name and price:
-                    # Notice we are now returning a tuple of 3 items
-                    batch_results[asin] = (name, float(price), seller)
+                    batch_results[asin] = (name, float(price), seller, merchant_id)
                     print(f"    ✅ Parsed: {name[:30]}... | {price} EGP | By: {seller}")
                 else:
                     print(f"    ❌ Skipping {asin} - Missing data (Name: {bool(name)}, Price: {bool(price)})")
@@ -227,7 +230,7 @@ def main():
     history_updates = 0
     unix_now = int(time.time())
 
-    for asin, (name, current_price, seller) in all_fetched_results.items():
+    for asin, (name, current_price, seller, merchant_id) in all_fetched_results.items():
         current_price = round(current_price, 2)
         
         # Safely extract last price
@@ -289,6 +292,8 @@ def main():
             name, price, seller = res
             price = round(price, 2)
             display_name = truncate_name(name)
+            # Construct specific seller URL if available
+            alert_url = f"{url}?m={merchant_id}" if merchant_id else url
 
             # --- AUTO-HEAL: Update the user's personal database if the name is missing/wrong
             if p.get("name") != name:
@@ -306,7 +311,7 @@ def main():
 
             # 2. Always update the price in the master 'updates' list 
             #    (This ensures database stays current)
-            updates[product_id] = {"price": price, "name": name, "seller": seller, "last_updated": now}
+            updates[product_id] = {"price": price, "name": name, "seller": seller, "merchant_id": merchant_id, "last_updated": now}
 
             # 3. Calculate drop metrics (for the message)
             # Use 0 if there was no last_price to avoid math errors
@@ -334,7 +339,7 @@ def main():
                         f"🏬 <b>Sold by:</b> {seller}\n"
                         f"Target was {target_price:,.2f} EGP{down_text}\n"
                         f"🕐 {now}\n"
-                        f'<a href="{url}">View on Amazon.eg</a>'
+                        f'<a href="{alert_url}">View on Amazon.eg</a>'
                     )
                     # ONLY flag as sent if Telegram actually delivered it
                     if success:
@@ -350,7 +355,7 @@ def main():
                         f"🏬 <b>Sold by:</b> {seller}\n"
                         f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
                         f"🕐 {now}\n"
-                        f'<a href="{url}">View on Amazon.eg</a>'
+                        f'<a href="{alert_url}">View on Amazon.eg</a>'
                     )
                     time.sleep(0.5)
 
