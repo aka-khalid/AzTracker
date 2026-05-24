@@ -319,11 +319,26 @@ async function handleCallback(callback, env, baseUrl) {
   else if (data === "ignore") {
     return;
   }
-  else if (data === "admin_panel" && isAdmin) {
+    else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
+    
+    // ── System Health Metrics ──
+    const globalPrices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+    const uniqueAsins = Object.keys(globalPrices).length;
+    
+    const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
+    let lastRunText = "Pending...";
+    if (lastTrigger) {
+        const date = new Date(parseInt(lastTrigger));
+        // Format to your local Cairo timezone
+        lastRunText = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+    }
+    
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
            `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
-           `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
+           `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n` +
+           `📦 <b>Unique ASINs Tracked:</b> ${uniqueAsins} / 450\n` +
+           `⏱️ <b>Last Auto-Scan:</b> ${lastRunText}\n\n` +
            `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
     
     // Dynamically build the button array
