@@ -9,6 +9,7 @@ import os
 import time
 import requests
 import traceback
+import re
 from datetime import datetime
 import pytz
 from amazon_creatorsapi import AmazonCreatorsApi, Country
@@ -42,7 +43,17 @@ RESOURCES = [
 # ── Core Helpers ──────────────────────────────────────────────────────────────
 
 def get_product_id(url):
-    return url.rstrip("/").split("/")[-1]
+    if not url:
+        return None
+    # Matches /dp/B0...
+    dp_match = re.search(r'/dp/([A-Z0-9]{10})', url, re.IGNORECASE)
+    if dp_match:
+        return dp_match.group(1).upper()
+    # Matches /gp/product/B0...
+    gp_match = re.search(r'/gp/product/([A-Z0-9]{10})', url, re.IGNORECASE)
+    if gp_match:
+        return gp_match.group(1).upper()
+    return None
 
 
 def truncate_name(name: str) -> str:
@@ -206,7 +217,7 @@ def main():
         if idx < len(batches) - 1:
             time.sleep(3) # Increased throttle to respect Amazon limits
 
-        # 3. Fetch Global Price History from Cloudflare
+    # 3. Fetch Global Price History from Cloudflare
     gp_res = requests.get(f"{cf_base_url}/values/global_prices", headers=cf_headers)
     global_prices = gp_res.json() if gp_res.status_code == 200 else {}
     updates = {}
