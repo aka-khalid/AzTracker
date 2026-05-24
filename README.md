@@ -164,6 +164,7 @@ Add the following unified semantic secrets:
 | `CLOUDFLARE_API_TOKEN`       | Cloudflare API Token                                       |
 | `GH_WORKFLOW_TOKEN`          | GitHub Fine-grained PAT (Repo & Actions scope)             |
 | `CRON_AUTH_KEY`              | Custom password protecting the `/scheduler` endpoint       |
+| `TELEGRAM_WEBHOOK_SECRET`    | High-entropy password for the Zero-Trust webhook handshake |
 
 ---
 
@@ -181,6 +182,20 @@ You must pass your custom security key as an HTTP header to prevent unauthorized
 * **Header Value:** `YOUR_CRON_AUTH_KEY`
 
 *(Note: The Worker internally evaluates the minute and dictates whether a GitHub Action should actually be dispatched).*
+
+---
+
+### Step 6 — Lock the Telegram Webhook
+
+Once your Cloudflare Worker is deployed, you must tell Telegram to route messages to your edge node using your zero-trust secret. 
+
+Run this command in your terminal, replacing the placeholders with your actual values:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
+     -d "url=https://aztracker-bot.<YOUR_SUBDOMAIN>.workers.dev" \
+     -d "secret_token=<YOUR_TELEGRAM_WEBHOOK_SECRET>"
+```
 
 ---
 
