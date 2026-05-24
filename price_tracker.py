@@ -334,12 +334,14 @@ def main():
                 # SCENARIO A: Target is set. Suppress all noise until target is crossed.
                 if price <= target_price and not p.get("alert_sent", False):
                     success = send_telegram(chat_id,
-                        f"🎯 <b>TARGET MET: {display_name}</b>\n"
-                        f"💰 <b>{price:,.2f} EGP</b>\n"
-                        f"🏬 <b>Sold by:</b> {seller}\n"
-                        f"Target was {target_price:,.2f} EGP{down_text}\n"
-                        f"🕐 {now}\n"
-                        f'<a href="{alert_url}">View on Amazon.eg</a>'
+                        f"🎯 <b>TARGET MET!</b>\n\n"
+                        f"📦 <b>{display_name}</b>\n"
+                        f"└ 🆔 <code>{product_id}</code>\n\n"
+                        f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
+                        f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
+                        f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
+                        f"🕐 <i>{now}</i>\n\n"
+                        f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
                     )
                     # ONLY flag as sent if Telegram actually delivered it
                     if success:
@@ -350,12 +352,15 @@ def main():
                 # SCENARIO B: No target set. Evaluate for general price drops.
                 if last_price is not None and price < last_price:
                     send_telegram(chat_id,
-                        f"📉 <b>{display_name}</b>\n"
-                        f"💰 <b>{price:,.2f} EGP</b>\n"
-                        f"🏬 <b>Sold by:</b> {seller}\n"
-                        f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
-                        f"🕐 {now}\n"
-                        f'<a href="{alert_url}">View on Amazon.eg</a>'
+                        f"🚨 <b>PRICE DROP ALERT</b>\n\n"
+                        f"📦 <b>{display_name}</b>\n"
+                        f"└ 🆔 <code>{product_id}</code>\n\n"
+                        f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
+                        f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
+                        f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
+                        f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
+                        f"🕐 <i>{now}</i>\n\n"
+                        f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
                     )
                     time.sleep(0.5)
 
