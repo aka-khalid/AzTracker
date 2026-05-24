@@ -334,10 +334,10 @@ def main():
                 # SCENARIO B: No target set. Evaluate for general price drops.
                 if last_price is not None and price < last_price:
                     send_telegram(chat_id,
-                        f"🎯 <b>TARGET MET: {display_name}</b>\n"
+                        f"📉 <b>{display_name}</b>\n"
                         f"💰 <b>{price:,.2f} EGP</b>\n"
                         f"🏬 <b>Sold by:</b> {seller}\n"
-                        f"Target was {target_price:,.2f} EGP{down_text}\n"
+                        f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
                         f"🕐 {now}\n"
                         f'<a href="{url}">View on Amazon.eg</a>'
                     )
