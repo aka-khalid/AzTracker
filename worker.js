@@ -526,9 +526,11 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
-      lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
-      if (prices[pid].last_updated) lastPrice += `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
+      let sellerInfo = prices[pid].seller ? `\n🏬 <i>Sold by: ${prices[pid].seller}</i>` : "";
+      lastPrice = `${prices[pid].price.toLocaleString()} EGP${sellerInfo}`;
+      
       if (prices[pid].name) title = prices[pid].name;
+      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
     } else {
       lastPrice = `${prices[pid].toLocaleString()} EGP`;
     }
