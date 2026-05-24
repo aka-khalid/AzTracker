@@ -602,7 +602,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       lastPrice = `${prices[pid].price.toLocaleString()} EGP${sellerInfo}`;
       
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
+      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last checked: ${prices[pid].last_updated}</i>`;
     } else {
       lastPrice = `${prices[pid].toLocaleString()} EGP`;
     }
@@ -818,7 +818,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       lastPrice = `${prices[pid].price.toLocaleString()} EGP${sellerInfo}`;
       
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
+      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last checked: ${prices[pid].last_updated}</i>`;
     } else {
       lastPrice = `${prices[pid].toLocaleString()} EGP`;
     }
