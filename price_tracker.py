@@ -289,7 +289,7 @@ def main():
             if not res:
                 continue
 
-            name, price, seller = res
+            name, price, seller, merchant_id = res
             price = round(price, 2)
             display_name = truncate_name(name)
             # Construct specific seller URL if available
