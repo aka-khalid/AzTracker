@@ -3,9 +3,6 @@
 # 📉 AzTracker 
 ### The Serverless Amazon.eg Price Engine
 
-> ⚠️ **PARTIAL RESTORATION NOTICE (May 2026):** Following a comprehensive security audit and infrastructure rotation, the AzTracker edge nodes and ChatOps UI are back online and secured against upstream supply-chain vulnerabilities. However, the background Amazon price-tracking engine remains temporarily paused pending the final rotation of Amazon Creators API credentials. Users may interact with the bot, but live price updates will be degraded until the new keys are injected.
-
-
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Python Engine](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![GitHub Actions](https://img.shields.io/badge/GitHub-Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
