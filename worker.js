@@ -602,7 +602,20 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       lastPrice = prices[pid].price.toLocaleString() + " EGP";
       if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) lastUpdated = ` <i>(Checked: ${prices[pid].last_updated.split(' ')[1]})</i>`;
+      if (prices[pid].last_updated) {
+        const parts = prices[pid].last_updated.split(' ');
+        const checkDate = parts[0]; // e.g., "2026-05-24"
+        const checkTime = parts[1]; // e.g., "22:07"
+        
+        // Get today's date formatted as YYYY-MM-DD in Cairo timezone
+        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+
+        if (checkDate === todayStr) {
+          lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
+        } else {
+          lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
+        }
+      }
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
     }
@@ -820,7 +833,20 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       lastPrice = prices[pid].price.toLocaleString() + " EGP";
       if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) lastUpdated = ` <i>(Checked: ${prices[pid].last_updated.split(' ')[1]})</i>`; // Extracts just the time
+      if (prices[pid].last_updated) {
+        const parts = prices[pid].last_updated.split(' ');
+        const checkDate = parts[0]; // e.g., "2026-05-24"
+        const checkTime = parts[1]; // e.g., "22:07"
+        
+        // Get today's date formatted as YYYY-MM-DD in Cairo timezone
+        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+
+        if (checkDate === todayStr) {
+          lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
+        } else {
+          lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
+        }
+      }
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
     }
