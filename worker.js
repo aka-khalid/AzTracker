@@ -611,13 +611,17 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>User's Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  // FLAW 2 FIXED: lastUpdated injected into the template string
-  const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n` +
+  let productUrl = product.url;
+  if (prices[pid] && prices[pid].merchant_id) {
+    productUrl = `https://www.amazon.eg/dp/${pid}?m=${prices[pid].merchant_id}`;
+  }
+
+  const text = `📦 <b>Product Management</b>\n\n` +
                `📌 <b>${cleanTitle}</b>\n` +
                `🆔 ASIN: <code>${pid}</code>\n\n` +
                `💰 <b>Saved Price:</b> ${lastPrice}${lastUpdated}${targetText}\n` +
                `📡 <b>Status:</b> ${statusStr}\n\n` +
-               `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+               `🔗 <a href="${productUrl}">Open on Amazon.eg</a>`;
 
     const keyboard = {
     inline_keyboard: [
@@ -823,12 +827,17 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>Target Price:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
+  let productUrl = product.url;
+  if (prices[pid] && prices[pid].merchant_id) {
+    productUrl = `https://www.amazon.eg/dp/${pid}?m=${prices[pid].merchant_id}`;
+  }
+
   const text = `📦 <b>Product Management</b>\n\n` +
                `📌 <b>${cleanTitle}</b>\n` +
                `🆔 ASIN: <code>${pid}</code>\n\n` +
                `💰 <b>Saved Price:</b> ${lastPrice}${lastUpdated}${targetText}\n` +
                `📡 <b>Status:</b> ${statusStr}\n\n` +
-               `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
+               `🔗 <a href="${productUrl}">Open on Amazon.eg</a>`;
 
   const targetBtn = product.target_price 
     ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
