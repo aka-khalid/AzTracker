@@ -44,7 +44,17 @@ export default {
     }
     // ─────────────────────────────────────
 
-        if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+    if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+
+    // ── ZERO-TRUST WEBHOOK VALIDATION ──
+    if (env.TELEGRAM_WEBHOOK_SECRET) {
+      const secretToken = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+      if (secretToken !== env.TELEGRAM_WEBHOOK_SECRET) {
+        console.warn("Unauthorized webhook attempt intercepted.");
+        return new Response("Unauthorized", { status: 401 });
+      }
+    }
+
     try {
       const payload = await request.json();
       const baseUrl = url.origin; // ⬅️ We capture the worker's domain here
