@@ -383,6 +383,14 @@ def main():
     else:
         print("➖ No user states modified. Skipping KV writes.")
 
+    # 7. Push System Stats for the Admin UI
+    system_stats = {
+        "active_api_calls": len(unique_asins),
+        "hivemind_size": len(global_prices)
+    }
+    requests.put(f"{cf_base_url}/values/global:stats", headers=cf_headers, json=system_stats)
+    print(f"📊 System stats updated: {system_stats}")
+    
 
 if __name__ == "__main__":
     try:
