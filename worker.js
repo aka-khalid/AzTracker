@@ -320,7 +320,6 @@ async function handleCallback(callback, env, baseUrl) {
     return;
   }
   else if (data === "admin_panel" && isAdmin) {
-    else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
     
     // ── System Health Metrics ──
