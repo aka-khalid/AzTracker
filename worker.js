@@ -315,13 +315,18 @@ async function handleCallback(callback, env, baseUrl) {
            `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
            `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
     
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "👥 View Approved Users", callback_data: "list_users" }],
-        [{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }],
-        [{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]
-      ]
-    });
+    // Dynamically build the button array
+    let adminButtons = [
+      [{ text: "👥 View Approved Users", callback_data: "list_users" }]
+    ];
+    
+    if (isRootAdmin) {
+      adminButtons.push([{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }]);
+    }
+    
+    adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
+
+    await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
   }
   else if (data === "broadcast_init" && isRootAdmin) {
     await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
@@ -330,8 +335,10 @@ async function handleCallback(callback, env, baseUrl) {
       inline_keyboard: [[{ text: "❌ Cancel", callback_data: "admin_panel" }]]
     });
   }
-  else if (data === "list_users" && isAdmin) {
-    await renderUserList(env, chatId, messageId);
+  else if (data.startsWith("list_users") && isAdmin) {
+    const parts = data.split("_");
+    const page = parts[2] ? parseInt(parts[2]) : 0; // Supports "list_users" and "list_users_1"
+    await renderUserList(env, chatId, messageId, page);
   }
   else if (data.startsWith("manage_user_") && isAdmin) {
     const targetId = data.replace("manage_user_", "");
@@ -585,7 +592,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
-async function renderUserList(env, chatId, messageId) {
+async function renderUserList(env, chatId, messageId, page = 0) {
   const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   
   if (approvedUsers.length === 0) {
@@ -595,8 +602,17 @@ async function renderUserList(env, chatId, messageId) {
     return;
   }
 
-  // ⚡ Parallel Fetch: Request profiles for all IDs from Telegram simultaneously
-  const userPromises = approvedUsers.map(async (id) => {
+  // --- Pagination Logic ---
+  const ITEMS_PER_PAGE = 5;
+  const totalPages = Math.ceil(approvedUsers.length / ITEMS_PER_PAGE);
+  
+  if (page >= totalPages) page = Math.max(0, totalPages - 1);
+
+  // ⚡ API OPTIMIZATION: Slice the array FIRST, so we only fetch 5 profiles from Telegram!
+  const pagedUsers = approvedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+
+  // Parallel Fetch: Request profiles for ONLY the current page
+  const userPromises = pagedUsers.map(async (id) => {
     try {
       const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat`, {
         method: "POST",
@@ -618,17 +634,32 @@ async function renderUserList(env, chatId, messageId) {
   });
 
   const resolvedUsers = await Promise.all(userPromises);
-
   const keyboard = { inline_keyboard: [] };
+  
   resolvedUsers.forEach((user) => {
     keyboard.inline_keyboard.push([{ text: `👤 ${user.label}`, callback_data: `manage_user_${user.id}` }]);
   });
+
+  // --- Navigation Controls ---
+  if (totalPages > 1) {
+    let navRow = [];
+    if (page > 0) {
+      navRow.push({ text: "⬅️ Prev", callback_data: `list_users_${page - 1}` });
+    }
+    
+    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
+    
+    if (page < totalPages - 1) {
+      navRow.push({ text: "Next ➡️", callback_data: `list_users_${page + 1}` });
+    }
+    keyboard.inline_keyboard.push(navRow);
+  }
+
   keyboard.inline_keyboard.push([{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]);
 
-  const text = `👥 <b>Approved Users Register</b>\n\nSelect an active profile record below to open its structural permissions card inline:`;
+  const text = `👥 <b>Approved Users Register</b> (Page ${page + 1} of ${totalPages})\n\nSelect an active profile record below to open its structural permissions card inline:`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
-
 async function renderMainMenu(env, chatId, messageId = null) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
