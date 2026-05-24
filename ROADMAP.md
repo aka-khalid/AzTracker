@@ -18,6 +18,7 @@ This document tracks the technical debt, security fortifications, and feature ex
 - [ ] **Asynchronous Processing:** Refactor the sequential `requests.get()` and `requests.put()` loops in the Python engine to use `asyncio` and `aiohttp`. Firing KV updates simultaneously will drastically reduce GitHub Actions runtime.
 - [ ] **GitHub Actions `pip` Cache:** Add the `actions/cache` step to `price_tracker.yml` to cache Python dependencies, saving ~30 seconds of compute time per run.
 - [ ] **DRY RBAC Refactor:** Extract the duplicate Admin/Root Admin validation logic in `worker.js` into a single `getUserRoles(chatId, env)` helper function.
+- [ ] **Automated KV Backups:** Add a pre-execution step in `price_tracker.yml` to download the `global_prices` and `history` JSON objects from Cloudflare KV and save them as GitHub artifacts. This ensures disaster recovery is possible if a script error corrupts the serverless database.
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
 *Improving what the user actually sees and feels.*
@@ -26,6 +27,7 @@ This document tracks the technical debt, security fortifications, and feature ex
 - [ ] **Chart Analytics UI:** Update the edge-rendered Web App to calculate and display the All-Time High, All-Time Low, and Average Price above the Chart.js graph.
 - [ ] **Upward Trend Alerts:** Add a feature toggle allowing users to be warned if a tracked item's price goes *up* (creating urgency to buy before it climbs higher).
 - [ ] **URL Shortening (amzn.to Integration):** Implement programmatic link shortening by integrating the Bitly API into the Cloudflare Worker. Passing tagged Amazon URLs through Bitly automatically generates the official `amzn.to` branded short links. This will declutter Telegram push notifications and maintain a minimalist chat interface.
+- [ ] **The "Kill Switch" (Opt-Out Command):** Implement a `/stop` command and a "Delete My Account" button in the `worker.js` user settings. This will automatically execute a safe purge of their `user:{chat_id}:products` and `ui:{chat_id}` keys, allowing users to permanently erase their data from the serverless database.
 
 ## 🌍 Phase 4: Platform Expansion (Growth)
 *Scaling the surface area of the platform.*
