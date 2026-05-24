@@ -320,24 +320,24 @@ async function handleCallback(callback, env, baseUrl) {
     return;
   }
   else if (data === "admin_panel" && isAdmin) {
+    else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
     
     // ── System Health Metrics ──
-    const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
+    const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0, last_run_timestamp: null };
     
-    const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
     let lastRunText = "Pending...";
-    if (lastTrigger) {
-        const date = new Date(parseInt(lastTrigger));
+    if (stats.last_run_timestamp) {
+        const date = new Date(stats.last_run_timestamp);
         lastRunText = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
     }
     
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
            `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
            `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
-           `⚡ <b>Active API Fetches:</b> ${stats.active_api_calls} / 450\n` +
-           `🧠 <b>Total Hivemind Size:</b> ${stats.hivemind_size} items\n` +
-           `⏱️ <b>Last Auto-Scan:</b> ${lastRunText}\n\n` +
+           `📡 <b>Active Tracking Pool:</b> ${stats.active_api_calls} / 450\n` +
+           `🗄️ <b>Global Database:</b> ${stats.hivemind_size} ASINs\n` +
+           `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
            `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
     
     // Dynamically build the button array
