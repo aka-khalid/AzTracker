@@ -386,10 +386,12 @@ def main():
     # 7. Push System Stats for the Admin UI
     system_stats = {
         "active_api_calls": len(unique_asins),
-        "hivemind_size": len(global_prices)
+        "hivemind_size": len(global_prices),
+        "last_run_timestamp": int(time.time() * 1000)
     }
     requests.put(f"{cf_base_url}/values/global:stats", headers=cf_headers, json=system_stats)
     print(f"📊 System stats updated: {system_stats}")
+
     
 
 if __name__ == "__main__":
