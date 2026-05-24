@@ -1086,8 +1086,7 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  // Track this edited message as the active UI
-  await env.AZTRACKER_DB.put(`ui:${chatId}`, messageId.toString());
+  // REMOVED REDUNDANT KV WRITE: The message ID does not change on edit!
 }
 
 function extractNameFromUrl(url) {
