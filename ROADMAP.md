@@ -25,6 +25,7 @@ This document tracks the technical debt, security fortifications, and feature ex
 - [ ] **Fetch Failure States:** Build a UI fallback so if an item vanishes from Amazon or errors out during the API fetch, the user's dashboard shows a "⚠️ Fetch Failed" state instead of silent stagnation.
 - [ ] **Chart Analytics UI:** Update the edge-rendered Web App to calculate and display the All-Time High, All-Time Low, and Average Price above the Chart.js graph.
 - [ ] **Upward Trend Alerts:** Add a feature toggle allowing users to be warned if a tracked item's price goes *up* (creating urgency to buy before it climbs higher).
+- [ ] **URL Shortening (amzn.to Integration):** Implement programmatic link shortening by integrating the Bitly API into the Cloudflare Worker. Passing tagged Amazon URLs through Bitly automatically generates the official `amzn.to` branded short links. This will declutter Telegram push notifications and maintain a minimalist chat interface.
 
 ## 🌍 Phase 4: Platform Expansion (Growth)
 *Scaling the surface area of the platform.*
