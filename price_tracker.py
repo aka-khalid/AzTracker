@@ -36,6 +36,7 @@ api = AmazonCreatorsApi(
 RESOURCES = [
     GetItemsResource.ITEM_INFO_DOT_TITLE,
     GetItemsResource.OFFERS_V2_DOT_LISTINGS_DOT_PRICE,
+    GetItemsResource.OFFERS_V2_DOT_LISTINGS_DOT_MERCHANT_INFO,
 ]
 
 # ── Core Helpers ──────────────────────────────────────────────────────────────
@@ -103,8 +104,14 @@ def fetch_batch(asin_list, retries=3):
                     print(f"    ⚠️ [ASIN: {asin}] Name Parse Error: {repr(e)}")
 
                 price = None
+                seller = "Unknown"
                 try:
-                    price = item.offers_v2.listings[0].price.money.amount
+                    listing = item.offers_v2.listings[0]
+                    price = listing.price.money.amount
+                    
+                    if getattr(listing, 'merchant_info', None) and getattr(listing.merchant_info, 'name', None):
+                        seller = listing.merchant_info.name
+                        
                 except (AttributeError, IndexError, TypeError):
                     # Silently catch items that are Out of Stock or missing a Buy Box
                     pass 
@@ -112,8 +119,9 @@ def fetch_batch(asin_list, retries=3):
                     print(f"    🚨 [ASIN: {asin}] Unexpected PRICE ERROR: {repr(e)}")
 
                 if name and price:
-                    batch_results[asin] = (name, float(price))
-                    print(f"    ✅ Parsed: {name[:30]}... | {price} EGP")
+                    # Notice we are now returning a tuple of 3 items
+                    batch_results[asin] = (name, float(price), seller)
+                    print(f"    ✅ Parsed: {name[:30]}... | {price} EGP | By: {seller}")
                 else:
                     print(f"    ❌ Skipping {asin} - Missing data (Name: {bool(name)}, Price: {bool(price)})")
 
@@ -208,7 +216,7 @@ def main():
     history_updates = 0
     unix_now = int(time.time())
 
-    for asin, (name, current_price) in all_fetched_results.items():
+    for asin, (name, current_price, seller) in all_fetched_results.items():
         current_price = round(current_price, 2)
         
         # Safely extract last price
@@ -267,7 +275,7 @@ def main():
             if not res:
                 continue
 
-            name, price = res
+            name, price, seller = res
             price = round(price, 2)
             display_name = truncate_name(name)
 
@@ -287,7 +295,7 @@ def main():
 
             # 2. Always update the price in the master 'updates' list 
             #    (This ensures database stays current)
-            updates[product_id] = {"price": price, "name": name, "last_updated": now}
+            updates[product_id] = {"price": price, "name": name, "seller": seller, "last_updated": now}
 
             # 3. Calculate drop metrics (for the message)
             # Use 0 if there was no last_price to avoid math errors
@@ -312,6 +320,7 @@ def main():
                     success = send_telegram(chat_id,
                         f"🎯 <b>TARGET MET: {display_name}</b>\n"
                         f"💰 <b>{price:,.2f} EGP</b>\n"
+                        f"🏬 <b>Sold by:</b> {seller}\n"
                         f"Target was {target_price:,.2f} EGP{down_text}\n"
                         f"🕐 {now}\n"
                         f'<a href="{url}">View on Amazon.eg</a>'
@@ -325,9 +334,10 @@ def main():
                 # SCENARIO B: No target set. Evaluate for general price drops.
                 if last_price is not None and price < last_price:
                     send_telegram(chat_id,
-                        f"📉 <b>{display_name}</b>\n"
+                        f"🎯 <b>TARGET MET: {display_name}</b>\n"
                         f"💰 <b>{price:,.2f} EGP</b>\n"
-                        f"Down {diff:,.2f} EGP ({pct:.1f}% off, was {last_price:,.2f})\n"
+                        f"🏬 <b>Sold by:</b> {seller}\n"
+                        f"Target was {target_price:,.2f} EGP{down_text}\n"
                         f"🕐 {now}\n"
                         f'<a href="{url}">View on Amazon.eg</a>'
                     )
