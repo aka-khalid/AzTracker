@@ -360,8 +360,10 @@ async function handleCallback(callback, env, baseUrl) {
     await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
   }
   else if (data.startsWith("admProd_") && isAdmin) {
-    const targetId = data.replace("admProd_", "");
-    await renderAdminUserProducts(env, chatId, messageId, targetId);
+    const parts = data.split("_");
+    const targetId = parts[1];
+    const page = parts[2] ? parseInt(parts[2]) : 0; // Safely defaults to Page 0
+    await renderAdminUserProducts(env, chatId, messageId, targetId, page);
   }
   else if (data.startsWith("admView_") && isAdmin) {
     const parts = data.split("_");
@@ -480,7 +482,7 @@ async function handleCallback(callback, env, baseUrl) {
 
 // ── UI Renderers ────────────────────────────────────────────────────────────
 
-async function renderAdminUserProducts(env, chatId, messageId, targetId) {
+async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 0) {
   const targetDbKey = `user:${targetId}:products`;
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
   const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
@@ -492,8 +494,17 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId) {
     return;
   }
 
+  // --- Pagination Logic ---
+  const ITEMS_PER_PAGE = 5;
+  const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
+  
+  // Safety check bounds
+  if (page >= totalPages) page = Math.max(0, totalPages - 1);
+
+  const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
   const keyboard = { inline_keyboard: [] };
-  products.forEach((p) => {
+
+  pagedProducts.forEach((p) => {
     const pid = getAsinFromUrl(p.url);
     let name = pid;
     if (prices[pid] && typeof prices[pid] === 'object' && prices[pid].name) {
@@ -504,11 +515,26 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId) {
     if (name.length > 30) name = name.substring(0, 27) + "...";
     
     const statusIcon = p.paused ? "⏸️" : "✅";
-    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${name}`, callback_data: `admView_${targetId}_${pid}` }]);
+    const targetIcon = p.target_price ? "🎯 " : "";
+    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${targetIcon}${name}`, callback_data: `admView_${targetId}_${pid}` }]);
   });
+
+  // --- Navigation Controls ---
+  if (totalPages > 1) {
+    let navRow = [];
+    if (page > 0) {
+      navRow.push({ text: "⬅️ Prev", callback_data: `admProd_${targetId}_${page - 1}` });
+    }
+    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
+    if (page < totalPages - 1) {
+      navRow.push({ text: "Next ➡️", callback_data: `admProd_${targetId}_${page + 1}` });
+    }
+    keyboard.inline_keyboard.push(navRow);
+  }
+
   keyboard.inline_keyboard.push([{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]);
 
-  const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\n\n<i>Select an item below to manage it on behalf of the user:</i>`;
+  const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\nPage ${page + 1} of ${totalPages}\n\n<i>Select an item below to manage it on behalf of the user:</i>`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
@@ -522,6 +548,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next tracker run...";
+  let lastUpdated = ""; // FLAW 1 FIXED: Explicit declaration prevents ReferenceError
   let title = product.name ? product.name : "Amazon Product";
 
   if (prices[pid]) {
@@ -539,10 +566,11 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>User's Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
+  // FLAW 2 FIXED: lastUpdated injected into the template string
   const text = `🛡️ <b>Admin Product Override</b>\n👤 User: <code>${targetId}</code>\n\n` +
                `📌 <b>${cleanTitle}</b>\n` +
                `🆔 ASIN: <code>${pid}</code>\n\n` +
-               `💰 <b>Saved Price:</b> ${lastPrice}${targetText}\n` +
+               `💰 <b>Saved Price:</b> ${lastPrice}${lastUpdated}${targetText}\n` +
                `📡 <b>Status:</b> ${statusStr}\n\n` +
                `🔗 <a href="${product.url}">Open on Amazon.eg</a>`;
 
@@ -551,14 +579,12 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
       [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
       [{ text: "🗑️ Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
-      [{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}` }]
+      [{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}_0` }]
     ]
   };
 
-
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
-
 async function renderUserList(env, chatId, messageId) {
   const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   
@@ -710,12 +736,14 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next tracker run...";
-  let lastUpdated = "";
+  let lastUpdated = ""; 
   let title = product.name ? product.name : "Amazon Product";
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
-      lastPrice = `${prices[pid].price.toLocaleString()} EGP`;
+      let sellerInfo = prices[pid].seller ? `\n🏬 <i>Sold by: ${prices[pid].seller}</i>` : "";
+      lastPrice = `${prices[pid].price.toLocaleString()} EGP${sellerInfo}`;
+      
       if (prices[pid].name) title = prices[pid].name;
       if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last updated: ${prices[pid].last_updated}</i>`;
     } else {
@@ -742,7 +770,6 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
         targetBtn,
-        // ── MILESTONE 4: LAUNCH THE WEB APP ──
         { text: "📊 Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }
       ],
       [
