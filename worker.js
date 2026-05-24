@@ -593,34 +593,36 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next tracker run...";
-  let lastUpdated = ""; // FLAW 1 FIXED: Explicit declaration prevents ReferenceError
+  let lastUpdated = ""; 
+  let sellerInfo = "";
   let title = product.name ? product.name : "Amazon Product";
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
-      let sellerInfo = prices[pid].seller ? `\n🏬 <i>Sold by: ${prices[pid].seller}</i>` : "";
-      lastPrice = `${prices[pid].price.toLocaleString()} EGP${sellerInfo}`;
-      
+      lastPrice = prices[pid].price.toLocaleString() + " EGP";
+      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last checked: ${prices[pid].last_updated}</i>`;
+      if (prices[pid].last_updated) lastUpdated = ` <i>(Checked: ${prices[pid].last_updated.split(' ')[1]})</i>`;
     } else {
-      lastPrice = `${prices[pid].toLocaleString()} EGP`;
+      lastPrice = prices[pid].toLocaleString() + " EGP";
     }
   }
 
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
-  let targetText = product.target_price ? `\n🎯 <b>User's Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
+  let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   let productUrl = product.url;
   if (prices[pid] && prices[pid].merchant_id) {
     productUrl = `https://www.amazon.eg/dp/${pid}?m=${prices[pid].merchant_id}`;
   }
 
-  const text = `📦 <b>Product Management</b>\n\n` +
-               `📌 <b>${cleanTitle}</b>\n` +
-               `🆔 ASIN: <code>${pid}</code>\n\n` +
-               `💰 <b>Saved Price:</b> ${lastPrice}${lastUpdated}${targetText}\n` +
-               `📡 <b>Status:</b> ${statusStr}\n\n` +
+  const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
+               `📦 <b>${cleanTitle}</b>\n` +
+               `└ 🆔 <code>${pid}</code>\n\n` +
+               `💰 <b>Price:</b> ${lastPrice}` +
+               `${targetText}\n` +
+               `${sellerInfo}\n` +
+               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n` +
                `🔗 <a href="${productUrl}">Open on Amazon.eg</a>`;
 
     const keyboard = {
@@ -810,33 +812,34 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next tracker run...";
   let lastUpdated = ""; 
+  let sellerInfo = "";
   let title = product.name ? product.name : "Amazon Product";
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
-      let sellerInfo = prices[pid].seller ? `\n🏬 <i>Sold by: ${prices[pid].seller}</i>` : "";
-      lastPrice = `${prices[pid].price.toLocaleString()} EGP${sellerInfo}`;
-      
+      lastPrice = prices[pid].price.toLocaleString() + " EGP";
+      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) lastUpdated = `\n🕐 <i>Last checked: ${prices[pid].last_updated}</i>`;
+      if (prices[pid].last_updated) lastUpdated = ` <i>(Checked: ${prices[pid].last_updated.split(' ')[1]})</i>`; // Extracts just the time
     } else {
-      lastPrice = `${prices[pid].toLocaleString()} EGP`;
+      lastPrice = prices[pid].toLocaleString() + " EGP";
     }
   }
 
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
-  let targetText = product.target_price ? `\n🎯 <b>Target Price:</b> ${product.target_price.toLocaleString()} EGP` : "";
+  let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   let productUrl = product.url;
   if (prices[pid] && prices[pid].merchant_id) {
     productUrl = `https://www.amazon.eg/dp/${pid}?m=${prices[pid].merchant_id}`;
   }
 
-  const text = `📦 <b>Product Management</b>\n\n` +
-               `📌 <b>${cleanTitle}</b>\n` +
-               `🆔 ASIN: <code>${pid}</code>\n\n` +
-               `💰 <b>Saved Price:</b> ${lastPrice}${lastUpdated}${targetText}\n` +
-               `📡 <b>Status:</b> ${statusStr}\n\n` +
+  const text = `📦 <b>${cleanTitle}</b>\n` +
+               `└ 🆔 <code>${pid}</code>\n\n` +
+               `💰 <b>Price:</b> ${lastPrice}` +
+               `${targetText}\n` +
+               `${sellerInfo}\n` +
+               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n` +
                `🔗 <a href="${productUrl}">Open on Amazon.eg</a>`;
 
   const targetBtn = product.target_price 
