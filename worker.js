@@ -533,7 +533,16 @@ async function handleCallback(callback, env, baseUrl) {
 async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 0) {
   const targetDbKey = `user:${targetId}:products`;
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
-  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  // NEW:
+  const prices = {};
+  await Promise.all(pagedProducts.map(async (p) => {
+    const pid = getAsinFromUrl(p.url);
+    if (pid) {
+      const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+      if (data) prices[pid] = data;
+    }
+  }));
 
   if (products.length === 0) {
     const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\n\nThis user currently has no active or paused products in their database.`;
@@ -589,8 +598,12 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
 async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl) {
   const targetDbKey = `user:${targetId}:products`;
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
-  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
+  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  // NEW:
+  const prices = {};
+  const priceData = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+  if (priceData) prices[pid] = priceData;
 
   if (!product) return;
 
@@ -767,7 +780,16 @@ async function renderMainMenu(env, chatId, messageId = null) {
 async function renderProductList(env, chatId, messageId, page = 0) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
-  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  // NEW:
+  const prices = {};
+  await Promise.all(pagedProducts.map(async (p) => {
+    const pid = getAsinFromUrl(p.url);
+    if (pid) {
+      const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+      if (data) prices[pid] = data;
+    }
+  }));
   
   if (products.length === 0) {
     const text = `❌ <b>Your tracking list is empty.</b>\n\nPaste an Amazon.eg link in the chat box to begin tracking!`;
@@ -828,8 +850,12 @@ async function renderProductList(env, chatId, messageId, page = 0) {
 async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
-  const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
+  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
+  // NEW:
+  const prices = {};
+  const priceData = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+  if (priceData) prices[pid] = priceData;
 
   if (!product) return;
 
