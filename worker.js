@@ -1102,11 +1102,19 @@ async function deleteTelegramMessage(env, chatId, messageId) {
 
 async function expandAmazonUrl(url) {
   let currentUrl = url;
+  let hops = 0;
   try {
-    if (currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || /amazon\.eg\/d\//.test(currentUrl)) {
+    // Loop up to 3 times to follow Amazon's mobile double-redirect chains
+    while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
       const res = await fetch(currentUrl, { method: "GET", redirect: "manual" });
       const location = res.headers.get("location");
-      if (location) currentUrl = location;
+      
+      if (location) {
+        currentUrl = location;
+        hops++;
+      } else {
+        break; // No further redirects found
+      }
     }
   } catch (e) {
     console.error("Short link expansion failure:", e);
