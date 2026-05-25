@@ -268,29 +268,16 @@ async def async_main():
             if idx < len(batches) - 1:
                 await asyncio.sleep(3)
 
-        # 3. Fetch Price History (With Auto-Migration)
+        # 3. Fetch Price History (Native Sharded Fetch)
         global_prices = {}
-        legacy_blob = await async_get_kv(session, f"{cf_base_url}/values/global_prices", cf_headers)
-
-        if legacy_blob:
-            print("📦 Legacy global_prices blob detected. Executing auto-migration...")
-            global_prices = legacy_blob
-
-            # Push all legacy items into their own individual shards concurrently
-            shard_tasks = [async_put_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers, data) for asin, data in legacy_blob.items()]
-            await asyncio.gather(*shard_tasks)
-
-            # Destroy the massive legacy blob to free up space
-            async with session.delete(f"{cf_base_url}/values/global_prices", headers=cf_headers) as resp:
-                if resp.status == 200:
-                    print("✅ Database successfully sharded and legacy blob destroyed!")
-        else:
-            # Standard Sharded Fetch: Only grab the ASINs we are actively tracking
-            price_tasks = [async_get_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers) for asin in all_fetched_results.keys()]
-            price_results = await asyncio.gather(*price_tasks)
-            for asin, price_data in zip(all_fetched_results.keys(), price_results):
-                if price_data:
-                    global_prices[asin] = price_data
+        
+        print("📦 Fetching individual price shards concurrently...")
+        price_tasks = [async_get_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers) for asin in all_fetched_results.keys()]
+        price_results = await asyncio.gather(*price_tasks)
+        
+        for asin, price_data in zip(all_fetched_results.keys(), price_results):
+            if price_data:
+                global_prices[asin] = price_data
 
         updates = {}
 
