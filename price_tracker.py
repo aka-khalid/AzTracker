@@ -12,6 +12,7 @@ import traceback
 import re
 import asyncio
 import aiohttp
+import html
 from datetime import datetime
 import pytz
 from amazon_creatorsapi import AmazonCreatorsApi, Country
@@ -392,13 +393,17 @@ async def async_main():
 
                 if target_price:
                     if price <= target_price and not p.get("alert_sent", False):
-                        success = await async_send_telegram(session, chat_id,  # ⬅️ Updated to await async_send_telegram
+                        # ⬅️ ADD ESCAPES HERE
+                        safe_name = html.escape(display_name)
+                        safe_seller = html.escape(seller)
+                        
+                        success = await async_send_telegram(session, chat_id, 
                             f"🎯 <b>TARGET MET!</b>\n\n"
-                            f"📦 <b>{display_name}</b>\n"
+                            f"📦 <b>{safe_name}</b>\n" # ⬅️ USE safe_name
                             f"└ 🆔 <code>{product_id}</code>\n\n"
                             f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
                             f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
-                            f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
+                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>\n" # ⬅️ USE safe_seller
                             f"🕐 <i>{now}</i>", 
                             reply_markup=button_markup 
                         )
@@ -408,14 +413,18 @@ async def async_main():
                             await asyncio.sleep(0.5)
                 else:
                     if last_price is not None and price < last_price:
-                        await async_send_telegram(session, chat_id,  # ⬅️ Updated to await async_send_telegram
+                        # ⬅️ ADD ESCAPES HERE
+                        safe_name = html.escape(display_name)
+                        safe_seller = html.escape(seller)
+                        
+                        await async_send_telegram(session, chat_id, 
                             f"🚨 <b>PRICE DROP ALERT</b>\n\n"
-                            f"📦 <b>{display_name}</b>\n"
+                            f"📦 <b>{safe_name}</b>\n" # ⬅️ USE safe_name
                             f"└ 🆔 <code>{product_id}</code>\n\n"
                             f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
                             f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
                             f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
-                            f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
+                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>\n" # ⬅️ USE safe_seller
                             f"🕐 <i>{now}</i>", 
                             reply_markup=button_markup 
                         )
