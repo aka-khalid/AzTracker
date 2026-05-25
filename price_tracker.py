@@ -65,7 +65,7 @@ def truncate_name(name: str) -> str:
 async def async_get_kv(session, url, headers):
     async with session.get(url, headers=headers) as response:
         if response.status == 200:
-            return await response.json()
+            return await response.json(content_type=None)
         return None
 
 async def async_put_kv(session, url, headers, payload):
