@@ -31,7 +31,7 @@ Storing 96 identical price checks a day per product would destroy KV performance
 Instead of rendering static images or text ledgers, AzTracker intercepts Telegram's Native Web App triggers. The Cloudflare Worker acts as a web server, instantly rendering a beautiful, interactive `Chart.js` price graph that matches the user's native Telegram Dark/Light theme, without ever cluttering the chat history.
 
 ### 🎲 Dynamic Jitter Scheduling
-To prevent fixed-minute execution patterns (and subsequent API rate-limiting), the Cloudflare Worker intercepts a per-minute cron ping and generates randomized execution slots (`randInt`) inside each hour. It uses Cloudflare KV as a distributed lock to dispatch the GitHub Actions engine unpredictably, mimicking natural human traffic.
+To prevent fixed-minute execution patterns (and subsequent API rate-limiting), the Cloudflare Worker intercepts a per-minute cron ping and generates randomized execution slots (`randInt`) inside each hour. It uses Cloudflare's in-memory Cache API as a distributed lock to dispatch the GitHub Actions engine unpredictably, mimicking natural human traffic.
 
 ### 🧹 Zero-Clutter SPA Interface
 The Telegram bot functions as a Single-Page Application. Ghost inputs, old commands, and raw Amazon links are instantly vaporized upon processing. Pagination is handled dynamically in-place, keeping the user's chat history pristine and purely button-driven.
