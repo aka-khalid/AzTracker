@@ -972,8 +972,8 @@ async function handleScheduler(request, env, ctx) {
 
   // --- IN-MEMORY CACHE API OPTIMIZATION ---
   const cache = caches.default;
-  const scheduleReq = new Request(`https://internal.aztracker/schedule/${hourKey}`);
-  const lockReq = new Request(`https://internal.aztracker/lock/${hourKey}/${currentMinute}`);
+  const scheduleReq = new Request(`${url.origin}/schedule/${hourKey}`);
+  const lockReq = new Request(`${url.origin}/lock/${hourKey}/${currentMinute}`);
 
   // 1. Check Execution Lock (Zero KV Reads!)
   if (await cache.match(lockReq)) {
