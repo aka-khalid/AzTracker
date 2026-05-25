@@ -229,7 +229,7 @@ async def async_main():
             results = fetch_batch(asin_list)
             all_fetched_results.update(results)
             if idx < len(batches) - 1:
-                time.sleep(3)
+                await asyncio.sleep(3)
 
         # 3. Fetch Price History (With Auto-Migration)
         global_prices = {}
@@ -370,7 +370,7 @@ async def async_main():
                         if success:
                             p["alert_sent"] = True
                             dirty_users.add(chat_id)
-                            time.sleep(0.5)
+                            await asyncio.sleep(0.5)
                 else:
                     if last_price is not None and price < last_price:
                         send_telegram(chat_id,
@@ -384,7 +384,7 @@ async def async_main():
                             f"🕐 <i>{now}</i>", 
                             reply_markup=button_markup 
                         )
-                        time.sleep(0.5)
+                        await asyncio.sleep(0.5)
 
         # 5. Push System Stats, Price Shards, and Dirty Users Concurrently
         final_tasks = []
