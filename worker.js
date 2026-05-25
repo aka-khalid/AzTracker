@@ -649,8 +649,6 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
     }
   }
 
-  const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
-  let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
