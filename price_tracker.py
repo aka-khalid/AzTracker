@@ -93,8 +93,8 @@ def send_telegram(chat_id, text, reply_markup=None):
         print(f"Telegram error: {e}")
         return False
 
-async def async_send_telegram(session, chat_id, text, reply_markup=None):
-    """Async variant that reuses the open aiohttp connection pool."""
+async def async_send_telegram(session, chat_id, text, reply_markup=None, max_retries=3):
+    """Async variant with native 429 Too Many Requests backoff handling."""
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -105,12 +105,26 @@ async def async_send_telegram(session, chat_id, text, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = reply_markup
         
-    try:
-        async with session.post(url, json=payload, timeout=10) as response:
-            return response.status == 200
-    except Exception as e:
-        print(f"Telegram async error: {e}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            async with session.post(url, json=payload, timeout=10) as response:
+                if response.status == 200:
+                    return True
+                elif response.status == 429:
+                    # Telegram Rate Limit Hit: Read the required wait time
+                    resp_json = await response.json()
+                    wait_time = resp_json.get("parameters", {}).get("retry_after", 3)
+                    print(f"⚠️ Telegram 429 Limit Hit. Pausing alert for {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue # Retry the loop
+                else:
+                    print(f"Telegram async error: HTTP {response.status}")
+                    return False
+        except Exception as e:
+            print(f"Telegram async exception: {e}")
+            return False
+            
+    return False # Failed after max_retries
 
 def notify_admins_of_error(error_message):
     """Sends a fatal error alert to all Root Admins."""
