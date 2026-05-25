@@ -60,6 +60,16 @@ def get_product_id(url):
 def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
 
+def shorten_url(long_url):
+    try:
+        # is.gd provides a raw, limit-free text API
+        res = requests.get(f"https://is.gd/create.php?format=simple&url={long_url}", timeout=5)
+        if res.status_code == 200:
+            return res.text
+    except Exception:
+        pass
+    return long_url
+
 # ── Async Cloudflare KV Helpers ──────────────────────────────────────────────
 
 async def async_get_kv(session, url, headers):
@@ -74,7 +84,7 @@ async def async_put_kv(session, url, headers, payload):
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
-def send_telegram(chat_id, text):
+def send_telegram(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -82,6 +92,9 @@ def send_telegram(chat_id, text):
         "parse_mode": "HTML",
         "disable_web_page_preview": True
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+        
     try:
         res = requests.post(url, json=payload, timeout=10)
         return res.status_code == 200
@@ -320,6 +333,14 @@ async def async_main():
                     query_params.append(f"tag={AMAZON_PARTNER_TAG}")
                     
                 alert_url = f"{base_url}?{'&'.join(query_params)}" if query_params else base_url
+                alert_url = shorten_url(alert_url)
+                
+                # The Native Telegram Button Mask
+                button_markup = {
+                    "inline_keyboard": [
+                        [{"text": "🛒 Open in Amazon.eg", "url": alert_url}]
+                    ]
+                }
                 # --------------------------------
 
                 if p.get("name") != name:
@@ -354,8 +375,8 @@ async def async_main():
                             f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
                             f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
                             f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
-                            f"🕐 <i>{now}</i>\n\n"
-                            f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
+                            f"🕐 <i>{now}</i>", 
+                            reply_markup=button_markup 
                         )
                         if success:
                             p["alert_sent"] = True
@@ -371,8 +392,8 @@ async def async_main():
                             f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
                             f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
                             f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
-                            f"🕐 <i>{now}</i>\n\n"
-                            f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
+                            f"🕐 <i>{now}</i>", 
+                            reply_markup=button_markup 
                         )
                         time.sleep(0.5)
 
