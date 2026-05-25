@@ -12,7 +12,7 @@ export default {
 
     // Hidden scheduler endpoint for cron-job.org
     if (url.pathname === "/scheduler") {
-      return await handleScheduler(request, env);
+      return await handleScheduler(request, env, ctx); // passing CF's execution context (ctx) down to the scheduler so it can save data in the background without slowing down the web request
     }
 
         // ── MILESTONE 2: HISTORY API ENDPOINT ──
@@ -896,7 +896,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
 // ── Scheduler Endpoint ──────────────────────────────────────────────────────
 
-async function handleScheduler(request, env) {
+async function handleScheduler(request, env, ctx) {
   const url = new URL(request.url);
   const providedKey = url.searchParams.get("key") || request.headers.get("x-scheduler-key");
 
@@ -908,39 +908,46 @@ async function handleScheduler(request, env) {
   const hourKey = `${now.year}-${now.month}-${now.day}-${now.hour}`;
   const currentMinute = parseInt(now.minute, 10);
 
-  const scheduleKey = `schedule:${hourKey}`;
-  let slots = await env.AZTRACKER_DB.get(scheduleKey, "json");
+  // --- IN-MEMORY CACHE API OPTIMIZATION ---
+  const cache = caches.default;
+  const scheduleReq = new Request(`https://internal.aztracker/schedule/${hourKey}`);
+  const lockReq = new Request(`https://internal.aztracker/lock/${hourKey}/${currentMinute}`);
 
-  if (!slots) {
-    slots = buildHourlySlots();
-    await env.AZTRACKER_DB.put(scheduleKey, JSON.stringify(slots), { expirationTtl: 7200 });
-    console.log("Generated hourly slots:", slots);
-  }
-
-  const lockKey = `runlock:${hourKey}:${currentMinute}`;
-  const alreadyRan = await env.AZTRACKER_DB.get(lockKey);
-  if (alreadyRan) {
+  // 1. Check Execution Lock (Zero KV Reads!)
+  if (await cache.match(lockReq)) {
     return new Response("Already executed", { status: 200 });
   }
 
-  if (slots.includes(currentMinute)) {
-  try {
-    await triggerWorkflow(env);
-
-    await env.AZTRACKER_DB.put(lockKey, "1", {
-      expirationTtl: 7200
+  // 2. Fetch or Generate Schedule
+  let slots = [];
+  const cachedSchedule = await cache.match(scheduleReq);
+  
+  if (cachedSchedule) {
+    slots = await cachedSchedule.json();
+  } else {
+    slots = buildHourlySlots();
+    // Cache the slots in RAM for 1 hour
+    const res = new Response(JSON.stringify(slots), {
+      headers: { "Cache-Control": "s-maxage=3600", "Content-Type": "application/json" }
     });
-
-    return new Response(`Workflow triggered at minute ${currentMinute}`, {
-      status: 200
-    });
-
-  } catch (e) {
-    return new Response(`Trigger failed: ${e.message}`, {
-      status: 500
-    });
+    ctx.waitUntil(cache.put(scheduleReq, res));
+    console.log("Generated hourly slots:", slots);
   }
-}
+
+  // 3. Trigger Workflow
+  if (slots.includes(currentMinute)) {
+    try {
+      await triggerWorkflow(env);
+
+      // Lock this minute in RAM so it doesn't fire twice
+      const lockRes = new Response("1", { headers: { "Cache-Control": "s-maxage=3600" } });
+      ctx.waitUntil(cache.put(lockReq, lockRes));
+
+      return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
+    } catch (e) {
+      return new Response(`Trigger failed: ${e.message}`, { status: 500 });
+    }
+  }
 
   return new Response(`No run this minute (${currentMinute})`, { status: 200 });
 }
