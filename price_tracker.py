@@ -137,8 +137,8 @@ def fetch_batch(asin_list, retries=3):
                         if getattr(listing.merchant_info, 'id', None):
                             merchant_id = listing.merchant_info.id
                         
-                except (AttributeError, IndexError, TypeError):
-                    pass 
+                except (AttributeError, IndexError, TypeError) as e:
+                    print(f"    ⚠️ [ASIN: {asin}] Price Parse Silent Fail: {repr(e)}")
                 except Exception as e:
                     print(f"    🚨 [ASIN: {asin}] Unexpected PRICE ERROR: {repr(e)}")
 
