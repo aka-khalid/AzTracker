@@ -556,8 +556,13 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
   await Promise.all(pagedProducts.map(async (p) => {
     const pid = getAsinFromUrl(p.url);
     if (pid) {
-      const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
-      if (data) prices[pid] = data;
+      try { // ⬅️ ADD TRY/CATCH TO PREVENT PROMISE REJECTION
+        const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+        if (data) prices[pid] = data;
+      } catch (err) {
+        console.error(`KV Read failed for shard price:${pid}`, err);
+        // UI will degrade gracefully to showing "Waiting for next tracker run..." for this specific item
+      }
     }
   }));
   
@@ -806,8 +811,13 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   await Promise.all(pagedProducts.map(async (p) => {
     const pid = getAsinFromUrl(p.url);
     if (pid) {
-      const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
-      if (data) prices[pid] = data;
+      try { // ⬅️ ADD TRY/CATCH TO PREVENT PROMISE REJECTION
+        const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+        if (data) prices[pid] = data;
+      } catch (err) {
+        console.error(`KV Read failed for shard price:${pid}`, err);
+        // UI will degrade gracefully to showing "Waiting for next tracker run..." for this specific item
+      }
     }
   }));
   
