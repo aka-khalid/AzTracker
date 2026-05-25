@@ -237,7 +237,7 @@ async def async_main():
         if not keys_res:
             err_msg = "❌ Failed to fetch user keys from KV."
             print(err_msg)
-            notify_admins_of_error(err_msg)
+            await notify_admins_of_error(err_msg)
             return
             
         user_keys = keys_res.get("result", [])
@@ -494,7 +494,7 @@ async def async_main():
             else:
                 err_msg = "❌ CRITICAL: One or more KV Writes failed (Quota Exceeded?). Telegram Outbox aborted to prevent spam loops."
                 print(err_msg)
-                notify_admins_of_error(err_msg)
+                await notify_admins_of_error(err_msg)
 
 
 if __name__ == "__main__":
