@@ -606,9 +606,19 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
       if (prices[pid].last_updated) {
-        const parts = prices[pid].last_updated.split(' ');
-        const checkDate = parts[0]; // e.g., "2026-05-24"
-        const checkTime = parts[1]; // e.g., "22:07"
+        let checkDate, checkTime;
+
+        if (typeof prices[pid].last_updated === 'number') {
+          // New Unix Epoch Format
+          const dateObj = new Date(prices[pid].last_updated);
+          checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
+          checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+        } else {
+          // Legacy String Format: "2026-05-24 22:07 EEST"
+          const parts = prices[pid].last_updated.split(' ');
+          checkDate = parts[0];
+          checkTime = parts[1];
+        }
         
         // Get today's date formatted as YYYY-MM-DD in Cairo timezone
         const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
@@ -835,9 +845,19 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
       if (prices[pid].last_updated) {
-        const parts = prices[pid].last_updated.split(' ');
-        const checkDate = parts[0]; // e.g., "2026-05-24"
-        const checkTime = parts[1]; // e.g., "22:07"
+        let checkDate, checkTime;
+
+        if (typeof prices[pid].last_updated === 'number') {
+          // New Unix Epoch Format
+          const dateObj = new Date(prices[pid].last_updated);
+          checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
+          checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+        } else {
+          // Legacy String Format: "2026-05-24 22:07 EEST"
+          const parts = prices[pid].last_updated.split(' ');
+          checkDate = parts[0];
+          checkTime = parts[1];
+        }
         
         // Get today's date formatted as YYYY-MM-DD in Cairo timezone
         const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
