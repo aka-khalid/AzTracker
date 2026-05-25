@@ -21,6 +21,8 @@ This document tracks the technical debt, security fortifications, and feature ex
 - [x] **Automated KV Backups:** Add a pre-execution step in `price_tracker.yml` to download the `global_prices` and `history` JSON objects from Cloudflare KV and save them as GitHub artifacts. This ensures disaster recovery is possible if a script error corrupts the serverless database.
 - [x] **KV Write Quota Auditing:** Refactor the `schedule` and `runlock` key generations in `worker.js`. Currently, the scheduler consumes ~216 writes per day just checking in. Transition the lock mechanism to use Cloudflare's in-memory standard caching API instead of KV to free up database quota for actual product price updates.
 - [x] **Unify Timestamp Architecture:** Refactor the `last_updated` field in `global_prices` to use Unix epoch integers (`int(time.time() * 1000)`) instead of `pytz` formatted strings. Update `worker.js` `renderProductView` to ingest the epoch timestamp natively, ensuring backward compatibility with legacy string formats during the transition.
+- [ ] **KV Read Optimization in Webhook:** Wrap the `global:admins` and `global:approved_users` fetches inside `getUserRoles()` using the Cloudflare `caches.default` API (60-second TTL) to drastically slash KV Read operations during heavy UI navigation.
+- [ ] **Dead-User Pruning (403 Handling):** Catch Telegram `403 Forbidden` errors in the async notification engine. Automatically toggle a `paused: true` state for users who block the bot to prevent wasted Amazon API calls and KV reads.
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
 *Improving what the user actually sees and feels.*
@@ -33,6 +35,8 @@ This document tracks the technical debt, security fortifications, and feature ex
 - [ ] **Glanceable History Metrics:** Update `worker.js` to compute All-Time High (ATH), All-Time Low (ATL), and Average Price on the fly, injecting these quick stats directly into the Telegram product card for immediate context.
 - [ ] **Restock & Out-of-Stock (OOS) Tracking:** Modify the Python engine to log "OOS" states in the `global_prices` database. Implement a routing block to trigger specific "🚨 RESTOCK ALERT" notifications when an unavailable item returns to the Amazon catalog.
 - [ ] **Interactive Web App Target Setting:** Expand the `/chart/` Web App HTML to include an input UI for setting target prices. Build a `POST /api/set-target` endpoint in `worker.js` so users can update their database parameters natively within the graph interface, completely bypassing the Telegram chat flow.
+- [ ] **Silent Night Mode:** Utilize Telegram's `disable_notification=True` parameter in the engine. If the server time is between 11 PM and 7 AM Cairo time, push alerts silently to avoid disturbing sleeping users.
+- [ ] **The "Stale Target" Auto-Pause:** Introduce a 90-day tracking lifespan. If an item hasn't hit its aggressive target in 90 days, auto-pause it to save resources and notify the user to re-evaluate their price goal.
 
 ## 🌍 Phase 4: Platform Expansion (Growth)
 *Scaling the surface area of the platform.*
