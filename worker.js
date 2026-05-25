@@ -615,37 +615,31 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   let sellerInfo = "";
   let title = product.name ? product.name : "Amazon Product";
 
+  // NEW: Fetch global stats to get the true "last check" time globally
+  const stats = await env.AZTRACKER_DB.get("global:stats", "json");
+  const systemCheckTime = stats ? stats.last_run_timestamp : null;
+
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
       lastPrice = prices[pid].price.toLocaleString() + " EGP";
       if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) {
-        let checkDate, checkTime;
-
-        if (typeof prices[pid].last_updated === 'number') {
-          // New Unix Epoch Format
-          const dateObj = new Date(prices[pid].last_updated);
-          checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
-          checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
-        } else {
-          // Legacy String Format: "2026-05-24 22:07 EEST"
-          const parts = prices[pid].last_updated.split(' ');
-          checkDate = parts[0];
-          checkTime = parts[1];
-        }
-        
-        // Get today's date formatted as YYYY-MM-DD in Cairo timezone
-        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
-
-        if (checkDate === todayStr) {
-          lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
-        } else {
-          lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
-        }
-      }
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
+    }
+  }
+
+  // Parse the global timestamp instead of the local shard timestamp
+  if (systemCheckTime) {
+    const dateObj = new Date(systemCheckTime);
+    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
+    const checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+
+    if (checkDate === todayStr) {
+      lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
+    } else {
+      lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
     }
   }
 
@@ -875,37 +869,31 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   let sellerInfo = "";
   let title = product.name ? product.name : "Amazon Product";
 
+  // NEW: Fetch global stats to get the true "last check" time globally
+  const stats = await env.AZTRACKER_DB.get("global:stats", "json");
+  const systemCheckTime = stats ? stats.last_run_timestamp : null;
+
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
       lastPrice = prices[pid].price.toLocaleString() + " EGP";
       if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
       if (prices[pid].name) title = prices[pid].name;
-      if (prices[pid].last_updated) {
-        let checkDate, checkTime;
-
-        if (typeof prices[pid].last_updated === 'number') {
-          // New Unix Epoch Format
-          const dateObj = new Date(prices[pid].last_updated);
-          checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
-          checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
-        } else {
-          // Legacy String Format: "2026-05-24 22:07 EEST"
-          const parts = prices[pid].last_updated.split(' ');
-          checkDate = parts[0];
-          checkTime = parts[1];
-        }
-        
-        // Get today's date formatted as YYYY-MM-DD in Cairo timezone
-        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
-
-        if (checkDate === todayStr) {
-          lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
-        } else {
-          lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
-        }
-      }
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
+    }
+  }
+
+  // Parse the global timestamp instead of the local shard timestamp
+  if (systemCheckTime) {
+    const dateObj = new Date(systemCheckTime);
+    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
+    const checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+
+    if (checkDate === todayStr) {
+      lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
+    } else {
+      lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
     }
   }
 
