@@ -206,13 +206,13 @@ async def async_main():
                         if url:
                             asin = get_product_id(url)
                             if asin:
-                                unique_asins.add((asin, url))
+                                unique_asins.add(asin) # ⬅️ ONLY add the ASIN
 
         if not unique_asins:
             print("No active products to track across any users.")
             return
 
-        active_products = [{"asin": a[0], "url": a[1]} for a in unique_asins]
+        active_products = [{"asin": a} for a in unique_asins] # ⬅️ ONLY pass the ASIN
 
         # 2. Batch and Fetch (Synchronous API calls to Amazon)
         BATCH_SIZE = 10
@@ -310,7 +310,17 @@ async def async_main():
                 name, price, seller, merchant_id = res
                 price = round(price, 2)
                 display_name = truncate_name(name)
-                alert_url = f"{url}?m={merchant_id}" if merchant_id else url
+                
+                # --- UNIVERSAL URL GENERATOR ---
+                base_url = f"https://www.amazon.eg/dp/{product_id}"
+                query_params = []
+                if merchant_id:
+                    query_params.append(f"m={merchant_id}")
+                if AMAZON_PARTNER_TAG:
+                    query_params.append(f"tag={AMAZON_PARTNER_TAG}")
+                    
+                alert_url = f"{base_url}?{'&'.join(query_params)}" if query_params else base_url
+                # --------------------------------
 
                 if p.get("name") != name:
                     p["name"] = name
