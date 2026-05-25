@@ -320,6 +320,8 @@ async def async_main():
 
         # 4. Evaluate prices & route personalized Telegram notifications
         dirty_users = set()
+        outbox = [] # ⬅️ Initialize the safe holding queue
+
         for chat_id, products in users_data.items():
             for p in products:
                 if p.get("paused", False):
@@ -372,7 +374,6 @@ async def async_main():
                 elif isinstance(last_entry, (int, float)):
                     last_price = last_entry
 
-                # Only write to the database if the core data actually shifted!
                 if last_price != price or last_name != name or last_seller != seller:
                     updates[product_id] = {
                         "price": price, 
@@ -394,42 +395,39 @@ async def async_main():
 
                 if target_price:
                     if price <= target_price and not p.get("alert_sent", False):
-                        # ⬅️ ADD ESCAPES HERE
                         safe_name = html.escape(display_name)
                         safe_seller = html.escape(seller)
                         
-                        success = await async_send_telegram(session, chat_id, 
+                        # ⬅️ QUEUE INSTEAD OF SENDING
+                        msg_text = (
                             f"🎯 <b>TARGET MET!</b>\n\n"
-                            f"📦 <b>{safe_name}</b>\n" # ⬅️ USE safe_name
+                            f"📦 <b>{safe_name}</b>\n"
                             f"└ 🆔 <code>{product_id}</code>\n\n"
                             f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
                             f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
-                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>\n" # ⬅️ USE safe_seller
-                            f"🕐 <i>{now}</i>", 
-                            reply_markup=button_markup 
+                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>\n"
+                            f"🕐 <i>{now}</i>"
                         )
-                        if success:
-                            p["alert_sent"] = True
-                            dirty_users.add(chat_id)
-                            await asyncio.sleep(0.5)
+                        outbox.append({"chat_id": chat_id, "text": msg_text, "markup": button_markup})
+                        p["alert_sent"] = True
+                        dirty_users.add(chat_id)
                 else:
                     if last_price is not None and price < last_price:
-                        # ⬅️ ADD ESCAPES HERE
                         safe_name = html.escape(display_name)
                         safe_seller = html.escape(seller)
                         
-                        await async_send_telegram(session, chat_id, 
+                        # ⬅️ QUEUE INSTEAD OF SENDING
+                        msg_text = (
                             f"🚨 <b>PRICE DROP ALERT</b>\n\n"
-                            f"📦 <b>{safe_name}</b>\n" # ⬅️ USE safe_name
+                            f"📦 <b>{safe_name}</b>\n"
                             f"└ 🆔 <code>{product_id}</code>\n\n"
                             f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
                             f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
                             f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
-                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>\n" # ⬅️ USE safe_seller
-                            f"🕐 <i>{now}</i>", 
-                            reply_markup=button_markup 
+                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>\n"
+                            f"🕐 <i>{now}</i>"
                         )
-                        await asyncio.sleep(0.5)
+                        outbox.append({"chat_id": chat_id, "text": msg_text, "markup": button_markup})
 
         # 5. Push System Stats, Price Shards, and Dirty Users Concurrently
         final_tasks = []
@@ -457,9 +455,24 @@ async def async_main():
         final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/global:stats", cf_headers, system_stats))
         print(f"📊 Queued System stats update: {system_stats}")
 
+        # 6. The Two-Phase Commit Execution (Outbox Pattern)
         if final_tasks:
-            await asyncio.gather(*final_tasks)
-            print("🚀 Executed all queued database writes concurrently!")
+            write_results = await asyncio.gather(*final_tasks)
+            
+            # If ANY write failed (e.g., False due to Quota Limit), we abort the Telegram outbox
+            if all(write_results):
+                print("🚀 Executed all queued database writes concurrently!")
+                
+                # Release the Outbox!
+                if outbox:
+                    print(f"📨 Dispatching {len(outbox)} Telegram alerts from Outbox...")
+                    for alert in outbox:
+                        await async_send_telegram(session, alert["chat_id"], alert["text"], alert["markup"])
+                        await asyncio.sleep(0.5) # Anti-flood pacing
+            else:
+                err_msg = "❌ CRITICAL: One or more KV Writes failed (Quota Exceeded?). Telegram Outbox aborted to prevent spam loops."
+                print(err_msg)
+                notify_admins_of_error(err_msg)
 
 
 if __name__ == "__main__":
