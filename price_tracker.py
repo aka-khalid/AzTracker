@@ -228,8 +228,30 @@ async def async_main():
             if idx < len(batches) - 1:
                 time.sleep(3)
 
-        # 3. Fetch Global Price History
-        global_prices = await async_get_kv(session, f"{cf_base_url}/values/global_prices", cf_headers) or {}
+        # 3. Fetch Price History (With Auto-Migration)
+        global_prices = {}
+        legacy_blob = await async_get_kv(session, f"{cf_base_url}/values/global_prices", cf_headers)
+
+        if legacy_blob:
+            print("📦 Legacy global_prices blob detected. Executing auto-migration...")
+            global_prices = legacy_blob
+
+            # Push all legacy items into their own individual shards concurrently
+            shard_tasks = [async_put_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers, data) for asin, data in legacy_blob.items()]
+            await asyncio.gather(*shard_tasks)
+
+            # Destroy the massive legacy blob to free up space
+            async with session.delete(f"{cf_base_url}/values/global_prices", headers=cf_headers) as resp:
+                if resp.status == 200:
+                    print("✅ Database successfully sharded and legacy blob destroyed!")
+        else:
+            # Standard Sharded Fetch: Only grab the ASINs we are actively tracking
+            price_tasks = [async_get_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers) for asin in all_fetched_results.keys()]
+            price_results = await asyncio.gather(*price_tasks)
+            for asin, price_data in zip(all_fetched_results.keys(), price_results):
+                if price_data:
+                    global_prices[asin] = price_data
+
         updates = {}
 
         # ── DELTA HISTORY LOGGER ──
@@ -344,24 +366,27 @@ async def async_main():
                         )
                         time.sleep(0.5)
 
-        # 5. Push System Stats, Global Prices, and Dirty Users Concurrently
+        # 5. Push System Stats, Price Shards, and Dirty Users Concurrently
         final_tasks = []
-        
+
         if updates:
-            global_prices.update(updates)
-            final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/global_prices", cf_headers, global_prices))
-            print("\n✅ Queued Global database sync.")
+            for asin, data in updates.items():
+                final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers, data))
+            print(f"\n✅ Queued {len(updates)} individual price shards for sync.")
         else:
-            print("\n➖ Global database unchanged.")
+            print("\n➖ No prices changed. Skipping DB writes.")
 
         if dirty_users:
             print(f"💾 Queued {len(dirty_users)} dirty user states for sync.")
             for chat_id in dirty_users:
                 final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers, users_data[chat_id]))
 
+        # Calculate accurate Hivemind size by counting sharded keys
+        prices_keys_res = await async_get_kv(session, f"{cf_base_url}/keys?prefix=price:", cf_headers)
+        hivemind_size = len(prices_keys_res.get("result", [])) if prices_keys_res else 0
         system_stats = {
             "active_api_calls": len(unique_asins),
-            "hivemind_size": len(global_prices),
+            "hivemind_size": hivemind_size,
             "last_run_timestamp": unix_now_ms
         }
         final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/global:stats", cf_headers, system_stats))
