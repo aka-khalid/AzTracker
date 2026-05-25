@@ -226,7 +226,10 @@ async def async_main():
         for idx, batch in enumerate(batches):
             print(f"\n🚀 Fetching batch {idx+1}/{len(batches)}...")
             asin_list = [p["asin"] for p in batch]
-            results = fetch_batch(asin_list)
+            
+            # Offload the synchronous SDK and time.sleep() calls to a background thread
+            results = await asyncio.to_thread(fetch_batch, asin_list)
+            
             all_fetched_results.update(results)
             if idx < len(batches) - 1:
                 await asyncio.sleep(3)
