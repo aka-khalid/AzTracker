@@ -10,6 +10,8 @@ import time
 import requests
 import traceback
 import re
+import asyncio
+import aiohttp
 from datetime import datetime
 import pytz
 from amazon_creatorsapi import AmazonCreatorsApi, Country
@@ -55,10 +57,20 @@ def get_product_id(url):
         return gp_match.group(1).upper()
     return None
 
-
 def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
 
+# ── Async Cloudflare KV Helpers ──────────────────────────────────────────────
+
+async def async_get_kv(session, url, headers):
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            return await response.json()
+        return None
+
+async def async_put_kv(session, url, headers, payload):
+    async with session.put(url, headers=headers, json=payload) as response:
+        return response.status == 200
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
@@ -84,17 +96,14 @@ def notify_admins_of_error(error_message):
     
     admin_ids = [uid.strip() for uid in ALLOWED_USERS.split(",") if uid.strip()]
     for admin_id in admin_ids:
-        # Truncate error message if it exceeds Telegram's 4096 char limit
         safe_msg = error_message[:4000]
         alert_text = f"🚨 <b>AzTracker Engine Crash</b>\n\nThe background workflow encountered a fatal error:\n\n<pre>{safe_msg}</pre>"
         send_telegram(admin_id, alert_text)
 
-
 # ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
 
 def fetch_batch(asin_list, retries=3):
-    """Fetches a batch of up to 10 ASINs in a single API call.
-    Returns a dict mapping {asin: (name, price)}."""
+    """Fetches a batch of up to 10 ASINs in a single API call."""
     batch_results = {}
     for attempt in range(retries):
         try:
@@ -137,23 +146,21 @@ def fetch_batch(asin_list, retries=3):
                     batch_results[asin] = (name, float(price), seller, merchant_id)
                     print(f"    ✅ Parsed: {name[:30]}... | {price} EGP | By: {seller}")
                 else:
-                    print(f"    ❌ Skipping {asin} - Missing data (Name: {bool(name)}, Price: {bool(price)})")
+                    print(f"    ❌ Skipping {asin} - Missing data")
 
             return batch_results
 
         except Exception as e:
             print(f"  [Attempt {attempt+1}] API error for batch: {e}")
-            # Dynamic backoff: 5s, 10s, 15s
             wait_time = 5 * (attempt + 1)
             print(f"  ⏳ Cooling down for {wait_time} seconds before retrying...")
             time.sleep(wait_time)
 
     return batch_results
 
+# ── Main Async Engine ────────────────────────────────────────────────────────
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-def main():
+async def async_main():
     CF_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
     CF_NAMESPACE_ID = os.environ.get("CLOUDFLARE_KV_NAMESPACE_ID")
     CF_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
@@ -171,235 +178,204 @@ def main():
     now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
     unix_now_ms = int(time.time() * 1000)
 
-    # 1. Fetch all multi-tenant users from Cloudflare KV
-    print("🔍 Fetching multi-tenant data from Cloudflare KV...")
-    keys_res = requests.get(f"{cf_base_url}/keys?prefix=user:", headers=cf_headers)
-    if keys_res.status_code != 200:
-        err_msg = f"❌ Failed to connect to KV. HTTP {keys_res.status_code}: {keys_res.text}"
-        print(err_msg)
-        notify_admins_of_error(err_msg)
-        return
-        
-    user_keys = keys_res.json().get("result", [])
-    users_data = {}
-    unique_asins = set()
-
-    for k in user_keys:
-        key_name = k["name"]
-        chat_id = key_name.split(":")[1]
-        
-        val_res = requests.get(f"{cf_base_url}/values/{key_name}", headers=cf_headers)
-        if val_res.status_code == 200:
-            products = val_res.json()
-            users_data[chat_id] = products
-            for p in products:
-                if not p.get("paused", False):
-                    # Use .get() instead of strict ["url"]
-                    url = p.get("url")
-                    if url:
-                        asin = get_product_id(url)
-                        if asin:
-                            unique_asins.add((asin, url))
-
-    if not unique_asins:
-        print("No active products to track across any users.")
-        return
-
-    active_products = [{"asin": a[0], "url": a[1]} for a in unique_asins]
-
-    # 2. Batch and Fetch
-    BATCH_SIZE = 10
-    batches = [active_products[i:i + BATCH_SIZE] for i in range(0, len(active_products), BATCH_SIZE)]
-    all_fetched_results = {}
-    print(f"📋 Found {len(active_products)} unique items across {len(users_data)} users.")
-
-    for idx, batch in enumerate(batches):
-        print(f"\n🚀 Fetching batch {idx+1}/{len(batches)}...")
-        asin_list = [p["asin"] for p in batch]
-        results = fetch_batch(asin_list)
-        all_fetched_results.update(results)
-        if idx < len(batches) - 1:
-            time.sleep(3) # Increased throttle to respect Amazon limits
-
-    # 3. Fetch Global Price History from Cloudflare
-    gp_res = requests.get(f"{cf_base_url}/values/global_prices", headers=cf_headers)
-    global_prices = gp_res.json() if gp_res.status_code == 200 else {}
-    updates = {}
-
-    # ── MILESTONE 1: DELTA HISTORY LOGGER ──
-    print("📊 Evaluating price deltas for history logs...")
-    history_updates = 0
-    unix_now = int(time.time())
-
-    for asin, (name, current_price, seller, merchant_id) in all_fetched_results.items():
-        current_price = round(current_price, 2)
-        
-        # Safely extract last price
-        last_entry = global_prices.get(asin)
-        last_price = None
-        if isinstance(last_entry, dict):
-            last_price = last_entry.get("price")
-        elif isinstance(last_entry, (int, float)):
-            last_price = last_entry
-
-        # IF brand new OR price changed -> Log a Delta!
-        if last_price is None or current_price != last_price:
-            hist_key = f"history:{asin}"
-            hist_url = f"{cf_base_url}/values/{hist_key}"
+    async with aiohttp.ClientSession() as session:
+        # 1. Fetch multi-tenant directory (Keys)
+        print("🔍 Fetching multi-tenant data concurrently from Cloudflare KV...")
+        keys_res = await async_get_kv(session, f"{cf_base_url}/keys?prefix=user:", cf_headers)
+        if not keys_res:
+            err_msg = "❌ Failed to fetch user keys from KV."
+            print(err_msg)
+            notify_admins_of_error(err_msg)
+            return
             
-            # Fetch existing history array safely
-            hist_res = requests.get(hist_url, headers=cf_headers)
-            try:
-                history_data = hist_res.json() if hist_res.status_code == 200 else []
-                # If the database got corrupted into a dict or string, force it back to a list
-                if not isinstance(history_data, list):
-                    history_data = []
-            except Exception:
-                history_data = []
+        user_keys = keys_res.get("result", [])
+        users_data = {}
+        unique_asins = set()
+
+        # CONCURRENT FETCH: Pull all users at the same time
+        fetch_tasks = [async_get_kv(session, f"{cf_base_url}/values/{k['name']}", cf_headers) for k in user_keys]
+        fetched_results = await asyncio.gather(*fetch_tasks)
+
+        for k, products in zip(user_keys, fetched_results):
+            if products:
+                chat_id = k["name"].split(":")[1]
+                users_data[chat_id] = products
+                for p in products:
+                    if not p.get("paused", False):
+                        url = p.get("url")
+                        if url:
+                            asin = get_product_id(url)
+                            if asin:
+                                unique_asins.add((asin, url))
+
+        if not unique_asins:
+            print("No active products to track across any users.")
+            return
+
+        active_products = [{"asin": a[0], "url": a[1]} for a in unique_asins]
+
+        # 2. Batch and Fetch (Synchronous API calls to Amazon)
+        BATCH_SIZE = 10
+        batches = [active_products[i:i + BATCH_SIZE] for i in range(0, len(active_products), BATCH_SIZE)]
+        all_fetched_results = {}
+        print(f"📋 Found {len(active_products)} unique items across {len(users_data)} users.")
+
+        for idx, batch in enumerate(batches):
+            print(f"\n🚀 Fetching batch {idx+1}/{len(batches)}...")
+            asin_list = [p["asin"] for p in batch]
+            results = fetch_batch(asin_list)
+            all_fetched_results.update(results)
+            if idx < len(batches) - 1:
+                time.sleep(3)
+
+        # 3. Fetch Global Price History
+        global_prices = await async_get_kv(session, f"{cf_base_url}/values/global_prices", cf_headers) or {}
+        updates = {}
+
+        # ── DELTA HISTORY LOGGER ──
+        print("📊 Evaluating price deltas for history logs...")
+        history_updates = 0
+        unix_now = int(time.time())
+        history_tasks = []
+
+        for asin, (name, current_price, seller, merchant_id) in all_fetched_results.items():
+            current_price = round(current_price, 2)
             
-            # Append new data point (p = price, t = unix timestamp)
-            history_data.append({"p": current_price, "t": unix_now})
-            
-            # Keep array lean (Max 150 entries per ASIN)
-            history_data = history_data[-150:]
-            
-            # Save back to KV
-            requests.put(hist_url, headers=cf_headers, json=history_data)
-            print(f"    📝 Logged new delta for {asin}: {current_price} EGP")
-            history_updates += 1
-
-    if history_updates == 0:
-        print("    ➖ No price changes detected. History logs untouched.")
-    # ───────────────────────────────────────
-
-    # 4. Evaluate prices & route personalized Telegram notifications
-    dirty_users = set()
-    for chat_id, products in users_data.items():
-        for p in products:
-            if p.get("paused", False):
-                continue
-            
-            # Safely grab the URL, skip if corrupted
-            url = p.get("url")
-            if not url:
-                continue
-
-            product_id = get_product_id(url)
-            res = all_fetched_results.get(product_id)
-            
-            if not res:
-                continue
-
-            name, price, seller, merchant_id = res
-            price = round(price, 2)
-            display_name = truncate_name(name)
-            # Construct specific seller URL if available
-            alert_url = f"{url}?m={merchant_id}" if merchant_id else url
-
-            # --- AUTO-HEAL: Update the user's personal database if the name is missing/wrong
-            if p.get("name") != name:
-                p["name"] = name
-                dirty_users.add(chat_id)
-            # -----------------------------------------------------------------------------
-
-            # 1. Calculate the Last Price
-            last_entry = global_prices.get(product_id)
+            last_entry = global_prices.get(asin)
             last_price = None
             if isinstance(last_entry, dict):
                 last_price = last_entry.get("price")
             elif isinstance(last_entry, (int, float)):
                 last_price = last_entry
 
-            # 2. Always update the price in the master 'updates' list 
-            #    (This ensures database stays current)
-            updates[product_id] = {"price": price, "name": name, "seller": seller, "merchant_id": merchant_id, "last_updated": unix_now_ms}
+            if last_price is None or current_price != last_price:
+                # We fetch history synchronously for safety before mutating, but write async
+                hist_url = f"{cf_base_url}/values/history:{asin}"
+                history_data = await async_get_kv(session, hist_url, cf_headers) or []
+                if not isinstance(history_data, list):
+                    history_data = []
+                
+                history_data.append({"p": current_price, "t": unix_now})
+                history_data = history_data[-150:]
+                
+                # Queue the concurrent write
+                history_tasks.append(async_put_kv(session, hist_url, cf_headers, history_data))
+                print(f"    📝 Queued delta log for {asin}: {current_price} EGP")
+                history_updates += 1
 
-            # 3. Calculate drop metrics (for the message)
-            # Use 0 if there was no last_price to avoid math errors
-            diff = (last_price - price) if last_price is not None else 0
-            pct  = (diff / last_price * 100) if last_price and last_price > 0 else 0
+        if history_tasks:
+            await asyncio.gather(*history_tasks)
+            print(f"    ✅ Logged {history_updates} price deltas concurrently.")
+        else:
+            print("    ➖ No price changes detected. History logs untouched.")
 
-            target_price = p.get("target_price")
+        # 4. Evaluate prices & route personalized Telegram notifications
+        dirty_users = set()
+        for chat_id, products in users_data.items():
+            for p in products:
+                if p.get("paused", False):
+                    continue
+                
+                url = p.get("url")
+                if not url:
+                    continue
 
-            # Calculate "Down" text only if there is an actual difference
-            down_text = f" (Down {diff:,.2f} EGP)" if diff > 0 else ""
-            
-            # 4. State Management: Reset alert flag if price fluctuates back above target
-            if target_price and price > target_price:
-                if p.get("alert_sent", False): # Only flag if it actually changes
-                    p["alert_sent"] = False
+                product_id = get_product_id(url)
+                res = all_fetched_results.get(product_id)
+                if not res:
+                    continue
+
+                name, price, seller, merchant_id = res
+                price = round(price, 2)
+                display_name = truncate_name(name)
+                alert_url = f"{url}?m={merchant_id}" if merchant_id else url
+
+                if p.get("name") != name:
+                    p["name"] = name
                     dirty_users.add(chat_id)
 
-            # 5. Notification Logic (Mutually Exclusive Routing)
-            if target_price:
-                # SCENARIO A: Target is set. Suppress all noise until target is crossed.
-                if price <= target_price and not p.get("alert_sent", False):
-                    success = send_telegram(chat_id,
-                        f"🎯 <b>TARGET MET!</b>\n\n"
-                        f"📦 <b>{display_name}</b>\n"
-                        f"└ 🆔 <code>{product_id}</code>\n\n"
-                        f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
-                        f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
-                        f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
-                        f"🕐 <i>{now}</i>\n\n"
-                        f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
-                    )
-                    # ONLY flag as sent if Telegram actually delivered it
-                    if success:
-                        p["alert_sent"] = True
+                last_entry = global_prices.get(product_id)
+                last_price = None
+                if isinstance(last_entry, dict):
+                    last_price = last_entry.get("price")
+                elif isinstance(last_entry, (int, float)):
+                    last_price = last_entry
+
+                updates[product_id] = {"price": price, "name": name, "seller": seller, "merchant_id": merchant_id, "last_updated": unix_now_ms}
+
+                diff = (last_price - price) if last_price is not None else 0
+                pct  = (diff / last_price * 100) if last_price and last_price > 0 else 0
+                target_price = p.get("target_price")
+                down_text = f" (Down {diff:,.2f} EGP)" if diff > 0 else ""
+                
+                if target_price and price > target_price:
+                    if p.get("alert_sent", False): 
+                        p["alert_sent"] = False
                         dirty_users.add(chat_id)
+
+                if target_price:
+                    if price <= target_price and not p.get("alert_sent", False):
+                        success = send_telegram(chat_id,
+                            f"🎯 <b>TARGET MET!</b>\n\n"
+                            f"📦 <b>{display_name}</b>\n"
+                            f"└ 🆔 <code>{product_id}</code>\n\n"
+                            f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
+                            f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
+                            f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
+                            f"🕐 <i>{now}</i>\n\n"
+                            f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
+                        )
+                        if success:
+                            p["alert_sent"] = True
+                            dirty_users.add(chat_id)
+                            time.sleep(0.5)
+                else:
+                    if last_price is not None and price < last_price:
+                        send_telegram(chat_id,
+                            f"🚨 <b>PRICE DROP ALERT</b>\n\n"
+                            f"📦 <b>{display_name}</b>\n"
+                            f"└ 🆔 <code>{product_id}</code>\n\n"
+                            f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
+                            f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
+                            f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
+                            f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
+                            f"🕐 <i>{now}</i>\n\n"
+                            f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
+                        )
                         time.sleep(0.5)
-            else:
-                # SCENARIO B: No target set. Evaluate for general price drops.
-                if last_price is not None and price < last_price:
-                    send_telegram(chat_id,
-                        f"🚨 <b>PRICE DROP ALERT</b>\n\n"
-                        f"📦 <b>{display_name}</b>\n"
-                        f"└ 🆔 <code>{product_id}</code>\n\n"
-                        f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
-                        f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
-                        f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
-                        f"🏬 <b>Seller:</b> <i>{seller}</i>\n"
-                        f"🕐 <i>{now}</i>\n\n"
-                        f'🔗 <a href="{alert_url}">Open on Amazon.eg</a>'
-                    )
-                    time.sleep(0.5)
 
-    # 5. Push updated master price list back to Cloudflare ONLY if there are updates
-    if updates:
-        global_prices.update(updates)
-        requests.put(f"{cf_base_url}/values/global_prices", headers=cf_headers, json=global_prices)
-        print("\n✅ Global database synced to Cloudflare KV.")
-    else:
-        print("\n➖ Global database unchanged. Skipping KV write.")
+        # 5. Push System Stats, Global Prices, and Dirty Users Concurrently
+        final_tasks = []
+        
+        if updates:
+            global_prices.update(updates)
+            final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/global_prices", cf_headers, global_prices))
+            print("\n✅ Queued Global database sync.")
+        else:
+            print("\n➖ Global database unchanged.")
 
-    # 6. Persist user product changes ONLY for users whose state changed (Dirty tracking)
-    if dirty_users:
-        print(f"💾 Syncing {len(dirty_users)} updated user states to Cloudflare...")
-        for chat_id in dirty_users:
-            requests.put(f"{cf_base_url}/values/user:{chat_id}:products", 
-                         headers=cf_headers, 
-                         json=users_data[chat_id])
-        print("✅ Dirty user states saved.")
-    else:
-        print("➖ No user states modified. Skipping KV writes.")
+        if dirty_users:
+            print(f"💾 Queued {len(dirty_users)} dirty user states for sync.")
+            for chat_id in dirty_users:
+                final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers, users_data[chat_id]))
 
-    # 7. Push System Stats for the Admin UI
-    system_stats = {
-        "active_api_calls": len(unique_asins),
-        "hivemind_size": len(global_prices),
-        "last_run_timestamp": int(time.time() * 1000)
-    }
-    requests.put(f"{cf_base_url}/values/global:stats", headers=cf_headers, json=system_stats)
-    print(f"📊 System stats updated: {system_stats}")
+        system_stats = {
+            "active_api_calls": len(unique_asins),
+            "hivemind_size": len(global_prices),
+            "last_run_timestamp": unix_now_ms
+        }
+        final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/global:stats", cf_headers, system_stats))
+        print(f"📊 Queued System stats update: {system_stats}")
 
-    
+        if final_tasks:
+            await asyncio.gather(*final_tasks)
+            print("🚀 Executed all queued database writes concurrently!")
+
 
 if __name__ == "__main__":
     try:
-        main()
+        asyncio.run(async_main())
     except Exception as e:
-        # Catch ANY unhandled exception and send the traceback to the Admin
         error_trace = traceback.format_exc()
         print("FATAL ERROR:")
         print(error_trace)
