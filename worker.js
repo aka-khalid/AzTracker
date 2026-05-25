@@ -81,12 +81,7 @@ async function handleMessage(message, env) {
   const messageId = message.message_id;
 
   // ── ROLE-BASED SECURITY BOUNCER ───────────────────────────────────────────
-  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
-  const isRootAdmin = rootAdmins.includes(chatId);
-  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-  const isAdmin = isRootAdmin || admins.includes(chatId);
-  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-  const isApproved = isAdmin || approvedUsers.includes(chatId);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env);
 
   if (!isApproved) {
     await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
@@ -260,12 +255,7 @@ async function handleCallback(callback, env, baseUrl) {
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
   
-  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
-  const isRootAdmin = rootAdmins.includes(chatId);
-  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-  const isAdmin = isRootAdmin || admins.includes(chatId);
-  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-  const isApproved = isAdmin || approvedUsers.includes(chatId);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env);
 
   if (!isApproved) return;
 
@@ -730,14 +720,12 @@ async function renderUserList(env, chatId, messageId, page = 0) {
   const text = `👥 <b>Approved Users Register</b> (Page ${page + 1} of ${totalPages})\n\nSelect an active profile record below to open its structural permissions card inline:`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
+
 async function renderMainMenu(env, chatId, messageId = null) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   
-  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
-  const isRootAdmin = rootAdmins.includes(chatId);
-  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-  const isAdmin = isRootAdmin || admins.includes(chatId);
+  const { isAdmin } = await getUserRoles(chatId, env);
   
   const total = products.length;
   const active = products.filter(p => !p.paused).length;
@@ -1023,6 +1011,17 @@ function convertHindiToArabic(text) {
   if (!text) return "";
   const hindiToAr = { '٠':'0', '١':'1', '٢':'2', '٣':'3', '٤':'4', '٥':'5', '٦':'6', '٧':'7', '٨':'8', '٩':'9' };
   return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
+}
+
+async function getUserRoles(chatId, env) {
+  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
+  const isRootAdmin = rootAdmins.includes(chatId);
+  const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+  const isAdmin = isRootAdmin || admins.includes(chatId);
+  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  const isApproved = isAdmin || approvedUsers.includes(chatId);
+
+  return { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers };
 }
 
 async function deleteTelegramMessage(env, chatId, messageId) {
