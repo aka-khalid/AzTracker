@@ -169,6 +169,7 @@ def main():
 
     cairo_tz = pytz.timezone('Africa/Cairo')
     now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
+    unix_now_ms = int(time.time() * 1000)
 
     # 1. Fetch all multi-tenant users from Cloudflare KV
     print("🔍 Fetching multi-tenant data from Cloudflare KV...")
@@ -311,7 +312,7 @@ def main():
 
             # 2. Always update the price in the master 'updates' list 
             #    (This ensures database stays current)
-            updates[product_id] = {"price": price, "name": name, "seller": seller, "merchant_id": merchant_id, "last_updated": now}
+            updates[product_id] = {"price": price, "name": name, "seller": seller, "merchant_id": merchant_id, "last_updated": unix_now_ms}
 
             # 3. Calculate drop metrics (for the message)
             # Use 0 if there was no last_price to avoid math errors
