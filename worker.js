@@ -665,7 +665,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   // --------------------------------
 
   const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
-  const text = `📦 <b>${cleanTitle}</b>\n` +
+               `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
                `💰 <b>Price:</b> ${lastPrice}` +
                `${targetText}\n` +
