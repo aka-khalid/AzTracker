@@ -92,6 +92,25 @@ def send_telegram(chat_id, text, reply_markup=None):
         print(f"Telegram error: {e}")
         return False
 
+async def async_send_telegram(session, chat_id, text, reply_markup=None):
+    """Async variant that reuses the open aiohttp connection pool."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+        
+    try:
+        async with session.post(url, json=payload, timeout=10) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"Telegram async error: {e}")
+        return False
+
 def notify_admins_of_error(error_message):
     """Sends a fatal error alert to all Root Admins."""
     if not ALLOWED_USERS:
@@ -373,7 +392,7 @@ async def async_main():
 
                 if target_price:
                     if price <= target_price and not p.get("alert_sent", False):
-                        success = send_telegram(chat_id,
+                        success = await async_send_telegram(session, chat_id,  # ⬅️ Updated to await async_send_telegram
                             f"🎯 <b>TARGET MET!</b>\n\n"
                             f"📦 <b>{display_name}</b>\n"
                             f"└ 🆔 <code>{product_id}</code>\n\n"
@@ -389,7 +408,7 @@ async def async_main():
                             await asyncio.sleep(0.5)
                 else:
                     if last_price is not None and price < last_price:
-                        send_telegram(chat_id,
+                        await async_send_telegram(session, chat_id,  # ⬅️ Updated to await async_send_telegram
                             f"🚨 <b>PRICE DROP ALERT</b>\n\n"
                             f"📦 <b>{display_name}</b>\n"
                             f"└ 🆔 <code>{product_id}</code>\n\n"
