@@ -338,12 +338,25 @@ async def async_main():
 
                 last_entry = global_prices.get(product_id)
                 last_price = None
+                last_name = None
+                last_seller = None
+                
                 if isinstance(last_entry, dict):
                     last_price = last_entry.get("price")
+                    last_name = last_entry.get("name")
+                    last_seller = last_entry.get("seller")
                 elif isinstance(last_entry, (int, float)):
                     last_price = last_entry
 
-                updates[product_id] = {"price": price, "name": name, "seller": seller, "merchant_id": merchant_id, "last_updated": unix_now_ms}
+                # Only write to the database if the core data actually shifted!
+                if last_price != price or last_name != name or last_seller != seller:
+                    updates[product_id] = {
+                        "price": price, 
+                        "name": name, 
+                        "seller": seller, 
+                        "merchant_id": merchant_id, 
+                        "last_updated": unix_now_ms
+                    }
 
                 diff = (last_price - price) if last_price is not None else 0
                 pct  = (diff / last_price * 100) if last_price and last_price > 0 else 0
