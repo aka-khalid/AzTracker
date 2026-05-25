@@ -36,7 +36,12 @@ export default {
     // ── MILESTONE 3: WEB APP CHART HTML ──
     if (url.pathname.startsWith("/chart/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
-      const html = renderChartHTML(asin);
+      // Strict regex enforcement preventing JS injection payload
+      if (!asin || !/^[A-Z0-9]{10}$/i.test(asin)) {
+        return new Response("Invalid ASIN", { status: 400 });
+      }
+      const safeAsin = asin.toUpperCase();
+      const html = renderChartHTML(safeAsin);
       return new Response(html, {
         status: 200,
         headers: { "Content-Type": "text/html;charset=UTF-8" }
@@ -221,7 +226,7 @@ async function handleMessage(message, env) {
     await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
 
     const title = extractedName ? extractedName : pid;
-    const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
+    const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
     
     const successText = `✅ <b>Product Registered!</b>\n\n` +
                     `📌 <b>${cleanTitle}</b>\n` +
@@ -239,7 +244,7 @@ async function handleMessage(message, env) {
 
   if (text === "/start" || text === "/manage") {
     await deleteTelegramMessage(env, chatId, messageId);
-    await renderMainMenu(env, chatId);
+    await renderMainMenu(env, chatId, null, isAdmin);
     return;
   }
 
@@ -300,7 +305,7 @@ async function handleCallback(callback, env, baseUrl) {
     await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
   }
   else if (data === "main_menu") {
-    await renderMainMenu(env, chatId, messageId);
+    await renderMainMenu(env, chatId, messageId, isAdmin);
   }
   else if (data.startsWith("list_products_")) {
     const page = parseInt(data.replace("list_products_", "")) || 0;
@@ -459,11 +464,12 @@ async function handleCallback(callback, env, baseUrl) {
         return;
     }
 
-    await env.AZTRACKER_DB.put("global:last_trigger", now.toString());
+    // Write the lock BEFORE triggering to prevent concurrent double-fires
+    await env.AZTRACKER_DB.put("global:last_trigger", now.toString(), { expirationTtl: 700 });
     await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
     try {
       const triggered = await triggerWorkflow(env);
-      if (triggered) {
+      if (triggered) { 
         await editTelegramMessage(env, chatId, messageId, "✅ <b>Workflow successfully triggered!</b>\nChecks are running in the background.", {
           inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
         });
@@ -627,7 +633,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
       lastPrice = prices[pid].price.toLocaleString() + " EGP";
-      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
+      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(prices[pid].seller)}</i>`;
       if (prices[pid].name) title = prices[pid].name;
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
@@ -649,7 +655,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   }
 
 
-  const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
+  const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   // --- UNIVERSAL URL GENERATOR ---
@@ -752,11 +758,11 @@ async function renderUserList(env, chatId, messageId, page = 0) {
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderMainMenu(env, chatId, messageId = null) {
+async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   
-  const { isAdmin } = await getUserRoles(chatId, env);
+  // Removed redundant await getUserRoles() read!
   
   const total = products.length;
   const active = products.filter(p => !p.paused).length;
@@ -886,7 +892,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
       lastPrice = prices[pid].price.toLocaleString() + " EGP";
-      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${prices[pid].seller}</i>`;
+      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(prices[pid].seller)}</i>`;
       if (prices[pid].name) title = prices[pid].name;
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
@@ -907,7 +913,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
     }
   }
 
-  const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
+  const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   // --- UNIVERSAL URL GENERATOR ---
@@ -1073,6 +1079,11 @@ function getCairoParts(date = new Date()) {
 }
 
 // ── Core Helpers ────────────────────────────────────────────────────────────
+
+function escapeHtml(unsafe) {
+    if (!unsafe) return "";
+    return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 function convertHindiToArabic(text) {
   if (!text) return "";
