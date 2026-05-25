@@ -652,10 +652,19 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  let productUrl = product.url;
-  if (prices[pid] && prices[pid].merchant_id) {
-    productUrl = `https://www.amazon.eg/dp/${pid}?m=${prices[pid].merchant_id}`;
+  const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
+  let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
+
+  // --- UNIVERSAL URL GENERATOR ---
+  let productUrl = `https://www.amazon.eg/dp/${pid}`;
+  const queryParams = [];
+  if (prices[pid] && prices[pid].merchant_id) queryParams.push(`m=${prices[pid].merchant_id}`);
+  if (env.AMZN_ASSOCIATES_TAG) queryParams.push(`tag=${env.AMZN_ASSOCIATES_TAG}`);
+  
+  if (queryParams.length > 0) {
+    productUrl += `?${queryParams.join("&")}`;
   }
+  // --------------------------------
 
   const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
                `📦 <b>${cleanTitle}</b>\n` +
@@ -905,10 +914,16 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const cleanTitle = title.length > 35 ? title.substring(0, 32) + "..." : title;
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  let productUrl = product.url;
-  if (prices[pid] && prices[pid].merchant_id) {
-    productUrl = `https://www.amazon.eg/dp/${pid}?m=${prices[pid].merchant_id}`;
+  // --- UNIVERSAL URL GENERATOR ---
+  let productUrl = `https://www.amazon.eg/dp/${pid}`;
+  const queryParams = [];
+  if (prices[pid] && prices[pid].merchant_id) queryParams.push(`m=${prices[pid].merchant_id}`);
+  if (env.AMZN_ASSOCIATES_TAG) queryParams.push(`tag=${env.AMZN_ASSOCIATES_TAG}`);
+  
+  if (queryParams.length > 0) {
+    productUrl += `?${queryParams.join("&")}`;
   }
+  // --------------------------------
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
