@@ -14,13 +14,13 @@ This document tracks the technical debt, security fortifications, and feature ex
 ## ⚡ Phase 2: DevOps & Database Optimization (Speed & Scaling)
 *Focuses on bypassing hardware and network limits to make the engine run faster while future-proofing Cloudflare KV limits.*
 
-- [ ] **Sharding the Global Blob:** Break the massive `global_prices` JSON object into individual KV pairs keyed as `price:{asin}`. This neutralizes Cloudflare's 25MB value limit.
-- [ ] **Asynchronous Processing:** Refactor the sequential `requests.get()` and `requests.put()` loops in the Python engine to use `asyncio` and `aiohttp`. Firing KV updates simultaneously will drastically reduce GitHub Actions runtime.
-- [ ] **GitHub Actions `pip` Cache:** Add the `actions/cache` step to `price_tracker.yml` to cache Python dependencies, saving ~30 seconds of compute time per run.
-- [ ] **DRY RBAC Refactor:** Extract the duplicate Admin/Root Admin validation logic in `worker.js` into a single `getUserRoles(chatId, env)` helper function.
-- [ ] **Automated KV Backups:** Add a pre-execution step in `price_tracker.yml` to download the `global_prices` and `history` JSON objects from Cloudflare KV and save them as GitHub artifacts. This ensures disaster recovery is possible if a script error corrupts the serverless database.
-- [ ] **KV Write Quota Auditing:** Refactor the `schedule` and `runlock` key generations in `worker.js`. Currently, the scheduler consumes ~216 writes per day just checking in. Transition the lock mechanism to use Cloudflare's in-memory standard caching API instead of KV to free up database quota for actual product price updates.
-- [ ] **Unify Timestamp Architecture:** Refactor the `last_updated` field in `global_prices` to use Unix epoch integers (`int(time.time() * 1000)`) instead of `pytz` formatted strings. Update `worker.js` `renderProductView` to ingest the epoch timestamp natively, ensuring backward compatibility with legacy string formats during the transition.
+- [x] **Sharding the Global Blob:** Break the massive `global_prices` JSON object into individual KV pairs keyed as `price:{asin}`. This neutralizes Cloudflare's 25MB value limit.
+- [x] **Asynchronous Processing:** Refactor the sequential `requests.get()` and `requests.put()` loops in the Python engine to use `asyncio` and `aiohttp`. Firing KV updates simultaneously will drastically reduce GitHub Actions runtime.
+- [x] **GitHub Actions `pip` Cache:** Add the `actions/cache` step to `price_tracker.yml` to cache Python dependencies, saving ~30 seconds of compute time per run.
+- [x] **DRY RBAC Refactor:** Extract the duplicate Admin/Root Admin validation logic in `worker.js` into a single `getUserRoles(chatId, env)` helper function.
+- [x] **Automated KV Backups:** Add a pre-execution step in `price_tracker.yml` to download the `global_prices` and `history` JSON objects from Cloudflare KV and save them as GitHub artifacts. This ensures disaster recovery is possible if a script error corrupts the serverless database.
+- [x] **KV Write Quota Auditing:** Refactor the `schedule` and `runlock` key generations in `worker.js`. Currently, the scheduler consumes ~216 writes per day just checking in. Transition the lock mechanism to use Cloudflare's in-memory standard caching API instead of KV to free up database quota for actual product price updates.
+- [x] **Unify Timestamp Architecture:** Refactor the `last_updated` field in `global_prices` to use Unix epoch integers (`int(time.time() * 1000)`) instead of `pytz` formatted strings. Update `worker.js` `renderProductView` to ingest the epoch timestamp natively, ensuring backward compatibility with legacy string formats during the transition.
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
 *Improving what the user actually sees and feels.*
