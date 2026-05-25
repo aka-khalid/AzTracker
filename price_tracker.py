@@ -63,11 +63,36 @@ def truncate_name(name: str) -> str:
 
 # ── Async Cloudflare KV Helpers ──────────────────────────────────────────────
 
+class KVRateLimitedError(Exception):
+    pass
+
 async def async_get_kv(session, url, headers):
     async with session.get(url, headers=headers) as response:
         if response.status == 200:
             return await response.json(content_type=None)
+        elif response.status == 429:
+            raise KVRateLimitedError(f"KV rate limited on GET {url}")
         return None
+
+async def notify_admins_of_error(session, error_message):
+    """Sends a fatal error alert to all Root Admins (non-blocking)."""
+    if not ALLOWED_USERS:
+        return
+    admin_ids = [uid.strip() for uid in ALLOWED_USERS.split(",") if uid.strip()]
+    safe_msg = html.escape(error_message[:4000])
+    alert_text = f"🚨 <b>AzTracker Engine Crash</b>\n\nThe background workflow encountered a fatal error:\n\n<pre>{safe_msg}</pre>"
+    tasks = [async_send_telegram(session, admin_id, alert_text) for admin_id in admin_ids]
+    await asyncio.gather(*tasks)
+
+def send_telegram_sync_fallback(error_message):
+    """Synchronous fallback solely for the outer __main__ exception handler."""
+    if not ALLOWED_USERS:
+        return
+    admin_ids = [uid.strip() for uid in ALLOWED_USERS.split(",") if uid.strip()]
+    safe_msg = html.escape(error_message[:4000])
+    alert_text = f"🚨 <b>AzTracker Engine Crash (Fatal)</b>\n\n<pre>{safe_msg}</pre>"
+    for admin_id in admin_ids:
+        send_telegram(admin_id, alert_text)
 
 async def async_put_kv(session, url, headers, payload):
     async with session.put(url, headers=headers, json=payload) as response:
@@ -125,17 +150,6 @@ async def async_send_telegram(session, chat_id, text, reply_markup=None, max_ret
             return False
             
     return False # Failed after max_retries
-
-def notify_admins_of_error(error_message):
-    """Sends a fatal error alert to all Root Admins."""
-    if not ALLOWED_USERS:
-        return
-    
-    admin_ids = [uid.strip() for uid in ALLOWED_USERS.split(",") if uid.strip()]
-    for admin_id in admin_ids:
-        safe_msg = error_message[:4000]
-        alert_text = f"🚨 <b>AzTracker Engine Crash</b>\n\nThe background workflow encountered a fatal error:\n\n<pre>{safe_msg}</pre>"
-        send_telegram(admin_id, alert_text)
 
 # ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
 
@@ -205,7 +219,8 @@ async def async_main():
     if not all([CF_ACCOUNT_ID, CF_NAMESPACE_ID, CF_API_TOKEN]):
         err_msg = "❌ Missing Cloudflare API credentials. Cannot sync database."
         print(err_msg)
-        notify_admins_of_error(err_msg)
+        async with aiohttp.ClientSession() as err_session:
+            await notify_admins_of_error(err_session, err_msg)
         return
 
     cf_headers = {"Authorization": f"Bearer {CF_API_TOKEN}", "Content-Type": "application/json"}
@@ -273,8 +288,15 @@ async def async_main():
         
         print("📦 Fetching individual price shards concurrently...")
         price_tasks = [async_get_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers) for asin in all_fetched_results.keys()]
-        price_results = await asyncio.gather(*price_tasks)
         
+        try:
+            price_results = await asyncio.gather(*price_tasks)
+        except KVRateLimitedError as e:
+            err_msg = f"🚨 KV Rate Limit hit during price shard fetch. Aborting run to prevent write storm.\n{e}"
+            print(err_msg)
+            await notify_admins_of_error(session, err_msg)
+            return
+            
         for asin, price_data in zip(all_fetched_results.keys(), price_results):
             if price_data:
                 global_prices[asin] = price_data
@@ -482,4 +504,4 @@ if __name__ == "__main__":
         error_trace = traceback.format_exc()
         print("FATAL ERROR:")
         print(error_trace)
-        notify_admins_of_error(str(e) + "\n\n" + error_trace)
+        send_telegram_sync_fallback(str(e) + "\n\n" + error_trace)
