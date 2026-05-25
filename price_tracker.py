@@ -60,16 +60,6 @@ def get_product_id(url):
 def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
 
-def shorten_url(long_url):
-    try:
-        # is.gd provides a raw, limit-free text API
-        res = requests.get(f"https://is.gd/create.php?format=simple&url={long_url}", timeout=5)
-        if res.status_code == 200:
-            return res.text
-    except Exception:
-        pass
-    return long_url
-
 # ── Async Cloudflare KV Helpers ──────────────────────────────────────────────
 
 async def async_get_kv(session, url, headers):
@@ -333,7 +323,6 @@ async def async_main():
                     query_params.append(f"tag={AMAZON_PARTNER_TAG}")
                     
                 alert_url = f"{base_url}?{'&'.join(query_params)}" if query_params else base_url
-                alert_url = shorten_url(alert_url)
                 
                 # The Native Telegram Button Mask
                 button_markup = {
