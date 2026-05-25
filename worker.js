@@ -665,16 +665,16 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   // --------------------------------
 
   const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
-               `📦 <b>${cleanTitle}</b>\n` +
+  const text = `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
                `💰 <b>Price:</b> ${lastPrice}` +
                `${targetText}\n` +
                `${sellerInfo}\n` +
-               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n` +
-               `🔗 <a href="${productUrl}">Open on Amazon.eg</a>`;
+               `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
     const keyboard = {
     inline_keyboard: [
+      [{ text: "🛒 Open on Amazon.eg", url: productUrl }], // ⬅️ ADDED THIS LINE
       [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
       [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
       [{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }],
@@ -928,8 +928,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
                `💰 <b>Price:</b> ${lastPrice}` +
                `${targetText}\n` +
                `${sellerInfo}\n` +
-               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n` +
-               `🔗 <a href="${productUrl}">Open on Amazon.eg</a>`;
+               `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
   const targetBtn = product.target_price 
     ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
@@ -937,6 +936,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
     const keyboard = {
     inline_keyboard: [
+      [{ text: "🛒 Open on Amazon.eg", url: productUrl }], // ⬅️ ADDED THIS LINE
       [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
         targetBtn,
