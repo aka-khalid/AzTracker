@@ -427,15 +427,19 @@ async def async_main():
                 used_last_seen = unix_now_ms
             # ---------------------------------
 
-            seen_amazon_eg_at = (
-                unix_now_ms if c_seen_amazon_eg
-                else last_seen_amazon_eg_at
-            )
+            # --- LAZY REFRESH TIMESTAMPS ---
+            # Only mutate the timestamp if it's missing, or older than 24 hours (86,400,000 ms)
+            # This prevents minute-by-minute KV write storms while maintaining the 14-day TTL memory.
             
-            seen_resale_at = (
-                unix_now_ms if c_seen_resale
-                else last_seen_resale_at
-            )
+            seen_amazon_eg_at = last_seen_amazon_eg_at
+            if c_seen_amazon_eg:
+                if not last_seen_amazon_eg_at or (unix_now_ms - last_seen_amazon_eg_at) > 86400000:
+                    seen_amazon_eg_at = unix_now_ms
+                    
+            seen_resale_at = last_seen_resale_at
+            if c_seen_resale:
+                if not last_seen_resale_at or (unix_now_ms - last_seen_resale_at) > 86400000:
+                    seen_resale_at = unix_now_ms
 
             new_changed = c_new_price != last_new_price
             used_changed = c_used_price != last_used_price
