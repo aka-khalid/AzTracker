@@ -610,7 +610,6 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       let newSeller = pData.new_seller || pData.seller;
       let usedPrice = pData.used_price;
       let usedSeller = pData.used_seller;
-      let amzPrice = pData.amz_price;
 
       if (newPrice !== undefined && newPrice !== null) {
         lastPrice = newPrice.toLocaleString() + " EGP";
@@ -626,9 +625,6 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       if (pData.name) title = pData.name;
 
       let altLines = [];
-      if (amzPrice && amzPrice !== newPrice) {
-        altLines.push(`└ 🛡️ <b>Amazon.eg:</b> ${amzPrice.toLocaleString()} EGP <i>(New)</i>`);
-      }
       if (usedPrice) {
         altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${usedPrice.toLocaleString()} EGP <i>(Used)</i>`);
       }
@@ -872,7 +868,6 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       let newSeller = pData.new_seller || pData.seller;
       let usedPrice = pData.used_price;
       let usedSeller = pData.used_seller;
-      let amzPrice = pData.amz_price;
 
       if (newPrice !== undefined && newPrice !== null) {
         lastPrice = newPrice.toLocaleString() + " EGP";
@@ -888,9 +883,6 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       if (pData.name) title = pData.name;
 
       let altLines = [];
-      if (amzPrice && amzPrice !== newPrice) {
-        altLines.push(`└ 🛡️ <b>Amazon.eg:</b> ${amzPrice.toLocaleString()} EGP <i>(New)</i>`);
-      }
       if (usedPrice) {
         altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${usedPrice.toLocaleString()} EGP <i>(Used)</i>`);
       }
