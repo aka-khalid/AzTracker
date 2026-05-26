@@ -534,7 +534,14 @@ async def async_main():
                 last_new_price = last_entry.get("new_price")
                 last_used_price = last_entry.get("used_price")
                 target_price = p.get("target_price")
+
+                target_price = p.get("target_price")
                 
+                # Retrieve the latest timestamps (either from the fresh updates dict, or fallback to global_prices)
+                latest_state = updates.get(product_id) or global_prices.get(product_id, {})
+                current_seen_amazon_eg_at = latest_state.get("seen_amazon_eg_at")
+                current_seen_resale_at = latest_state.get("seen_resale_at")
+                                    
                 def queue_alert(cond_label, price, last_price, seller, mid, is_target, alert_key):
                     base_url = f"https://www.amazon.eg/dp/{product_id}"
                     q_params = {}
@@ -555,6 +562,9 @@ async def async_main():
                         amazon_price <= new_price * AMAZON_ALT_MAX_MULTIPLIER and
                         mid != amazon_mid
                     )
+                    
+                    resale_is_active_alternative = False
+
                     if amazon_alt_eligible:
                         safe_amazon_seller = html.escape(amazon_seller or "Amazon.eg")
                         premium = ((amazon_price - new_price) / new_price * 100) if new_price else 0
@@ -568,6 +578,11 @@ async def async_main():
                             if offer_price is None or offer_price >= price:
                                 continue
                             safe_used_seller = html.escape(offer.get("seller") or "Amazon Resale")
+                            
+                            # Track if Resale is injected as a live alternative
+                            if offer.get("mid") == AMAZON_RESALE_MERCHANT_ID or "resale" in safe_used_seller.lower():
+                                resale_is_active_alternative = True
+                                
                             alert_alts.append(f"└ 📦 <b>{safe_used_seller}:</b> {offer_price:,.2f} EGP <i>(Used)</i>")
                             used_alt_count += 1
                             if used_alt_count >= MAX_USED_ALT_OFFERS:
@@ -577,6 +592,31 @@ async def async_main():
                             alert_alts.append(f"└ 🛒 <b>Buy Box:</b> {new_price:,.2f} EGP <i>(New)</i>")
                         elif new_price is None:
                             alert_alts.append(f"└ ❌ <b>Buy Box:</b> Out of Stock <i>(New)</i>")
+                            
+                    # --- HISTORICAL FALLBACK LINKS (Suppression Logic) ---
+                    historical_links = []
+                    current_seller_is_amazon = is_amazon_eg_merchant(mid)
+                    now_ms = int(time.time() * 1000)
+                    
+                    amazon_seen_recently = current_seen_amazon_eg_at and (now_ms - current_seen_amazon_eg_at) < (14 * 24 * 60 * 60 * 1000)
+                    resale_seen_recently = current_seen_resale_at and (now_ms - current_seen_resale_at) < (14 * 24 * 60 * 60 * 1000)
+                    
+                    if not current_seller_is_amazon and not amazon_alt_eligible and amazon_seen_recently:
+                        amazon_eg_url = f"https://www.amazon.eg/dp/{product_id}?m={AMAZON_EG_MERCHANT_ID}"
+                        if AMAZON_PARTNER_TAG: amazon_eg_url += f"&tag={AMAZON_PARTNER_TAG}"
+                        historical_links.append(f"└ 🛡️ <a href=\"{amazon_eg_url}\">Amazon.eg Official Listing</a>")
+                        
+                    if not resale_is_active_alternative and resale_seen_recently:
+                        resale_url = f"https://www.amazon.eg/dp/{product_id}?m={AMAZON_RESALE_MERCHANT_ID}"
+                        if AMAZON_PARTNER_TAG: resale_url += f"&tag={AMAZON_PARTNER_TAG}"
+                        historical_links.append(f"└ 📦 <a href=\"{resale_url}\">Amazon Resale Deals</a>")
+                        
+                    if historical_links:
+                        alert_alts.append("")
+                        alert_alts.append("💡 <b>Worth Checking:</b>")
+                        alert_alts.extend(historical_links)
+                        alert_alts.append("└ <i>Previously observed for this ASIN</i>")
+
                     final_smart_alts = ("\n\n💡 <b>Smart Alternatives:</b>\n" + "\n".join(alert_alts)) if alert_alts else ""
                     
                     if is_target:
