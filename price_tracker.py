@@ -460,7 +460,9 @@ async def async_main():
                 c_amazon_mid != last_entry.get("amazon_mid") or
                 c_amazon_is_buybox != bool(last_entry.get("amazon_is_buybox", False)) or
                 c_used_offers != last_entry.get("used_offers", []) or
-                miss_streak != last_entry.get("used_miss_streak", 0)):
+                miss_streak != last_entry.get("used_miss_streak", 0) or
+                seen_amazon_eg_at != last_entry.get("seen_amazon_eg_at") or
+                seen_resale_at != last_entry.get("seen_resale_at")):
 
                 updates[asin] = {
                     "new_price": c_new_price,
