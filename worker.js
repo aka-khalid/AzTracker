@@ -10,12 +10,10 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Hidden scheduler endpoint for cron-job.org
     if (url.pathname === "/scheduler") {
-      return await handleScheduler(request, env, ctx); // passing CF's execution context (ctx) down to the scheduler so it can save data in the background without slowing down the web request
+      return await handleScheduler(request, env, ctx);
     }
 
-        // ── MILESTONE 2: HISTORY API ENDPOINT ──
     if (url.pathname.startsWith("/api/history/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
       if (!asin || asin.length < 10) {
@@ -33,10 +31,8 @@ export default {
       });
     }
 
-    // ── MILESTONE 3: WEB APP CHART HTML ──
     if (url.pathname.startsWith("/chart/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
-      // Strict regex enforcement preventing JS injection payload
       if (!asin || !/^[A-Z0-9]{10}$/i.test(asin)) {
         return new Response("Invalid ASIN", { status: 400 });
       }
@@ -47,11 +43,9 @@ export default {
         headers: { "Content-Type": "text/html;charset=UTF-8" }
       });
     }
-    // ─────────────────────────────────────
 
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-    // ── ZERO-TRUST WEBHOOK VALIDATION ──
     if (env.TELEGRAM_WEBHOOK_SECRET) {
       const secretToken = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
       if (secretToken !== env.TELEGRAM_WEBHOOK_SECRET) {
@@ -62,10 +56,10 @@ export default {
 
     try {
       const payload = await request.json();
-      const baseUrl = url.origin; // ⬅️ We capture the worker's domain here
+      const baseUrl = url.origin; 
       
       if (payload.callback_query) {
-        await handleCallback(payload.callback_query, env, baseUrl); // ⬅️ Pass it down
+        await handleCallback(payload.callback_query, env, baseUrl); 
       } else if (payload.message && payload.message.text) {
         await handleMessage(payload.message, env);
       }
@@ -80,28 +74,23 @@ export default {
 // ── Interceptors ────────────────────────────────────────────────────────────
 
 async function handleMessage(message, env) {
-  // 🌍 LOCALIZATION INTERCEPTOR: Normalize numerals before any logic runs
   const text = convertHindiToArabic(message.text).trim();
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
-  // ── ROLE-BASED SECURITY BOUNCER ───────────────────────────────────────────
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env);
 
   if (!isApproved) {
     await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
     return;
   }
-  // ──────────────────────────────────────────────────────────────────────────
 
-  // 🎯 TARGET PRICE STATE INTERCEPTOR
   const stateKey = `state:${chatId}`;
   const activeState = await env.AZTRACKER_DB.get(stateKey);
   
-  // 📢 BROADCAST STATE INTERCEPTOR
   if (activeState === 'broadcast' && isRootAdmin) {
     await env.AZTRACKER_DB.delete(stateKey);
-    await deleteTelegramMessage(env, chatId, messageId); // Vaporize the input text
+    await deleteTelegramMessage(env, chatId, messageId);
     
     const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Broadcasting...</b>`);
     
@@ -138,7 +127,9 @@ async function handleMessage(message, env) {
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       products[pIndex].target_price = num;
-      products[pIndex].alert_sent = false; // Force a reset so the new target is fresh
+      products[pIndex].alert_sent = false; 
+      products[pIndex].alert_sent_new = false; 
+      products[pIndex].alert_sent_used = false; 
       await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
     }
     
@@ -151,7 +142,6 @@ async function handleMessage(message, env) {
     return;
   }
 
-  // 🧹 GHOST INPUTS: If input is raw data, vaporize the message instantly
   const isNumericId = /^\d{6,15}$/.test(text);
   const isAmazonLink = text.includes("amazon.eg") || text.includes("amzn.to") || text.includes("amzn.eu");
 
@@ -159,7 +149,6 @@ async function handleMessage(message, env) {
     await deleteTelegramMessage(env, chatId, messageId);
   }
 
-  // 👑 ADMIN CARD GENERATOR (Triggers when an Admin pastes a numeric User ID)
   if (isAdmin && isNumericId) {
     const targetId = text;
     const isTargetRoot = rootAdmins.includes(targetId);
@@ -193,7 +182,6 @@ async function handleMessage(message, env) {
     return;
   }
 
-  // 🛒 LINK PASTE HANDLER (Triggers when a user drops an Amazon URL)
   if (isAmazonLink) {
     const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
     const inputUrl = urlMatch ? urlMatch[1] : text;
@@ -279,11 +267,9 @@ async function handleCallback(callback, env, baseUrl) {
     const targetId = data.replace("revoke_", "");
     if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
     
-    // 1. Remove them from the approved directory
     const updatedUsers = approvedUsers.filter(id => id !== targetId);
     await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
     
-    // 2. TOTAL PURGE: Nuke their product registry AND their active UI state
     await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
     await env.AZTRACKER_DB.delete(`ui:${targetId}`);
     
@@ -317,7 +303,6 @@ async function handleCallback(callback, env, baseUrl) {
   else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
     
-    // ── System Health Metrics ──
     const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0, last_run_timestamp: null };
     
     let lastRunText = "Pending...";
@@ -334,7 +319,6 @@ async function handleCallback(callback, env, baseUrl) {
            `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
            `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
     
-    // Dynamically build the button array
     let adminButtons = [
       [{ text: "👥 View Approved Users", callback_data: "list_users" }]
     ];
@@ -356,7 +340,7 @@ async function handleCallback(callback, env, baseUrl) {
   }
   else if (data.startsWith("list_users") && isAdmin) {
     const parts = data.split("_");
-    const page = parts[2] ? parseInt(parts[2]) : 0; // Supports "list_users" and "list_users_1"
+    const page = parts[2] ? parseInt(parts[2]) : 0; 
     await renderUserList(env, chatId, messageId, page);
   }
   else if (data.startsWith("manage_user_") && isAdmin) {
@@ -388,7 +372,7 @@ async function handleCallback(callback, env, baseUrl) {
   else if (data.startsWith("admProd_") && isAdmin) {
     const parts = data.split("_");
     const targetId = parts[1];
-    const page = parts[2] ? parseInt(parts[2]) : 0; // Safely defaults to Page 0
+    const page = parts[2] ? parseInt(parts[2]) : 0; 
     await renderAdminUserProducts(env, chatId, messageId, targetId, page);
   }
   else if (data.startsWith("admView_") && isAdmin) {
@@ -410,7 +394,6 @@ async function handleCallback(callback, env, baseUrl) {
     }
     await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
   }
-  // --- USER DELETION CONFIRMATION ---
   else if (data.startsWith("confirmDel_")) {
     const pid = data.replace("confirmDel_", "");
     const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your tracking list?\n\n<i>This action cannot be undone.</i>`;
@@ -422,8 +405,6 @@ async function handleCallback(callback, env, baseUrl) {
       ]
     });
   }
-  
-  // --- ADMIN DELETION CONFIRMATION ---
   else if (data.startsWith("admConfDel_") && isAdmin) {
     const parts = data.split("_");
     const targetId = parts[1];
@@ -453,7 +434,7 @@ async function handleCallback(callback, env, baseUrl) {
   else if (data === "global_track" && isAdmin) {
     const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
     const now = Date.now();
-    const cooldown = 10 * 60 * 1000; // 10 minutes
+    const cooldown = 10 * 60 * 1000;
 
     if (lastTrigger && (now - parseInt(lastTrigger)) < cooldown) {
         const remaining = Math.ceil((cooldown - (now - parseInt(lastTrigger))) / 60000);
@@ -464,7 +445,6 @@ async function handleCallback(callback, env, baseUrl) {
         return;
     }
 
-    // Write the lock BEFORE triggering to prevent concurrent double-fires
     await env.AZTRACKER_DB.put("global:last_trigger", now.toString(), { expirationTtl: 700 });
     await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
     try {
@@ -488,7 +468,7 @@ async function handleCallback(callback, env, baseUrl) {
   }
   else if (data.startsWith("settarget_")) {
     const pid = data.replace("settarget_", "");
-    await env.AZTRACKER_DB.put(`state:${chatId}`, pid, { expirationTtl: 300 }); // 5 minute lock
+    await env.AZTRACKER_DB.put(`state:${chatId}`, pid, { expirationTtl: 300 });
     const text = `🎯 <b>Set Target Price</b>\n\nASIN: <code>${pid}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).`;
     await editTelegramMessage(env, chatId, messageId, text, {
       inline_keyboard: [[{ text: "❌ Cancel", callback_data: `view_${pid}` }]]
@@ -500,14 +480,16 @@ async function handleCallback(callback, env, baseUrl) {
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       delete products[pIndex].target_price;
-      delete products[pIndex].alert_sent; // Clean up the ghost flag
+      delete products[pIndex].alert_sent; 
+      delete products[pIndex].alert_sent_new; 
+      delete products[pIndex].alert_sent_used; 
       await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
     }
     await renderProductView(env, chatId, messageId, pid, baseUrl);
   }
   else if (data.startsWith("view_")) {
     const pid = data.replace("view_", "");
-    await env.AZTRACKER_DB.delete(`state:${chatId}`); // Clear any hanging target states
+    await env.AZTRACKER_DB.delete(`state:${chatId}`); 
     await renderProductView(env, chatId, messageId, pid, baseUrl);
   }
   else if (data.startsWith("pause_") || data.startsWith("resume_")) {
@@ -547,27 +529,21 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
     return;
   }
 
-  // --- Pagination Logic ---
   const ITEMS_PER_PAGE = 5;
   const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
-  
-  // Safety check bounds
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
   const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
   
-  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
-  // NEW:
   const prices = {};
   await Promise.all(pagedProducts.map(async (p) => {
     const pid = getAsinFromUrl(p.url);
     if (pid) {
-      try { // ⬅️ ADD TRY/CATCH TO PREVENT PROMISE REJECTION
+      try { 
         const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
         if (data) prices[pid] = data;
       } catch (err) {
         console.error(`KV Read failed for shard price:${pid}`, err);
-        // UI will degrade gracefully to showing "Waiting for next tracker run..." for this specific item
       }
     }
   }));
@@ -589,7 +565,6 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
     keyboard.inline_keyboard.push([{ text: `${statusIcon} ${targetIcon}${name}`, callback_data: `admView_${targetId}_${pid}` }]);
   });
 
-  // --- Navigation Controls ---
   if (totalPages > 1) {
     let navRow = [];
     if (page > 0) {
@@ -612,8 +587,6 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   const targetDbKey = `user:${targetId}:products`;
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
-  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
-  // NEW:
   const prices = {};
   const priceData = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
   if (priceData) prices[pid] = priceData;
@@ -624,26 +597,53 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   let lastPrice = "⏳ Waiting for next tracker run...";
   let lastUpdated = ""; 
   let sellerInfo = "";
+  let smartAlts = "";
   let title = product.name ? product.name : "Amazon Product";
 
-  // NEW: Fetch global stats to get the true "last check" time globally
   const stats = await env.AZTRACKER_DB.get("global:stats", "json");
   const systemCheckTime = stats ? stats.last_run_timestamp : null;
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
-      lastPrice = prices[pid].price.toLocaleString() + " EGP";
-      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(prices[pid].seller)}</i>`;
-      if (prices[pid].name) title = prices[pid].name;
+      let pData = prices[pid];
+      let newPrice = pData.new_price !== undefined ? pData.new_price : pData.price;
+      let newSeller = pData.new_seller || pData.seller;
+      let usedPrice = pData.used_price;
+      let usedSeller = pData.used_seller;
+      let amzPrice = pData.amz_price;
+
+      if (newPrice !== undefined && newPrice !== null) {
+        lastPrice = newPrice.toLocaleString() + " EGP";
+        if (newSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(newSeller)}</i>`;
+      } else if (usedPrice !== undefined && usedPrice !== null) {
+        lastPrice = "❌ Out of Stock (New)";
+        sellerInfo = "";
+      } else {
+        lastPrice = "❌ Out of Stock";
+        sellerInfo = "";
+      }
+
+      if (pData.name) title = pData.name;
+
+      let altLines = [];
+      if (amzPrice && amzPrice !== newPrice) {
+        altLines.push(`└ 🛡️ <b>Amazon.eg:</b> ${amzPrice.toLocaleString()} EGP <i>(New)</i>`);
+      }
+      if (usedPrice) {
+        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${usedPrice.toLocaleString()} EGP <i>(Used)</i>`);
+      }
+      
+      if (altLines.length > 0) {
+        smartAlts = `\n\n💡 <b>Smart Alternatives:</b>\n` + altLines.join("\n");
+      }
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
     }
   }
 
-  // Parse the global timestamp instead of the local shard timestamp
   if (systemCheckTime) {
     const dateObj = new Date(systemCheckTime);
-    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
+    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj);
     const checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 
@@ -654,32 +654,32 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
     }
   }
 
-
   const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  // --- UNIVERSAL URL GENERATOR ---
   let productUrl = `https://www.amazon.eg/dp/${pid}`;
   const queryParams = [];
-  if (prices[pid] && prices[pid].merchant_id) queryParams.push(`m=${prices[pid].merchant_id}`);
+  const targetMerchant = pid.includes(":") ? pid.split(":")[1] : (prices[pid] && prices[pid].new_mid ? prices[pid].new_mid : (prices[pid] && prices[pid].merchant_id ? prices[pid].merchant_id : null));
+
+  if (targetMerchant) queryParams.push(`m=${targetMerchant}`);
   if (env.AMZN_ASSOCIATES_TAG) queryParams.push(`tag=${env.AMZN_ASSOCIATES_TAG}`);
   
   if (queryParams.length > 0) {
     productUrl += `?${queryParams.join("&")}`;
   }
-  // --------------------------------
 
   const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
                `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
                `💰 <b>Price:</b> ${lastPrice}` +
-               `${targetText}\n` +
-               `${sellerInfo}\n` +
+               `${targetText}` +
+               `${sellerInfo}` +
+               `${smartAlts}\n\n` +
                `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
     const keyboard = {
     inline_keyboard: [
-      [{ text: "🛒 Open on Amazon.eg", url: productUrl }], // ⬅️ ADDED THIS LINE
+      [{ text: "🛒 Open on Amazon.eg", url: productUrl }],
       [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
       [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
       [{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }],
@@ -699,16 +699,12 @@ async function renderUserList(env, chatId, messageId, page = 0) {
     return;
   }
 
-  // --- Pagination Logic ---
   const ITEMS_PER_PAGE = 5;
   const totalPages = Math.ceil(approvedUsers.length / ITEMS_PER_PAGE);
-  
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
-  // ⚡ API OPTIMIZATION: Slice the array FIRST, so we only fetch 5 profiles from Telegram!
   const pagedUsers = approvedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
-  // Parallel Fetch: Request profiles for ONLY the current page
   const userPromises = pagedUsers.map(async (id) => {
     try {
       const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat`, {
@@ -727,7 +723,7 @@ async function renderUserList(env, chatId, messageId, page = 0) {
     } catch (e) {
       console.error(`Failed to fetch chat profile for ID ${id}:`, e);
     }
-    return { id, label: `Unknown User (${id})` }; // Fallback if user blocked bot
+    return { id, label: `Unknown User (${id})` }; 
   });
 
   const resolvedUsers = await Promise.all(userPromises);
@@ -737,15 +733,12 @@ async function renderUserList(env, chatId, messageId, page = 0) {
     keyboard.inline_keyboard.push([{ text: `👤 ${user.label}`, callback_data: `manage_user_${user.id}` }]);
   });
 
-  // --- Navigation Controls ---
   if (totalPages > 1) {
     let navRow = [];
     if (page > 0) {
       navRow.push({ text: "⬅️ Prev", callback_data: `list_users_${page - 1}` });
     }
-    
     navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
-    
     if (page < totalPages - 1) {
       navRow.push({ text: "Next ➡️", callback_data: `list_users_${page + 1}` });
     }
@@ -762,15 +755,12 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   
-  // Removed redundant await getUserRoles() read!
-  
   const total = products.length;
   const active = products.filter(p => !p.paused).length;
   const paused = total - active;
 
   const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Tracked Items:</b> ${total}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
 
-  // Standard user keyboard menu configuration
   const keyboard = {
     inline_keyboard: [
       [{ text: "📦 My Products", callback_data: "list_products_0" }],
@@ -778,7 +768,6 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
     ]
   };
 
-  // Restrict operational administrative triggers strictly to verified admin tiers
   if (isAdmin) {
     keyboard.inline_keyboard.push([{ text: "🚀 Force Price Check", callback_data: "global_track" }]);
     keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", callback_data: "admin_panel" }]);
@@ -802,34 +791,27 @@ async function renderProductList(env, chatId, messageId, page = 0) {
     return;
   }
 
-  // --- Pagination Logic ---
   const ITEMS_PER_PAGE = 5;
   const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
-  
-  // Safety check: if they delete an item and the current page becomes empty, push them back a page
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
   const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
-  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
-  // NEW:
   const prices = {};
   await Promise.all(pagedProducts.map(async (p) => {
     const pid = getAsinFromUrl(p.url);
     if (pid) {
-      try { // ⬅️ ADD TRY/CATCH TO PREVENT PROMISE REJECTION
+      try { 
         const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
         if (data) prices[pid] = data;
       } catch (err) {
         console.error(`KV Read failed for shard price:${pid}`, err);
-        // UI will degrade gracefully to showing "Waiting for next tracker run..." for this specific item
       }
     }
   }));
   
   const keyboard = { inline_keyboard: [] };
   
-  // Render only the 5 products for this specific page
   pagedProducts.forEach((p) => {
     const pid = getAsinFromUrl(p.url);
     let name = pid;
@@ -845,16 +827,12 @@ async function renderProductList(env, chatId, messageId, page = 0) {
     keyboard.inline_keyboard.push([{ text: `${statusIcon} ${targetIcon}${name}`, callback_data: `view_${pid}` }]);
   });
 
-  // --- Navigation Controls ---
   if (totalPages > 1) {
     let navRow = [];
     if (page > 0) {
       navRow.push({ text: "⬅️ Prev", callback_data: `list_products_${page - 1}` });
     }
-    
-    // Middle visual indicator (does nothing when clicked)
     navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
-    
     if (page < totalPages - 1) {
       navRow.push({ text: "Next ➡️", callback_data: `list_products_${page + 1}` });
     }
@@ -871,8 +849,6 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const userDbKey = `user:${chatId}:products`;
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
-  // OLD: const prices = await env.AZTRACKER_DB.get("global_prices", "json") || {};
-  // NEW:
   const prices = {};
   const priceData = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
   if (priceData) prices[pid] = priceData;
@@ -883,26 +859,53 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   let lastPrice = "⏳ Waiting for next tracker run...";
   let lastUpdated = ""; 
   let sellerInfo = "";
+  let smartAlts = "";
   let title = product.name ? product.name : "Amazon Product";
 
-  // NEW: Fetch global stats to get the true "last check" time globally
   const stats = await env.AZTRACKER_DB.get("global:stats", "json");
   const systemCheckTime = stats ? stats.last_run_timestamp : null;
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
-      lastPrice = prices[pid].price.toLocaleString() + " EGP";
-      if (prices[pid].seller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(prices[pid].seller)}</i>`;
-      if (prices[pid].name) title = prices[pid].name;
+      let pData = prices[pid];
+      let newPrice = pData.new_price !== undefined ? pData.new_price : pData.price;
+      let newSeller = pData.new_seller || pData.seller;
+      let usedPrice = pData.used_price;
+      let usedSeller = pData.used_seller;
+      let amzPrice = pData.amz_price;
+
+      if (newPrice !== undefined && newPrice !== null) {
+        lastPrice = newPrice.toLocaleString() + " EGP";
+        if (newSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(newSeller)}</i>`;
+      } else if (usedPrice !== undefined && usedPrice !== null) {
+        lastPrice = "❌ Out of Stock (New)";
+        sellerInfo = "";
+      } else {
+        lastPrice = "❌ Out of Stock";
+        sellerInfo = "";
+      }
+
+      if (pData.name) title = pData.name;
+
+      let altLines = [];
+      if (amzPrice && amzPrice !== newPrice) {
+        altLines.push(`└ 🛡️ <b>Amazon.eg:</b> ${amzPrice.toLocaleString()} EGP <i>(New)</i>`);
+      }
+      if (usedPrice) {
+        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${usedPrice.toLocaleString()} EGP <i>(Used)</i>`);
+      }
+      
+      if (altLines.length > 0) {
+        smartAlts = `\n\n💡 <b>Smart Alternatives:</b>\n` + altLines.join("\n");
+      }
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
     }
   }
 
-  // Parse the global timestamp instead of the local shard timestamp
   if (systemCheckTime) {
     const dateObj = new Date(systemCheckTime);
-    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); // YYYY-MM-DD
+    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); 
     const checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 
@@ -916,22 +919,23 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
-  // --- UNIVERSAL URL GENERATOR ---
   let productUrl = `https://www.amazon.eg/dp/${pid}`;
   const queryParams = [];
-  if (prices[pid] && prices[pid].merchant_id) queryParams.push(`m=${prices[pid].merchant_id}`);
+  const targetMerchant = pid.includes(":") ? pid.split(":")[1] : (prices[pid] && prices[pid].new_mid ? prices[pid].new_mid : (prices[pid] && prices[pid].merchant_id ? prices[pid].merchant_id : null));
+
+  if (targetMerchant) queryParams.push(`m=${targetMerchant}`);
   if (env.AMZN_ASSOCIATES_TAG) queryParams.push(`tag=${env.AMZN_ASSOCIATES_TAG}`);
   
   if (queryParams.length > 0) {
     productUrl += `?${queryParams.join("&")}`;
   }
-  // --------------------------------
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
                `💰 <b>Price:</b> ${lastPrice}` +
-               `${targetText}\n` +
-               `${sellerInfo}\n` +
+               `${targetText}` +
+               `${sellerInfo}` +
+               `${smartAlts}\n\n` +
                `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
   const targetBtn = product.target_price 
@@ -940,7 +944,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
     const keyboard = {
     inline_keyboard: [
-      [{ text: "🛒 Open on Amazon.eg", url: productUrl }], // ⬅️ ADDED THIS LINE
+      [{ text: "🛒 Open on Amazon.eg", url: productUrl }],
       [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
         targetBtn,
@@ -974,17 +978,14 @@ async function handleScheduler(request, env, ctx) {
   const hourKey = `${now.year}-${now.month}-${now.day}-${now.hour}`;
   const currentMinute = parseInt(now.minute, 10);
 
-  // --- IN-MEMORY CACHE API OPTIMIZATION ---
   const cache = caches.default;
   const scheduleReq = new Request(`${url.origin}/schedule/${hourKey}`);
   const lockReq = new Request(`${url.origin}/lock/${hourKey}/${currentMinute}`); 
 
-  // 1. Check Execution Lock (Zero KV Reads!)
   if (await cache.match(lockReq)) {
     return new Response("Already executed", { status: 200 });
   }
 
-  // 2. Fetch or Generate Schedule
   let slots = [];
   const cachedSchedule = await cache.match(scheduleReq);
   
@@ -992,23 +993,17 @@ async function handleScheduler(request, env, ctx) {
     slots = await cachedSchedule.json();
   } else {
     slots = buildHourlySlots();
-    // Cache the slots in RAM for 1 hour
     const res = new Response(JSON.stringify(slots), {
       headers: { "Cache-Control": "s-maxage=3600", "Content-Type": "application/json" }
     });
     ctx.waitUntil(cache.put(scheduleReq, res));
-    console.log("Generated hourly slots:", slots);
   }
 
-  // 3. Trigger Workflow
   if (slots.includes(currentMinute)) {
     try {
       await triggerWorkflow(env);
-
-      // Lock this minute in RAM so it doesn't fire twice
       const lockRes = new Response("1", { headers: { "Cache-Control": "s-maxage=3600" } });
       ctx.waitUntil(cache.put(lockReq, lockRes));
-
       return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
     } catch (e) {
       return new Response(`Trigger failed: ${e.message}`, { status: 500 });
@@ -1019,7 +1014,6 @@ async function handleScheduler(request, env, ctx) {
 }
 
 function buildHourlySlots() {
-  // 1. Define the 8 chunks of the hour
   const bounds = [
     [0, 7], [8, 15], [16, 22], [23, 29],
     [30, 37], [38, 44], [45, 52], [53, 59]
@@ -1031,21 +1025,17 @@ function buildHourlySlots() {
     let min = bounds[i][0];
     const max = bounds[i][1];
 
-    // 2. Anti-Clumping: Ensure at least a 3-minute gap from the previous run
     if (i > 0) {
       const prevRun = runMinutes[i - 1];
       if (min - prevRun < 3) {
-        min = prevRun + 3; // Push the floor up
+        min = prevRun + 3;
       }
     }
 
-    // Failsafe to ensure valid random ranges
     if (min > max) min = max;
-
     runMinutes.push(randInt(min, max));
   }
 
-  // The array is naturally sorted chronologically by the chunking process
   return runMinutes;
 }
 
@@ -1115,7 +1105,6 @@ async function expandAmazonUrl(url) {
   let currentUrl = url;
   let hops = 0;
   try {
-    // Loop up to 3 times to follow Amazon's mobile double-redirect chains
     while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
       const res = await fetch(currentUrl, { method: "GET", redirect: "manual" });
       const location = res.headers.get("location");
@@ -1124,7 +1113,7 @@ async function expandAmazonUrl(url) {
         currentUrl = location;
         hops++;
       } else {
-        break; // No further redirects found
+        break;
       }
     }
   } catch (e) {
@@ -1184,7 +1173,6 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  // REMOVED REDUNDANT KV WRITE: The message ID does not change on edit!
 }
 
 function extractNameFromUrl(url) {
@@ -1255,7 +1243,6 @@ function renderChartHTML(asin) {
     </div>
 
     <script>
-        // Initialize Telegram Web App SDK
         const tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand(); 
@@ -1273,26 +1260,28 @@ function renderChartHTML(asin) {
                     return;
                 }
 
-                // MAGIC TRICK: Duplicate the last data point and set its time to "Right Now"
-                // This forces the chart line to extend completely to the right side of the screen
                 const currentUnix = Math.floor(Date.now() / 1000);
                 const lastPoint = data[data.length - 1];
-                if (lastPoint.t < currentUnix - 60) {
-                    data.push({ p: lastPoint.p, t: currentUnix });
+                const lastTime = lastPoint.t !== undefined ? lastPoint.t : lastPoint.timestamp;
+                if (lastTime < currentUnix - 60) {
+                    data.push({ ...lastPoint, t: currentUnix });
                 }
 
                 document.getElementById('priceChart').style.display = 'block';
 
                 const labels = data.map(point => {
-                    const date = new Date(point.t * 1000);
+                    const t = point.t !== undefined ? point.t : point.timestamp;
+                    const date = new Date(t * 1000);
                     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + 
                            date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
                 });
                 
-                const prices = data.map(point => point.p);
+                // Normalizes legacy {"p": X} formats into the new structure on the fly
+                const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
+                const usedPrices = data.map(point => point.u !== undefined ? point.u : null);
+
                 const ctx = document.getElementById('priceChart').getContext('2d');
                 
-                // Smart Theme Integration (Matches the user's Telegram colors)
                 const gridColor = tg.themeParams.hint_color ? tg.themeParams.hint_color + '40' : '#cccccc40';
                 const textColor = tg.themeParams.text_color || '#000000';
                 const lineColor = tg.themeParams.button_color || '#2481cc';
@@ -1301,17 +1290,32 @@ function renderChartHTML(asin) {
                     type: 'line',
                     data: {
                         labels: labels,
-                        datasets: [{
-                            label: 'Price (EGP)',
-                            data: prices,
-                            borderColor: lineColor,
-                            backgroundColor: lineColor + '20',
-                            borderWidth: 2,
-                            pointBackgroundColor: lineColor,
-                            pointRadius: data.length === 1 ? 4 : 0, // Only show dots if there's just 1 data point
-                            stepped: true, // The flat-line delta visualizer
-                            fill: true
-                        }]
+                        datasets: [
+                            {
+                                label: 'New (EGP)',
+                                data: newPrices,
+                                borderColor: lineColor,
+                                backgroundColor: lineColor + '20',
+                                borderWidth: 2,
+                                pointBackgroundColor: lineColor,
+                                pointRadius: newPrices.filter(x => x !== null).length === 1 ? 4 : 0,
+                                stepped: true,
+                                spanGaps: false,
+                                fill: true
+                            },
+                            {
+                                label: 'Used (EGP)',
+                                data: usedPrices,
+                                borderColor: '#4caf50',
+                                borderDash: [5, 5],
+                                borderWidth: 2,
+                                pointBackgroundColor: '#4caf50',
+                                pointRadius: usedPrices.filter(x => x !== null).length === 1 ? 4 : 0,
+                                stepped: true,
+                                spanGaps: false,
+                                fill: false
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
@@ -1325,7 +1329,8 @@ function renderChartHTML(asin) {
                             tooltip: {
                                 callbacks: {
                                     label: function(context) {
-                                        return context.parsed.y.toLocaleString() + ' EGP';
+                                        if (context.parsed.y === null) return context.dataset.label + ': Out of Stock';
+                                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' EGP';
                                     }
                                 }
                             }
@@ -1353,4 +1358,3 @@ function renderChartHTML(asin) {
 </html>
   `;
 }
-
