@@ -4,6 +4,9 @@
 //const GITHUB_BRANCH = "feature/chatops-interactive-bot";
 //const GITHUB_BRANCH = "feature/randomized-scheduler";
 const GITHUB_BRANCH = "main";
+const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
+const AMAZON_ALT_MAX_MULTIPLIER = 1.15;
+const MAX_USED_ALT_OFFERS = 2;
 
 
 export default {
@@ -624,16 +627,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
       if (pData.name) title = pData.name;
 
-      let altLines = [];
-      const hasUsedPrice = usedPrice !== undefined && usedPrice !== null;
-      const hasNewPrice = newPrice !== undefined && newPrice !== null;
-      if (hasUsedPrice && (!hasNewPrice || Number(usedPrice) < Number(newPrice))) {
-        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${Number(usedPrice).toLocaleString()} EGP <i>(Used)</i>`);
-      }
-      
-      if (altLines.length > 0) {
-        smartAlts = `\n\n💡 <b>Smart Alternatives:</b>\n` + altLines.join("\n");
-      }
+      smartAlts = buildSmartAlternatives(pData, pid, env);
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
     }
@@ -891,16 +885,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
       if (pData.name) title = pData.name;
 
-      let altLines = [];
-      const hasUsedPrice = usedPrice !== undefined && usedPrice !== null;
-      const hasNewPrice = newPrice !== undefined && newPrice !== null;
-      if (hasUsedPrice && (!hasNewPrice || Number(usedPrice) < Number(newPrice))) {
-        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${Number(usedPrice).toLocaleString()} EGP <i>(Used)</i>`);
-      }
-      
-      if (altLines.length > 0) {
-        smartAlts = `\n\n💡 <b>Smart Alternatives:</b>\n` + altLines.join("\n");
-      }
+      smartAlts = buildSmartAlternatives(pData, pid, env);
     } else {
       lastPrice = prices[pid].toLocaleString() + " EGP";
     }
@@ -1082,7 +1067,71 @@ function getCairoParts(date = new Date()) {
 
 function escapeHtml(unsafe) {
     if (!unsafe) return "";
-    return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function toPrice(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const price = Number(value);
+  return Number.isFinite(price) ? price : null;
+}
+
+function buildProductUrl(pid, env, merchantId = null) {
+  const cleanPid = pid.includes(":") ? pid.split(":")[0] : pid;
+  let productUrl = `https://www.amazon.eg/dp/${cleanPid}`;
+  const queryParams = new URLSearchParams();
+  if (merchantId) queryParams.set("m", merchantId);
+  if (env.AMZN_ASSOCIATES_TAG) queryParams.set("tag", env.AMZN_ASSOCIATES_TAG);
+  const queryString = queryParams.toString();
+  if (queryString) productUrl += `?${queryString}`;
+  return productUrl;
+}
+
+function buildSmartAlternatives(pData, pid, env) {
+  const newPrice = toPrice(pData.new_price !== undefined ? pData.new_price : pData.price);
+  const newMid = pData.new_mid || pData.merchant_id || null;
+  const usedOffers = Array.isArray(pData.used_offers) ? [...pData.used_offers] : [];
+  const legacyUsedPrice = toPrice(pData.used_price);
+
+  if (legacyUsedPrice !== null && usedOffers.length === 0) {
+    usedOffers.push({
+      price: legacyUsedPrice,
+      seller: pData.used_seller || "Amazon Resale",
+      mid: pData.used_mid || null
+    });
+  }
+
+  const altLines = [];
+  const amazonPrice = toPrice(pData.amazon_price);
+  const amazonMid = pData.amazon_mid || env.AMZN_EG_MERCHANT_ID || AMAZON_EG_MERCHANT_ID;
+  const amazonSeller = pData.amazon_seller || "Amazon.eg";
+  const amazonIsBuybox = pData.amazon_is_buybox === true || (amazonMid && amazonMid === newMid && amazonPrice === newPrice);
+  const amazonWithinThreshold = newPrice === null || amazonPrice <= newPrice * AMAZON_ALT_MAX_MULTIPLIER;
+
+  if (amazonPrice !== null && !amazonIsBuybox && amazonWithinThreshold) {
+    const premium = newPrice ? ((amazonPrice - newPrice) / newPrice) * 100 : 0;
+    const premiumText = premium > 0 ? `, +${premium.toFixed(1)}%` : "";
+    const amazonUrl = buildProductUrl(pid, env, amazonMid);
+    altLines.push(`└ 🛡️ <a href="${escapeHtml(amazonUrl)}">${escapeHtml(amazonSeller)}</a>: ${amazonPrice.toLocaleString()} EGP <i>(Amazon.eg${premiumText})</i>`);
+  }
+
+  const seenUsed = new Set();
+  usedOffers
+    .map((offer) => ({
+      price: toPrice(offer && offer.price),
+      seller: (offer && offer.seller) || "Amazon Resale",
+      mid: offer && offer.mid
+    }))
+    .filter((offer) => offer.price !== null && (newPrice === null || offer.price < newPrice))
+    .sort((a, b) => a.price - b.price)
+    .forEach((offer) => {
+      const key = `${offer.mid || ""}:${offer.seller}:${offer.price}`;
+      if (seenUsed.has(key) || seenUsed.size >= MAX_USED_ALT_OFFERS) return;
+      seenUsed.add(key);
+      altLines.push(`└ 📦 <b>${escapeHtml(offer.seller)}:</b> ${offer.price.toLocaleString()} EGP <i>(Used)</i>`);
+    });
+
+  return altLines.length > 0 ? `\n\n💡 <b>Smart Alternatives:</b>\n${altLines.join("\n")}` : "";
 }
 
 function convertHindiToArabic(text) {

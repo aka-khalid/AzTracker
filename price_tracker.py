@@ -29,6 +29,9 @@ AMAZON_API_VERSION = os.environ.get("AMZN_API_VERSION", "")
 # ─────────────────────────────────────────────────────────────────────────────
 
 MAX_NAME_LEN = 60
+AMAZON_EG_MERCHANT_ID = os.environ.get("AMZN_EG_MERCHANT_ID", "A1ZVRGNO5AYLOV")
+AMAZON_ALT_MAX_MULTIPLIER = 1.15
+MAX_USED_ALT_OFFERS = 2
 
 api = AmazonCreatorsApi(
     credential_id=AMAZON_ACCESS_KEY,
@@ -58,6 +61,28 @@ def get_product_id(url):
 
 def truncate_name(name: str) -> str:
     return name[:MAX_NAME_LEN] + "..." if len(name) > MAX_NAME_LEN else name
+
+def normalize_offer_label(value) -> str:
+    if not value:
+        return ""
+    label = str(value).strip().lower()
+    if "." in label:
+        label = label.rsplit(".", 1)[-1]
+    return label.replace("_", " ")
+
+def is_used_like_offer(condition_value: str, subcondition_value: str, seller_name: str = "") -> bool:
+    condition_tokens = ("used", "refurbished", "renewed", "collectible")
+    subcondition_tokens = ("likenew", "like new", "verygood", "very good", "good", "acceptable", "open box", "openbox", "refurbished", "oem")
+    seller_tokens = ("resale", "warehouse", "renewed")
+    seller_value = normalize_offer_label(seller_name)
+    return (
+        any(token in condition_value for token in condition_tokens) or
+        any(token in subcondition_value for token in subcondition_tokens) or
+        any(token in seller_value for token in seller_tokens)
+    )
+
+def is_amazon_eg_merchant(merchant_id: str) -> bool:
+    return bool(merchant_id and merchant_id == AMAZON_EG_MERCHANT_ID)
 
 # ── Async Cloudflare KV Helpers ──────────────────────────────────────────────
 
@@ -152,46 +177,77 @@ def fetch_batch(asin_list, retries=3):
 
                 for lst in all_listings:
                     try:
-                        p_val = float(lst.price.money.amount)
+                        p_val = round(float(lst.price.money.amount), 2)
                         s_name = "Unknown"
                         m_id = None
                         m_info = getattr(lst, 'merchant_info', None)
                         if m_info:
                             if getattr(m_info, 'name', None): s_name = m_info.name
                             if getattr(m_info, 'id', None): m_id = m_info.id
-                        condition_value = ""
                         c_info = getattr(lst, 'condition', None)
-                        if c_info and getattr(c_info, 'value', None):
-                            condition_value = str(c_info.value).strip().lower()
-                            if "." in condition_value:
-                                condition_value = condition_value.rsplit(".", 1)[-1]
-                            condition_value = condition_value.replace("_", " ")
+                        condition_value = normalize_offer_label(getattr(c_info, 'value', None) if c_info else None)
+                        subcondition_value = normalize_offer_label(
+                            (getattr(c_info, 'subcondition', None) or getattr(c_info, 'sub_condition', None)) if c_info else None
+                        )
                         is_winner = getattr(lst, 'is_buy_box_winner', False)
+                        offer = {
+                            "price": p_val,
+                            "seller": s_name,
+                            "mid": m_id,
+                            "condition": condition_value or "unknown",
+                            "subcondition": subcondition_value or "unknown",
+                            "is_buybox": bool(is_winner)
+                        }
+                        print(f"      [OFFER] {asin} | {offer['condition']}/{offer['subcondition']} | {p_val} | {s_name} | {m_id or '-'} | BB={bool(is_winner)}")
 
                         if condition_value == "new":
-                            new_listings.append((p_val, s_name, m_id, is_winner))
-                        elif any(token in condition_value for token in ("used", "refurbished", "renewed", "open box", "openbox", "collectible")):
-                            used_listings.append((p_val, s_name, m_id))
+                            new_listings.append(offer)
+                        elif is_used_like_offer(condition_value, subcondition_value, s_name):
+                            used_listings.append(offer)
                         else:
-                            print(f"      [WARN] Skipping unsupported condition for {asin}: {condition_value or 'missing'}")
+                            print(f"      [WARN] Skipping unsupported condition for {asin}: {condition_value or 'missing'} / {subcondition_value or 'missing'}")
                     except: continue
 
                 new_price, new_seller, new_mid = None, None, None
                 used_price, used_seller, used_mid = None, None, None
+                amazon_price, amazon_seller, amazon_mid, amazon_is_buybox = None, None, None, False
+                used_offers = sorted(used_listings, key=lambda x: x["price"])
 
                 if new_listings:
                     # Anchor to Buy Box winner if present, otherwise fallback to lowest
-                    winner = next((l for l in new_listings if l[3]), None)
-                    best_new = winner if winner else min(new_listings, key=lambda x: x[0])
-                    new_price, new_seller, new_mid = best_new[0], best_new[1], best_new[2]
+                    winner = next((l for l in new_listings if l["is_buybox"]), None)
+                    best_new = winner if winner else min(new_listings, key=lambda x: x["price"])
+                    new_price, new_seller, new_mid = best_new["price"], best_new["seller"], best_new["mid"]
 
-                if used_listings:
-                    best_used = min(used_listings, key=lambda x: x[0])
-                    used_price, used_seller, used_mid = best_used
+                    amazon_new_offers = [offer for offer in new_listings if is_amazon_eg_merchant(offer.get("mid"))]
+                    if amazon_new_offers:
+                        best_amazon = min(amazon_new_offers, key=lambda x: x["price"])
+                        if best_amazon is not best_new:
+                            amazon_price = best_amazon["price"]
+                            amazon_seller = best_amazon["seller"]
+                            amazon_mid = best_amazon["mid"]
+                            amazon_is_buybox = best_amazon["is_buybox"]
+
+                if used_offers:
+                    best_used = used_offers[0]
+                    used_price, used_seller, used_mid = best_used["price"], best_used["seller"], best_used["mid"]
                     
                 if name:
-                    batch_results[asin] = (name, new_price, new_seller, new_mid, used_price, used_seller, used_mid)
-                    print(f"    ✅ Parsed: {name[:30]}... | New: {new_price} | Used: {used_price}")
+                    batch_results[asin] = (
+                        name,
+                        new_price,
+                        new_seller,
+                        new_mid,
+                        used_price,
+                        used_seller,
+                        used_mid,
+                        amazon_price,
+                        amazon_seller,
+                        amazon_mid,
+                        amazon_is_buybox,
+                        used_offers
+                    )
+                    print(f"    ✅ Parsed: {name[:30]}... | New: {new_price} | Amazon.eg: {amazon_price} | Used: {used_price} ({len(used_offers)} returned)")
                 else:
                     print(f"    ❌ Skipping {asin} - Missing Name Data")
 
@@ -279,6 +335,11 @@ async def async_main():
                         "used_price": None,
                         "used_seller": None,
                         "used_mid": None,
+                        "used_offers": [],
+                        "amazon_price": None,
+                        "amazon_seller": None,
+                        "amazon_mid": None,
+                        "amazon_is_buybox": False,
                         "name": price_data.get("name"), # Preserved to prevent First-Run Write Storm
                         "last_updated": price_data.get("last_updated")
                     }
@@ -293,9 +354,23 @@ async def async_main():
         history_tasks = []
 
         for asin, res_tuple in all_fetched_results.items():
-            name, c_new_price, c_new_seller, c_new_mid, c_used_price, c_used_seller, c_used_mid = res_tuple
+            (
+                name,
+                c_new_price,
+                c_new_seller,
+                c_new_mid,
+                c_used_price,
+                c_used_seller,
+                c_used_mid,
+                c_amazon_price,
+                c_amazon_seller,
+                c_amazon_mid,
+                c_amazon_is_buybox,
+                c_used_offers
+            ) = res_tuple
             if c_new_price is not None: c_new_price = round(c_new_price, 2)
             if c_used_price is not None: c_used_price = round(c_used_price, 2)
+            if c_amazon_price is not None: c_amazon_price = round(c_amazon_price, 2)
             
             last_entry = global_prices.get(asin, {})
             last_new_price = last_entry.get("new_price")
@@ -318,7 +393,12 @@ async def async_main():
                 c_new_seller != last_entry.get("new_seller") or
                 c_used_seller != last_entry.get("used_seller") or
                 c_new_mid != last_entry.get("new_mid") or
-                c_used_mid != last_entry.get("used_mid")):
+                c_used_mid != last_entry.get("used_mid") or
+                c_amazon_price != last_entry.get("amazon_price") or
+                c_amazon_seller != last_entry.get("amazon_seller") or
+                c_amazon_mid != last_entry.get("amazon_mid") or
+                c_amazon_is_buybox != bool(last_entry.get("amazon_is_buybox", False)) or
+                c_used_offers != last_entry.get("used_offers", [])):
 
                 updates[asin] = {
                     "new_price": c_new_price,
@@ -327,6 +407,11 @@ async def async_main():
                     "used_price": c_used_price,
                     "used_seller": c_used_seller,
                     "used_mid": c_used_mid,
+                    "used_offers": c_used_offers,
+                    "amazon_price": c_amazon_price,
+                    "amazon_seller": c_amazon_seller,
+                    "amazon_mid": c_amazon_mid,
+                    "amazon_is_buybox": c_amazon_is_buybox,
                     "name": name,
                     "last_updated": unix_now_ms
                 }
@@ -346,7 +431,22 @@ async def async_main():
                 res = all_fetched_results.get(product_id)
                 if not res: continue
 
-                name, new_price, new_seller, new_mid, used_price, used_seller, used_mid = res
+                (
+                    name,
+                    new_price,
+                    new_seller,
+                    new_mid,
+                    used_price,
+                    used_seller,
+                    used_mid,
+                    amazon_price,
+                    amazon_seller,
+                    amazon_mid,
+                    amazon_is_buybox,
+                    used_offers
+                ) = res
+                if not isinstance(used_offers, list):
+                    used_offers = []
                 
                 # ⬅️ LEGACY PROFILE SANITIZER
                 if "alert_sent" in p:
@@ -374,10 +474,30 @@ async def async_main():
                     
                     # Smart Alternatives Builder
                     alert_alts = []
+                    amazon_alt_eligible = (
+                        amazon_price is not None and
+                        not amazon_is_buybox and
+                        new_price is not None and
+                        amazon_price <= new_price * AMAZON_ALT_MAX_MULTIPLIER and
+                        mid != amazon_mid
+                    )
+                    if amazon_alt_eligible:
+                        safe_amazon_seller = html.escape(amazon_seller or "Amazon.eg")
+                        premium = ((amazon_price - new_price) / new_price * 100) if new_price else 0
+                        premium_text = f", +{premium:.1f}%" if premium > 0 else ""
+                        alert_alts.append(f"└ 🛡️ <b>{safe_amazon_seller}:</b> {amazon_price:,.2f} EGP <i>(Amazon.eg{premium_text})</i>")
+
                     if cond_label.startswith("(New)"):
-                        if used_price is not None and used_price < price:
-                            safe_used_seller = html.escape(used_seller) if used_seller else "Amazon Resale"
-                            alert_alts.append(f"└ 📦 <b>{safe_used_seller}:</b> {used_price:,.2f} EGP <i>(Used)</i>")
+                        used_alt_count = 0
+                        for offer in used_offers if isinstance(used_offers, list) else []:
+                            offer_price = offer.get("price")
+                            if offer_price is None or offer_price >= price:
+                                continue
+                            safe_used_seller = html.escape(offer.get("seller") or "Amazon Resale")
+                            alert_alts.append(f"└ 📦 <b>{safe_used_seller}:</b> {offer_price:,.2f} EGP <i>(Used)</i>")
+                            used_alt_count += 1
+                            if used_alt_count >= MAX_USED_ALT_OFFERS:
+                                break
                     else:
                         if new_price is not None and new_price <= price:
                             alert_alts.append(f"└ 🛒 <b>Buy Box:</b> {new_price:,.2f} EGP <i>(New)</i>")
