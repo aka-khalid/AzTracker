@@ -363,6 +363,7 @@ async def async_main():
                         "used_seller": None,
                         "used_mid": None,
                         "used_offers": [],
+                        "new_miss_streak": 0,
                         "used_miss_streak": 0,
                         "used_last_seen": None,
                         "amazon_price": None,
@@ -409,13 +410,25 @@ async def async_main():
             last_new_price = last_entry.get("new_price")
             last_used_price = last_entry.get("used_price")
 
-            # --- STICKY STATE (HYSTERESIS) ---
-            miss_streak = last_entry.get("used_miss_streak", 0)
+            # --- DUAL STICKY STATE (16-RUN ANTI-FLAP) ---
+            new_miss_streak = last_entry.get("new_miss_streak", 0)
+            used_miss_streak = last_entry.get("used_miss_streak", 0)
             used_last_seen = last_entry.get("used_last_seen")
 
+            # New Price Anti-Flap
+            if c_new_price is None and last_new_price is not None:
+                new_miss_streak += 1
+                if new_miss_streak < 16:  # Hold for ~160 mins (2.5 hours)
+                    c_new_price = last_new_price
+                    c_new_seller = last_entry.get("new_seller")
+                    c_new_mid = last_entry.get("new_mid")
+            elif c_new_price is not None:
+                new_miss_streak = 0
+
+            # Used Price Anti-Flap
             if c_used_price is None and last_used_price is not None:
-                miss_streak += 1
-                if miss_streak < 4:  # Tolerate up to 3 misses (~30 mins) before dropping
+                used_miss_streak += 1
+                if used_miss_streak < 16:  # Hold for ~160 mins (2.5 hours)
                     c_used_price = last_used_price
                     c_used_seller = last_entry.get("used_seller")
                     c_used_mid = last_entry.get("used_mid")
@@ -423,9 +436,9 @@ async def async_main():
                 else:
                     used_last_seen = None
             elif c_used_price is not None:
-                miss_streak = 0
+                used_miss_streak = 0
                 used_last_seen = unix_now_ms
-            # ---------------------------------
+            # --------------------------------------------
 
             # --- LAZY REFRESH TIMESTAMPS ---
             # Only mutate the timestamp if it's missing, or older than 24 hours (86,400,000 ms)
@@ -464,7 +477,8 @@ async def async_main():
                 c_amazon_mid != last_entry.get("amazon_mid") or
                 c_amazon_is_buybox != bool(last_entry.get("amazon_is_buybox", False)) or
                 c_used_offers != last_entry.get("used_offers", []) or
-                miss_streak != last_entry.get("used_miss_streak", 0) or
+                new_miss_streak != last_entry.get("new_miss_streak", 0) or
+                used_miss_streak != last_entry.get("used_miss_streak", 0) or
                 seen_amazon_eg_at != last_entry.get("seen_amazon_eg_at") or
                 seen_resale_at != last_entry.get("seen_resale_at")):
 
@@ -476,7 +490,8 @@ async def async_main():
                     "used_seller": c_used_seller,
                     "used_mid": c_used_mid,
                     "used_offers": c_used_offers,
-                    "used_miss_streak": miss_streak,
+                    "new_miss_streak": new_miss_streak,
+                    "used_miss_streak": used_miss_streak,
                     "used_last_seen": used_last_seen,
                     "seen_amazon_eg_at": seen_amazon_eg_at,
                     "seen_resale_at": seen_resale_at,
@@ -500,27 +515,27 @@ async def async_main():
                 url = p.get("url")
                 if not url: continue
                 product_id = get_product_id(url)
-                res = all_fetched_results.get(product_id)
-                if not res: continue
+                # Ensure the product was scanned in this batch
+                if product_id not in all_fetched_results: continue
 
-                (
-                    name,
-                    new_price,
-                    new_seller,
-                    new_mid,
-                    used_price,
-                    used_seller,
-                    used_mid,
-                    amazon_price,
-                    amazon_seller,
-                    amazon_mid,
-                    amazon_is_buybox,
-                    used_offers,
-                    seen_amazon_eg,
-                    seen_resale
-                ) = res
-                if not isinstance(used_offers, list):
-                    used_offers = []
+                # CRITICAL: We must pull data from the Hysteresis-processed state, 
+                # NOT the raw API result, otherwise anti-flap is ignored!
+                latest_state = updates.get(product_id) or global_prices.get(product_id, {})
+                if not latest_state: continue
+
+                name = latest_state.get("name", "Unknown Product")
+                new_price = latest_state.get("new_price")
+                new_seller = latest_state.get("new_seller")
+                new_mid = latest_state.get("new_mid")
+                used_price = latest_state.get("used_price")
+                used_seller = latest_state.get("used_seller")
+                used_mid = latest_state.get("used_mid")
+                amazon_price = latest_state.get("amazon_price")
+                used_offers = latest_state.get("used_offers", [])
+                if not isinstance(used_offers, list): used_offers = []
+                
+                current_seen_amazon_eg_at = latest_state.get("seen_amazon_eg_at")
+                current_seen_resale_at = latest_state.get("seen_resale_at")
                 
                 # ⬅️ LEGACY PROFILE SANITIZER
                 if "alert_sent" in p:
@@ -533,8 +548,6 @@ async def async_main():
                 last_entry = global_prices.get(product_id, {})
                 last_new_price = last_entry.get("new_price")
                 last_used_price = last_entry.get("used_price")
-                target_price = p.get("target_price")
-
                 target_price = p.get("target_price")
                 
                 # Retrieve the latest timestamps (either from the fresh updates dict, or fallback to global_prices)
@@ -601,19 +614,30 @@ async def async_main():
                             f"🕐 <i>{now}</i>"
                         )
                     else:
-                        diff = last_price - price
-                        pct = (diff / last_price * 100) if last_price else 0
-                        msg = (
-                            f"🚨 <b>PRICE DROP ALERT {cond_label}</b>\n\n"
-                            f"📦 <b>{safe_name}</b>\n"
-                            f"└ 🆔 <code>{product_id}</code>\n\n"
-                            f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
-                            f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
-                            f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
-                            f"🏬 <b>Seller:</b> <i>{safe_seller}</i>"
-                            f"{final_smart_alts}\n\n"
-                            f"🕐 <i>{now}</i>"
-                        )
+                        if last_price is None:
+                            msg = (
+                                f"🚨 <b>RESTOCK ALERT {cond_label}</b>\n\n"
+                                f"📦 <b>{safe_name}</b>\n"
+                                f"└ 🆔 <code>{product_id}</code>\n\n"
+                                f"💰 <b>Price:</b> {price:,.2f} EGP\n"
+                                f"🏬 <b>Seller:</b> <i>{safe_seller}</i>"
+                                f"{final_smart_alts}\n\n"
+                                f"🕐 <i>{now}</i>"
+                            )
+                        else:
+                            diff = last_price - price
+                            pct = (diff / last_price * 100) if last_price else 0
+                            msg = (
+                                f"🚨 <b>PRICE DROP ALERT {cond_label}</b>\n\n"
+                                f"📦 <b>{safe_name}</b>\n"
+                                f"└ 🆔 <code>{product_id}</code>\n\n"
+                                f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
+                                f"📉 <b>Dropped:</b> {diff:,.2f} EGP ({pct:.1f}% off)\n"
+                                f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
+                                f"🏬 <b>Seller:</b> <i>{safe_seller}</i>"
+                                f"{final_smart_alts}\n\n"
+                                f"🕐 <i>{now}</i>"
+                            )
                     outbox_item = {
                         "chat_id": chat_id,
                         "product_id": product_id,
@@ -637,10 +661,12 @@ async def async_main():
                         if new_price <= target_price and not p.get("alert_sent_new", False):
                             target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new")
                     else:
-                        if last_new_price is not None and new_price < last_new_price:
+                        if last_new_price is None:
+                            queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new")
+                        elif new_price < last_new_price:
                             queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
                 else:
-                    # Reset target lock if the item goes Out of Stock
+                    # Reset target lock ONLY if the item goes officially Out of Stock (after 16 misses)
                     if p.get("alert_sent_new", False):
                         p["alert_sent_new"] = False
                         dirty_users.add(chat_id)
@@ -657,8 +683,9 @@ async def async_main():
                                 target_alert["lock_keys"].append("alert_sent_used")
                             else:
                                 target_alert = queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, True, "alert_sent_used")
+                    # Intentional: No "else" block. Used deals without targets are purely informational.
                 else:
-                    # Reset target lock if the item goes Out of Stock
+                    # Reset target lock ONLY if the item goes officially Out of Stock (after 16 misses)
                     if p.get("alert_sent_used", False):
                         p["alert_sent_used"] = False
                         dirty_users.add(chat_id)
