@@ -553,7 +553,7 @@ async def async_main():
                     safe_name = html.escape(display_name)
                     safe_seller = html.escape(seller) if seller else "Unknown"
                     
-                    # --- HISTORICAL FALLBACK LINKS (Worth Checking) ---
+                    # --- INFORMATIVE FALLBACK LINKS (Other Options) ---
                     historical_links = []
                     current_seller_is_amazon = is_amazon_eg_merchant(mid)
                     current_seller_is_resale = is_amazon_resale_merchant(mid, seller)
@@ -562,21 +562,28 @@ async def async_main():
                     amazon_seen_recently = current_seen_amazon_eg_at and (now_ms - current_seen_amazon_eg_at) < (14 * 24 * 60 * 60 * 1000)
                     resale_seen_recently = current_seen_resale_at and (now_ms - current_seen_resale_at) < (14 * 24 * 60 * 60 * 1000)
                     
-                    if not current_seller_is_amazon and amazon_seen_recently:
+                    if not current_seller_is_amazon:
                         amazon_eg_url = f"https://www.amazon.eg/dp/{product_id}?m={AMAZON_EG_MERCHANT_ID}"
                         if AMAZON_PARTNER_TAG: amazon_eg_url += f"&tag={AMAZON_PARTNER_TAG}"
-                        historical_links.append(f"└ 🛡️ <a href=\"{amazon_eg_url}\">Amazon.eg Official Listing</a>")
                         
-                    if not current_seller_is_resale and resale_seen_recently:
+                        if amazon_price is not None:
+                            historical_links.append(f"└ 🛡️ <a href=\"{amazon_eg_url}\">Amazon.eg</a>: <b>{amazon_price:,.2f} EGP</b>")
+                        elif amazon_seen_recently:
+                            historical_links.append(f"└ 🛡️ <a href=\"{amazon_eg_url}\">Amazon.eg</a> <i>(Check Stock)</i>")
+                        
+                    if not current_seller_is_resale:
                         resale_url = f"https://www.amazon.eg/dp/{product_id}?m={AMAZON_RESALE_MERCHANT_ID}"
                         if AMAZON_PARTNER_TAG: resale_url += f"&tag={AMAZON_PARTNER_TAG}"
-                        historical_links.append(f"└ 📦 <a href=\"{resale_url}\">Amazon Resale Deals</a>")
+                        
+                        if used_price is not None:
+                            historical_links.append(f"└ 📦 <a href=\"{resale_url}\">Amazon Resale</a>: <b>{used_price:,.2f} EGP</b> <i>(Used)</i>")
+                        elif resale_seen_recently:
+                            historical_links.append(f"└ 📦 <a href=\"{resale_url}\">Amazon Resale</a> <i>(Check Stock)</i>")
                         
                     alert_alts = []
                     if historical_links:
-                        alert_alts.append("💡 <b>Worth Checking:</b>")
+                        alert_alts.append("💡 <b>Other Options:</b>")
                         alert_alts.extend(historical_links)
-                        alert_alts.append("└ <i>Previously observed for this ASIN</i>")
 
                     final_smart_alts = ("\n\n" + "\n".join(alert_alts)) if alert_alts else ""
                     
@@ -650,9 +657,6 @@ async def async_main():
                                 target_alert["lock_keys"].append("alert_sent_used")
                             else:
                                 target_alert = queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, True, "alert_sent_used")
-                    else:
-                        if last_used_price is not None and used_price < last_used_price:
-                            queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, False, "alert_sent_used")
                 else:
                     # Reset target lock if the item goes Out of Stock
                     if p.get("alert_sent_used", False):
