@@ -561,7 +561,12 @@ async def async_main():
                     if mid: q_params["m"] = mid
                     if AMAZON_PARTNER_TAG: q_params["tag"] = AMAZON_PARTNER_TAG
                     alert_url = f"{base_url}?{urlencode(q_params)}" if q_params else base_url
-                    btn_markup = {"inline_keyboard": [[{"text": "🛒 Open in Amazon.eg", "url": alert_url}]]}
+                    # --- DYNAMIC BUTTON LABELS ---
+                    # Logic: If the alert label contains "(Used", show the Resale button. 
+                    # Otherwise, default to the standard "Open" button.
+                    btn_text = "📦 Open Amazon Resale Offer" if "(Used" in cond_label else "🛒 Open in Amazon.eg"
+                    
+                    btn_markup = {"inline_keyboard": [[{"text": btn_text, "url": alert_url}]]}
                     
                     safe_name = html.escape(display_name)
                     safe_seller = html.escape(seller) if seller else "Unknown"
