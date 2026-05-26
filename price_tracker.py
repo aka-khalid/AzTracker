@@ -30,6 +30,7 @@ AMAZON_API_VERSION = os.environ.get("AMZN_API_VERSION", "")
 
 MAX_NAME_LEN = 60
 AMAZON_EG_MERCHANT_ID = os.environ.get("AMZN_EG_MERCHANT_ID", "A1ZVRGNO5AYLOV")
+AMAZON_RESALE_MERCHANT_ID = os.environ.get("AMZN_RESALE_MERCHANT_ID", "A2N2MP47XAP1MK")
 AMAZON_ALT_MAX_MULTIPLIER = 1.15
 MAX_USED_ALT_OFFERS = 2
 
@@ -83,6 +84,13 @@ def is_used_like_offer(condition_value: str, subcondition_value: str, seller_nam
 
 def is_amazon_eg_merchant(merchant_id: str) -> bool:
     return bool(merchant_id and merchant_id == AMAZON_EG_MERCHANT_ID)
+
+def is_amazon_resale_merchant(merchant_id: str, seller_name: str = "") -> bool:
+    seller_value = normalize_offer_label(seller_name)
+    return (
+        merchant_id == AMAZON_RESALE_MERCHANT_ID or
+        "resale" in seller_value
+    )
 
 # ── Async Cloudflare KV Helpers ──────────────────────────────────────────────
 
@@ -211,6 +219,9 @@ def fetch_batch(asin_list, retries=3):
                 new_price, new_seller, new_mid = None, None, None
                 used_price, used_seller, used_mid = None, None, None
                 amazon_price, amazon_seller, amazon_mid, amazon_is_buybox = None, None, None, False
+                seen_amazon_eg = False
+                seen_resale = False
+                
                 used_offers = sorted(used_listings, key=lambda x: x["price"])
 
                 if new_listings:
@@ -219,7 +230,14 @@ def fetch_batch(asin_list, retries=3):
                     best_new = winner if winner else min(new_listings, key=lambda x: x["price"])
                     new_price, new_seller, new_mid = best_new["price"], best_new["seller"], best_new["mid"]
 
-                    amazon_new_offers = [offer for offer in new_listings if is_amazon_eg_merchant(offer.get("mid"))]
+                    amazon_new_offers = [
+                        offer for offer in new_listings
+                        if is_amazon_eg_merchant(offer.get("mid"))
+                    ]
+                    
+                    if amazon_new_offers:
+                        seen_amazon_eg = True
+                        
                     if amazon_new_offers:
                         best_amazon = min(amazon_new_offers, key=lambda x: x["price"])
                         if best_amazon is not best_new:
@@ -229,6 +247,13 @@ def fetch_batch(asin_list, retries=3):
                             amazon_is_buybox = best_amazon["is_buybox"]
 
                 if used_offers:
+                    seen_resale = any(
+                        is_amazon_resale_merchant(
+                            offer.get("mid"),
+                            offer.get("seller", "")
+                        )
+                        for offer in used_offers
+                    )
                     best_used = used_offers[0]
                     used_price, used_seller, used_mid = best_used["price"], best_used["seller"], best_used["mid"]
                     
@@ -245,7 +270,9 @@ def fetch_batch(asin_list, retries=3):
                         amazon_seller,
                         amazon_mid,
                         amazon_is_buybox,
-                        used_offers
+                        used_offers,
+                        seen_amazon_eg,
+                        seen_resale
                     )
                     print(f"    ✅ Parsed: {name[:30]}... | New: {new_price} | Amazon.eg: {amazon_price} | Used: {used_price} ({len(used_offers)} returned)")
                 else:
@@ -368,13 +395,17 @@ async def async_main():
                 c_amazon_seller,
                 c_amazon_mid,
                 c_amazon_is_buybox,
-                c_used_offers
+                c_used_offers,
+                c_seen_amazon_eg,
+                c_seen_resale
             ) = res_tuple
             if c_new_price is not None: c_new_price = round(c_new_price, 2)
             if c_used_price is not None: c_used_price = round(c_used_price, 2)
             if c_amazon_price is not None: c_amazon_price = round(c_amazon_price, 2)
             
             last_entry = global_prices.get(asin, {})
+            last_seen_amazon_eg_at = last_entry.get("seen_amazon_eg_at")
+            last_seen_resale_at = last_entry.get("seen_resale_at")            
             last_new_price = last_entry.get("new_price")
             last_used_price = last_entry.get("used_price")
 
@@ -395,7 +426,17 @@ async def async_main():
                 miss_streak = 0
                 used_last_seen = unix_now_ms
             # ---------------------------------
+
+            seen_amazon_eg_at = (
+                unix_now_ms if c_seen_amazon_eg
+                else last_seen_amazon_eg_at
+            )
             
+            seen_resale_at = (
+                unix_now_ms if c_seen_resale
+                else last_seen_resale_at
+            )
+
             new_changed = c_new_price != last_new_price
             used_changed = c_used_price != last_used_price
 
@@ -431,6 +472,8 @@ async def async_main():
                     "used_offers": c_used_offers,
                     "used_miss_streak": miss_streak,
                     "used_last_seen": used_last_seen,
+                    "seen_amazon_eg_at": seen_amazon_eg_at,
+                    "seen_resale_at": seen_resale_at,
                     "amazon_price": c_amazon_price,
                     "amazon_seller": c_amazon_seller,
                     "amazon_mid": c_amazon_mid,
@@ -466,7 +509,9 @@ async def async_main():
                     amazon_seller,
                     amazon_mid,
                     amazon_is_buybox,
-                    used_offers
+                    used_offers,
+                    seen_amazon_eg,
+                    seen_resale
                 ) = res
                 if not isinstance(used_offers, list):
                     used_offers = []
