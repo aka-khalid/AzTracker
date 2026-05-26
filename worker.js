@@ -1116,6 +1116,15 @@ function buildSmartAlternatives(pData, pid, env) {
   }
 
   const seenUsed = new Set();
+  const usedMissStreak = pData.used_miss_streak || 0;
+  const usedLastSeen = pData.used_last_seen || null;
+
+  let staleTag = "";
+  if (usedMissStreak > 0 && usedLastSeen) {
+    const minsAgo = Math.floor((Date.now() - usedLastSeen) / 60000);
+    staleTag = ` - Last seen ${minsAgo}m ago`;
+  }
+
   usedOffers
     .map((offer) => ({
       price: toPrice(offer && offer.price),
@@ -1128,7 +1137,7 @@ function buildSmartAlternatives(pData, pid, env) {
       const key = `${offer.mid || ""}:${offer.seller}:${offer.price}`;
       if (seenUsed.has(key) || seenUsed.size >= MAX_USED_ALT_OFFERS) return;
       seenUsed.add(key);
-      altLines.push(`└ 📦 <b>${escapeHtml(offer.seller)}:</b> ${offer.price.toLocaleString()} EGP <i>(Used)</i>`);
+      altLines.push(`└ 📦 <b>${escapeHtml(offer.seller)}:</b> ${offer.price.toLocaleString()} EGP <i>(Used${staleTag})</i>`);
     });
 
   return altLines.length > 0 ? `\n\n💡 <b>Smart Alternatives:</b>\n${altLines.join("\n")}` : "";
