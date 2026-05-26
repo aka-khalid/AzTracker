@@ -186,11 +186,11 @@ def fetch_batch(asin_list, retries=3):
                     best_used = min(used_listings, key=lambda x: x[0])
                     used_price, used_seller, used_mid = best_used
 
-                if name and (new_price is not None or used_price is not None):
+                if name:
                     batch_results[asin] = (name, new_price, new_seller, new_mid, amz_price, used_price, used_seller, used_mid)
                     print(f"    ✅ Parsed: {name[:30]}... | New: {new_price} | Used: {used_price}")
                 else:
-                    print(f"    ❌ Skipping {asin} - Missing data")
+                    print(f"    ❌ Skipping {asin} - Missing Name Data")
 
             return batch_results
         except Exception as e:
@@ -432,6 +432,11 @@ async def async_main():
                     else:
                         if last_new_price is not None and new_price < last_new_price:
                             queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
+                else:
+                    # Reset target lock if the item goes Out of Stock
+                    if p.get("alert_sent_new", False):
+                        p["alert_sent_new"] = False
+                        dirty_users.add(chat_id)
                             
                 # Evaluate Used
                 if used_price is not None:
@@ -445,6 +450,11 @@ async def async_main():
                     else:
                         if last_used_price is not None and used_price < last_used_price:
                             queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, False, "alert_sent_used")
+                else:
+                    # Reset target lock if the item goes Out of Stock
+                    if p.get("alert_sent_used", False):
+                        p["alert_sent_used"] = False
+                        dirty_users.add(chat_id)
                             
                 if p.get("name") != name:
                     p["name"] = name
