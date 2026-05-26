@@ -14,6 +14,7 @@ import asyncio
 import aiohttp
 import html
 from datetime import datetime
+from urllib.parse import urlencode
 import pytz
 from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource, Condition
@@ -158,16 +159,21 @@ def fetch_batch(asin_list, retries=3):
                         if m_info:
                             if getattr(m_info, 'name', None): s_name = m_info.name
                             if getattr(m_info, 'id', None): m_id = m_info.id
-                        c_val = "New"
+                        condition_value = ""
                         c_info = getattr(lst, 'condition', None)
-                        if c_info and getattr(c_info, 'value', None): c_val = c_info.value
+                        if c_info and getattr(c_info, 'value', None):
+                            condition_value = str(c_info.value).strip().lower()
+                            if "." in condition_value:
+                                condition_value = condition_value.rsplit(".", 1)[-1]
+                            condition_value = condition_value.replace("_", " ")
                         is_winner = getattr(lst, 'is_buy_box_winner', False)
 
-                        is_used = "used" in c_val.lower() or "refurbished" in c_val.lower()
-                        if is_used:
+                        if condition_value == "new":
+                            new_listings.append((p_val, s_name, m_id, is_winner))
+                        elif any(token in condition_value for token in ("used", "refurbished", "renewed", "open box", "openbox", "collectible")):
                             used_listings.append((p_val, s_name, m_id))
                         else:
-                            new_listings.append((p_val, s_name, m_id, is_winner))
+                            print(f"      [WARN] Skipping unsupported condition for {asin}: {condition_value or 'missing'}")
                     except: continue
 
                 new_price, new_seller, new_mid = None, None, None
@@ -310,7 +316,9 @@ async def async_main():
             if (new_changed or used_changed or
                 name != last_entry.get("name") or
                 c_new_seller != last_entry.get("new_seller") or
-                c_used_seller != last_entry.get("used_seller")):
+                c_used_seller != last_entry.get("used_seller") or
+                c_new_mid != last_entry.get("new_mid") or
+                c_used_mid != last_entry.get("used_mid")):
 
                 updates[asin] = {
                     "new_price": c_new_price,
@@ -355,10 +363,10 @@ async def async_main():
                 
                 def queue_alert(cond_label, price, last_price, seller, mid, is_target, alert_key):
                     base_url = f"https://www.amazon.eg/dp/{product_id}"
-                    q_params = []
-                    if mid: q_params.append(f"m={mid}")
-                    if AMAZON_PARTNER_TAG: q_params.append(f"tag={AMAZON_PARTNER_TAG}")
-                    alert_url = f"{base_url}?{'&'.join(q_params)}" if q_params else base_url
+                    q_params = {}
+                    if mid: q_params["m"] = mid
+                    if AMAZON_PARTNER_TAG: q_params["tag"] = AMAZON_PARTNER_TAG
+                    alert_url = f"{base_url}?{urlencode(q_params)}" if q_params else base_url
                     btn_markup = {"inline_keyboard": [[{"text": "🛒 Open in Amazon.eg", "url": alert_url}]]}
                     
                     safe_name = html.escape(display_name)
@@ -367,13 +375,13 @@ async def async_main():
                     # Smart Alternatives Builder
                     alert_alts = []
                     if cond_label.startswith("(New)"):
-                        if used_price:
+                        if used_price is not None and used_price < price:
                             safe_used_seller = html.escape(used_seller) if used_seller else "Amazon Resale"
                             alert_alts.append(f"└ 📦 <b>{safe_used_seller}:</b> {used_price:,.2f} EGP <i>(Used)</i>")
                     else:
-                        if new_price is not None:
+                        if new_price is not None and new_price <= price:
                             alert_alts.append(f"└ 🛒 <b>Buy Box:</b> {new_price:,.2f} EGP <i>(New)</i>")
-                        else:
+                        elif new_price is None:
                             alert_alts.append(f"└ ❌ <b>Buy Box:</b> Out of Stock <i>(New)</i>")
                     final_smart_alts = ("\n\n💡 <b>Smart Alternatives:</b>\n" + "\n".join(alert_alts)) if alert_alts else ""
                     
@@ -390,8 +398,6 @@ async def async_main():
                             f"{final_smart_alts}\n\n"
                             f"🕐 <i>{now}</i>"
                         )
-                        p[alert_key] = True 
-                        dirty_users.add(chat_id)
                     else:
                         diff = last_price - price
                         pct = (diff / last_price * 100) if last_price else 0
@@ -406,8 +412,19 @@ async def async_main():
                             f"{final_smart_alts}\n\n"
                             f"🕐 <i>{now}</i>"
                         )
-                    outbox.append({"chat_id": chat_id, "text": msg, "markup": btn_markup})
+                    outbox_item = {
+                        "chat_id": chat_id,
+                        "product_id": product_id,
+                        "target_price": target_price if is_target else None,
+                        "lock_keys": [alert_key] if is_target and alert_key else [],
+                        "text": msg,
+                        "markup": btn_markup
+                    }
+                    outbox.append(outbox_item)
+                    return outbox_item
                     
+                target_alert = None
+
                 # Evaluate New
                 if new_price is not None:
                     if target_price and new_price > target_price:
@@ -416,7 +433,7 @@ async def async_main():
                             dirty_users.add(chat_id)
                     if target_price:
                         if new_price <= target_price and not p.get("alert_sent_new", False):
-                            queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new")
+                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new")
                     else:
                         if last_new_price is not None and new_price < last_new_price:
                             queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
@@ -434,7 +451,10 @@ async def async_main():
                             dirty_users.add(chat_id)
                     if target_price:
                         if used_price <= target_price and not p.get("alert_sent_used", False):
-                            queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, True, "alert_sent_used")
+                            if target_alert:
+                                target_alert["lock_keys"].append("alert_sent_used")
+                            else:
+                                target_alert = queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, True, "alert_sent_used")
                     else:
                         if last_used_price is not None and used_price < last_used_price:
                             queue_alert("(Used - Amazon Resale)", used_price, last_used_price, used_seller, used_mid, False, "alert_sent_used")
@@ -455,7 +475,43 @@ async def async_main():
                 final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers, data))
         if dirty_users:
             for chat_id in dirty_users:
-                final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers, users_data[chat_id]))
+                latest_products = await async_get_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers) or []
+                if not isinstance(latest_products, list):
+                    latest_products = []
+
+                engine_by_asin = {}
+                for engine_product in users_data.get(chat_id, []):
+                    engine_asin = get_product_id(engine_product.get("url"))
+                    if engine_asin:
+                        engine_by_asin[engine_asin] = engine_product
+
+                changed = False
+                for current_product in latest_products:
+                    current_asin = get_product_id(current_product.get("url"))
+                    engine_product = engine_by_asin.get(current_asin)
+                    if not engine_product:
+                        continue
+
+                    if current_product.get("name") != engine_product.get("name"):
+                        current_product["name"] = engine_product.get("name")
+                        changed = True
+
+                    same_alert_context = (
+                        current_product.get("target_price") == engine_product.get("target_price") and
+                        current_product.get("paused", False) == engine_product.get("paused", False)
+                    )
+                    if same_alert_context:
+                        for field in ("alert_sent_new", "alert_sent_used"):
+                            if field in engine_product and current_product.get(field) != engine_product[field]:
+                                current_product[field] = engine_product[field]
+                                changed = True
+
+                    if "alert_sent" in current_product:
+                        del current_product["alert_sent"]
+                        changed = True
+
+                if changed:
+                    final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers, latest_products))
 
         prices_keys_res = await async_get_kv(session, f"{cf_base_url}/keys?prefix=price:", cf_headers)
         hivemind_size = len(prices_keys_res.get("result", [])) if prices_keys_res else 0
@@ -466,10 +522,57 @@ async def async_main():
         if final_tasks:
             write_results = await asyncio.gather(*final_tasks)
             if all(write_results):
+                delivered_locks = {}
+                failed_deliveries = 0
                 if outbox:
                     for alert in outbox:
-                        await async_send_telegram(session, alert["chat_id"], alert["text"], alert["markup"])
+                        delivered = await async_send_telegram(session, alert["chat_id"], alert["text"], alert["markup"])
+                        if delivered:
+                            lock_keys = [key for key in alert.get("lock_keys", []) if key]
+                            if lock_keys:
+                                chat_locks = delivered_locks.setdefault(alert["chat_id"], {})
+                                product_locks = chat_locks.setdefault(alert["product_id"], {
+                                    "target_price": alert.get("target_price"),
+                                    "lock_keys": set()
+                                })
+                                product_locks["lock_keys"].update(lock_keys)
+                        else:
+                            failed_deliveries += 1
                         await asyncio.sleep(0.5)
+
+                if delivered_locks:
+                    lock_tasks = []
+                    for chat_id, locks_by_asin in delivered_locks.items():
+                        latest_products = await async_get_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers) or []
+                        if not isinstance(latest_products, list):
+                            latest_products = []
+
+                        changed = False
+                        for current_product in latest_products:
+                            current_asin = get_product_id(current_product.get("url"))
+                            lock_data = locks_by_asin.get(current_asin)
+                            if not lock_data:
+                                continue
+
+                            same_target = current_product.get("target_price") == lock_data.get("target_price")
+                            if not same_target or current_product.get("paused", False):
+                                continue
+
+                            for field in lock_data["lock_keys"]:
+                                if current_product.get(field) is not True:
+                                    current_product[field] = True
+                                    changed = True
+
+                        if changed:
+                            lock_tasks.append(async_put_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers, latest_products))
+
+                    if lock_tasks:
+                        lock_results = await asyncio.gather(*lock_tasks)
+                        if not all(lock_results):
+                            await notify_admins_of_error(session, "CRITICAL: Telegram sent, but alert lock persistence failed.")
+
+                if failed_deliveries:
+                    await notify_admins_of_error(session, f"Telegram delivery failed for {failed_deliveries} alert(s); locks were not persisted.")
             else:
                 err_msg = "❌ CRITICAL: KV Writes failed. Telegram Outbox aborted to prevent spam loops."
                 await notify_admins_of_error(session, err_msg)

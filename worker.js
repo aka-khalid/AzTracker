@@ -625,8 +625,10 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       if (pData.name) title = pData.name;
 
       let altLines = [];
-      if (usedPrice) {
-        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${usedPrice.toLocaleString()} EGP <i>(Used)</i>`);
+      const hasUsedPrice = usedPrice !== undefined && usedPrice !== null;
+      const hasNewPrice = newPrice !== undefined && newPrice !== null;
+      if (hasUsedPrice && (!hasNewPrice || Number(usedPrice) < Number(newPrice))) {
+        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${Number(usedPrice).toLocaleString()} EGP <i>(Used)</i>`);
       }
       
       if (altLines.length > 0) {
@@ -654,15 +656,22 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   let productUrl = `https://www.amazon.eg/dp/${pid}`;
-  const queryParams = [];
-  const targetMerchant = pid.includes(":") ? pid.split(":")[1] : (prices[pid] && prices[pid].new_mid ? prices[pid].new_mid : (prices[pid] && prices[pid].merchant_id ? prices[pid].merchant_id : null));
+  const priceRecord = prices[pid] && typeof prices[pid] === "object" ? prices[pid] : {};
+  const recordNewPrice = priceRecord.new_price !== undefined ? priceRecord.new_price : priceRecord.price;
+  const hasNewOffer = recordNewPrice !== undefined && recordNewPrice !== null;
+  const hasUsedOffer = priceRecord.used_price !== undefined && priceRecord.used_price !== null;
+  const callbackMerchant = pid.includes(":") ? pid.split(":")[1] : null;
+  const targetMerchant = hasNewOffer
+    ? (priceRecord.new_mid || priceRecord.merchant_id || callbackMerchant)
+    : hasUsedOffer
+      ? (priceRecord.used_mid || callbackMerchant)
+      : callbackMerchant;
 
-  if (targetMerchant) queryParams.push(`m=${targetMerchant}`);
-  if (env.AMZN_ASSOCIATES_TAG) queryParams.push(`tag=${env.AMZN_ASSOCIATES_TAG}`);
-  
-  if (queryParams.length > 0) {
-    productUrl += `?${queryParams.join("&")}`;
-  }
+  const queryParams = new URLSearchParams();
+  if (targetMerchant) queryParams.set("m", targetMerchant);
+  if (env.AMZN_ASSOCIATES_TAG) queryParams.set("tag", env.AMZN_ASSOCIATES_TAG);
+  const queryString = queryParams.toString();
+  if (queryString) productUrl += `?${queryString}`;
 
   const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
                `📦 <b>${cleanTitle}</b>\n` +
@@ -883,8 +892,10 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       if (pData.name) title = pData.name;
 
       let altLines = [];
-      if (usedPrice) {
-        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${usedPrice.toLocaleString()} EGP <i>(Used)</i>`);
+      const hasUsedPrice = usedPrice !== undefined && usedPrice !== null;
+      const hasNewPrice = newPrice !== undefined && newPrice !== null;
+      if (hasUsedPrice && (!hasNewPrice || Number(usedPrice) < Number(newPrice))) {
+        altLines.push(`└ 📦 <b>${escapeHtml(usedSeller || "Amazon Resale")}:</b> ${Number(usedPrice).toLocaleString()} EGP <i>(Used)</i>`);
       }
       
       if (altLines.length > 0) {
@@ -912,15 +923,22 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
 
   let productUrl = `https://www.amazon.eg/dp/${pid}`;
-  const queryParams = [];
-  const targetMerchant = pid.includes(":") ? pid.split(":")[1] : (prices[pid] && prices[pid].new_mid ? prices[pid].new_mid : (prices[pid] && prices[pid].merchant_id ? prices[pid].merchant_id : null));
+  const priceRecord = prices[pid] && typeof prices[pid] === "object" ? prices[pid] : {};
+  const recordNewPrice = priceRecord.new_price !== undefined ? priceRecord.new_price : priceRecord.price;
+  const hasNewOffer = recordNewPrice !== undefined && recordNewPrice !== null;
+  const hasUsedOffer = priceRecord.used_price !== undefined && priceRecord.used_price !== null;
+  const callbackMerchant = pid.includes(":") ? pid.split(":")[1] : null;
+  const targetMerchant = hasNewOffer
+    ? (priceRecord.new_mid || priceRecord.merchant_id || callbackMerchant)
+    : hasUsedOffer
+      ? (priceRecord.used_mid || callbackMerchant)
+      : callbackMerchant;
 
-  if (targetMerchant) queryParams.push(`m=${targetMerchant}`);
-  if (env.AMZN_ASSOCIATES_TAG) queryParams.push(`tag=${env.AMZN_ASSOCIATES_TAG}`);
-  
-  if (queryParams.length > 0) {
-    productUrl += `?${queryParams.join("&")}`;
-  }
+  const queryParams = new URLSearchParams();
+  if (targetMerchant) queryParams.set("m", targetMerchant);
+  if (env.AMZN_ASSOCIATES_TAG) queryParams.set("tag", env.AMZN_ASSOCIATES_TAG);
+  const queryString = queryParams.toString();
+  if (queryString) productUrl += `?${queryString}`;
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
