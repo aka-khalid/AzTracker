@@ -1090,18 +1090,37 @@ function buildProductUrl(pid, env, merchantId = null) {
 }
 
 function buildSmartAlternatives(pData, pid, env) {
-  const newPrice = toPrice(pData.new_price !== undefined ? pData.new_price : pData.price);
+  const now = Date.now();
+  
+  // 1. Check if seen within the 14-day TTL
+  const amazonSeenRecently = pData.seen_amazon_eg_at && (now - pData.seen_amazon_eg_at) < ALT_SELLER_TTL_MS;
+  const resaleSeenRecently = pData.seen_resale_at && (now - pData.seen_resale_at) < ALT_SELLER_TTL_MS;
+  
+  // 2. Identify the main Buy Box seller
   const newMid = pData.new_mid || pData.merchant_id || null;
-  const usedOffers = Array.isArray(pData.used_offers) ? [...pData.used_offers] : [];
-  const legacyUsedPrice = toPrice(pData.used_price);
+  const currentSellerIsAmazon = newMid === AMAZON_EG_MERCHANT_ID;
 
-  if (legacyUsedPrice !== null && usedOffers.length === 0) {
-    usedOffers.push({
-      price: legacyUsedPrice,
-      seller: pData.used_seller || "Amazon Resale",
-      mid: pData.used_mid || null
-    });
+  const historicalLinks = [];
+
+  // 3. If Amazon.eg is NOT the main seller, show the shortcut
+  if (!currentSellerIsAmazon && amazonSeenRecently) {
+    const amazonEgUrl = buildProductUrl(pid, env, AMAZON_EG_MERCHANT_ID);
+    historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg Official Listing</a>`);
   }
+  
+  // 4. Always show the Resale shortcut if it was seen recently (Resale is never the main new item)
+  if (resaleSeenRecently) {
+    const resaleUrl = buildProductUrl(pid, env, AMAZON_RESALE_MERCHANT_ID);
+    historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale Deals</a>`);
+  }
+
+  // 5. Render the clean block
+  if (historicalLinks.length > 0) {
+    return `\n\n💡 <b>Worth Checking:</b>\n${historicalLinks.join("\n")}\n└ <i>Previously observed for this ASIN</i>`;
+  }
+  
+  return "";
+}
 
   const altLines = [];
   
