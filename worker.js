@@ -680,7 +680,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
     const keyboard = {
     inline_keyboard: [
-      [{ text: "🛒 Open on Amazon.eg", url: productUrl }],
+      [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
       [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
       [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
       [{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }],
@@ -941,7 +941,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
     const keyboard = {
     inline_keyboard: [
-      [{ text: "🛒 Open on Amazon.eg", url: productUrl }],
+      [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
       [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
         targetBtn,
