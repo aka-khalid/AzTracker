@@ -1091,32 +1091,41 @@ function buildProductUrl(pid, env, merchantId = null) {
 
 function buildSmartAlternatives(pData, pid, env) {
   const now = Date.now();
-  
-  // 1. Check if seen within the 14-day TTL
   const amazonSeenRecently = pData.seen_amazon_eg_at && (now - pData.seen_amazon_eg_at) < ALT_SELLER_TTL_MS;
   const resaleSeenRecently = pData.seen_resale_at && (now - pData.seen_resale_at) < ALT_SELLER_TTL_MS;
-  
-  // 2. Identify the main Buy Box seller
+
   const newMid = pData.new_mid || pData.merchant_id || null;
   const currentSellerIsAmazon = newMid === AMAZON_EG_MERCHANT_ID;
+  const currentSellerIsResale = newMid === AMAZON_RESALE_MERCHANT_ID;
+
+  const amazonPrice = toPrice(pData.amazon_price);
+  const usedPrice = toPrice(pData.used_price);
 
   const historicalLinks = [];
 
-  // 3. If Amazon.eg is NOT the main seller, show the shortcut
-  if (!currentSellerIsAmazon && amazonSeenRecently) {
+  // Amazon.eg Link
+  if (!currentSellerIsAmazon) {
     const amazonEgUrl = buildProductUrl(pid, env, AMAZON_EG_MERCHANT_ID);
-    historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg Official Listing</a>`);
+    if (amazonPrice !== null) {
+      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg</a>: <b>${amazonPrice.toLocaleString()} EGP</b>`);
+    } else if (amazonSeenRecently) {
+      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg</a> <i>(Check Stock)</i>`);
+    }
   }
   
-  // 4. Always show the Resale shortcut if it was seen recently (Resale is never the main new item)
-  if (resaleSeenRecently) {
+  // Amazon Resale Link
+  if (!currentSellerIsResale) {
     const resaleUrl = buildProductUrl(pid, env, AMAZON_RESALE_MERCHANT_ID);
-    historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale Deals</a>`);
+    if (usedPrice !== null) {
+      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale</a>: <b>${usedPrice.toLocaleString()} EGP</b> <i>(Used)</i>`);
+    } else if (resaleSeenRecently) {
+      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale</a> <i>(Check Stock)</i>`);
+    }
   }
 
-  // 5. Render the clean block
+  // Render the clean block
   if (historicalLinks.length > 0) {
-    return `\n\n💡 <b>Worth Checking:</b>\n${historicalLinks.join("\n")}\n└ <i>Previously observed for this ASIN</i>`;
+    return `\n\n💡 <b>Other Options:</b>\n${historicalLinks.join("\n")}`;
   }
   
   return "";
