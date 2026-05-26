@@ -1123,7 +1123,11 @@ function buildSmartAlternatives(pData, pid, env) {
   const currentSellerIsAmazon =
     newMid === AMAZON_EG_MERCHANT_ID;
 
-  if (amazonPrice !== null && !amazonIsBuybox && amazonWithinThreshold) {
+  // Track if Amazon or Resale is rendered as an active alternative
+  const amazonIsActiveAlternative = (amazonPrice !== null && !amazonIsBuybox && amazonWithinThreshold);
+  let resaleIsActiveAlternative = false;
+
+  if (amazonIsActiveAlternative) {
     const premium = newPrice ? ((amazonPrice - newPrice) / newPrice) * 100 : 0;
     const premiumText = premium > 0 ? `, +${premium.toFixed(1)}%` : "";
     const amazonUrl = buildProductUrl(pid, env, amazonMid);
@@ -1152,12 +1156,19 @@ function buildSmartAlternatives(pData, pid, env) {
       const key = `${offer.mid || ""}:${offer.seller}:${offer.price}`;
       if (seenUsed.has(key) || seenUsed.size >= MAX_USED_ALT_OFFERS) return;
       seenUsed.add(key);
+      
+      // Check if this specific offer is Amazon Resale
+      if (offer.mid === AMAZON_RESALE_MERCHANT_ID || offer.seller.toLowerCase().includes("resale")) {
+        resaleIsActiveAlternative = true;
+      }
+      
       altLines.push(`└ 📦 <b>${escapeHtml(offer.seller)}:</b> ${offer.price.toLocaleString()} EGP <i>(Used${staleTag})</i>`);
     });
 
   const historicalLinks = [];
 
-  if (!currentSellerIsAmazon && amazonSeenRecently) {
+  // Suppress if it's the Buy Box OR if it's an active alternative
+  if (!currentSellerIsAmazon && !amazonIsActiveAlternative && amazonSeenRecently) {
     const amazonEgUrl = buildProductUrl(
       pid,
       env,
@@ -1169,7 +1180,8 @@ function buildSmartAlternatives(pData, pid, env) {
     );
   }
   
-  if (resaleSeenRecently) {
+  // Suppress if it's currently an active Used offer
+  if (!resaleIsActiveAlternative && resaleSeenRecently) {
     const resaleUrl = buildProductUrl(
       pid,
       env,
