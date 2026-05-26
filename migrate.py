@@ -7,7 +7,7 @@ async def fetch_and_update(session, key, cf_base_url, cf_headers, unix_now_ms):
     url = f"{cf_base_url}/values/{key}"
     async with session.get(url, headers=cf_headers) as res:
         if res.status != 200: return
-        product_data = await res.json()
+        product_data = await res.json(content_type=None)
 
     if isinstance(product_data, dict):
         # Inject the fresh timestamp into both tracker fields
