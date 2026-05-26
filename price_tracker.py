@@ -162,7 +162,8 @@ def fetch_batch(asin_list, retries=3):
                         c_info = getattr(lst, 'condition', None)
                         if c_info and getattr(c_info, 'value', None): c_val = c_info.value
                         
-                        print(f"      [DEBUG] {asin} | Price: {p_val} | Seller: {s_name} | Condition: {c_val} | Cond_raw: {c_info}")
+                        is_winner = getattr(lst, 'is_buy_box_winner', None)
+                        print(f"      [DEBUG] {asin} | Price: {p_val} | Seller: {s_name} | Condition: {c_val} | BuyBox: {is_winner}")
                             
                         is_used = "used" in c_val.lower() or "refurbished" in c_val.lower()
                         if is_used: used_listings.append((p_val, s_name, m_id))
