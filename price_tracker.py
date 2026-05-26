@@ -336,6 +336,8 @@ async def async_main():
                         "used_seller": None,
                         "used_mid": None,
                         "used_offers": [],
+                        "used_miss_streak": 0,
+                        "used_last_seen": None,
                         "amazon_price": None,
                         "amazon_seller": None,
                         "amazon_mid": None,
@@ -376,6 +378,24 @@ async def async_main():
             last_new_price = last_entry.get("new_price")
             last_used_price = last_entry.get("used_price")
 
+            # --- STICKY STATE (HYSTERESIS) ---
+            miss_streak = last_entry.get("used_miss_streak", 0)
+            used_last_seen = last_entry.get("used_last_seen")
+
+            if c_used_price is None and last_used_price is not None:
+                miss_streak += 1
+                if miss_streak < 4:  # Tolerate up to 3 misses (~30 mins) before dropping
+                    c_used_price = last_used_price
+                    c_used_seller = last_entry.get("used_seller")
+                    c_used_mid = last_entry.get("used_mid")
+                    c_used_offers = last_entry.get("used_offers", [])
+                else:
+                    used_last_seen = None
+            elif c_used_price is not None:
+                miss_streak = 0
+                used_last_seen = unix_now_ms
+            # ---------------------------------
+            
             new_changed = c_new_price != last_new_price
             used_changed = c_used_price != last_used_price
 
@@ -398,7 +418,8 @@ async def async_main():
                 c_amazon_seller != last_entry.get("amazon_seller") or
                 c_amazon_mid != last_entry.get("amazon_mid") or
                 c_amazon_is_buybox != bool(last_entry.get("amazon_is_buybox", False)) or
-                c_used_offers != last_entry.get("used_offers", [])):
+                c_used_offers != last_entry.get("used_offers", []) or
+                miss_streak != last_entry.get("used_miss_streak", 0)):
 
                 updates[asin] = {
                     "new_price": c_new_price,
@@ -408,6 +429,8 @@ async def async_main():
                     "used_seller": c_used_seller,
                     "used_mid": c_used_mid,
                     "used_offers": c_used_offers,
+                    "used_miss_streak": miss_streak,
+                    "used_last_seen": used_last_seen,
                     "amazon_price": c_amazon_price,
                     "amazon_seller": c_amazon_seller,
                     "amazon_mid": c_amazon_mid,
