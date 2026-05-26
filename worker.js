@@ -5,6 +5,8 @@
 //const GITHUB_BRANCH = "feature/randomized-scheduler";
 const GITHUB_BRANCH = "main";
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
+const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
+const ALT_SELLER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const AMAZON_ALT_MAX_MULTIPLIER = 1.15;
 const MAX_USED_ALT_OFFERS = 2;
 
@@ -1102,11 +1104,24 @@ function buildSmartAlternatives(pData, pid, env) {
   }
 
   const altLines = [];
+  
+  const now = Date.now();
+  
+  const amazonSeenRecently =
+    pData.seen_amazon_eg_at &&
+    (now - pData.seen_amazon_eg_at) < ALT_SELLER_TTL_MS;
+  
+  const resaleSeenRecently =
+    pData.seen_resale_at &&
+    (now - pData.seen_resale_at) < ALT_SELLER_TTL_MS;
+  
   const amazonPrice = toPrice(pData.amazon_price);
   const amazonMid = pData.amazon_mid || env.AMZN_EG_MERCHANT_ID || AMAZON_EG_MERCHANT_ID;
   const amazonSeller = pData.amazon_seller || "Amazon.eg";
   const amazonIsBuybox = pData.amazon_is_buybox === true || (amazonMid && amazonMid === newMid && amazonPrice === newPrice);
   const amazonWithinThreshold = newPrice === null || amazonPrice <= newPrice * AMAZON_ALT_MAX_MULTIPLIER;
+  const currentSellerIsAmazon =
+    newMid === AMAZON_EG_MERCHANT_ID;
 
   if (amazonPrice !== null && !amazonIsBuybox && amazonWithinThreshold) {
     const premium = newPrice ? ((amazonPrice - newPrice) / newPrice) * 100 : 0;
@@ -1140,7 +1155,44 @@ function buildSmartAlternatives(pData, pid, env) {
       altLines.push(`└ 📦 <b>${escapeHtml(offer.seller)}:</b> ${offer.price.toLocaleString()} EGP <i>(Used${staleTag})</i>`);
     });
 
-  return altLines.length > 0 ? `\n\n💡 <b>Smart Alternatives:</b>\n${altLines.join("\n")}` : "";
+  const historicalLinks = [];
+
+  if (!currentSellerIsAmazon && amazonSeenRecently) {
+    const amazonEgUrl = buildProductUrl(
+      pid,
+      env,
+      AMAZON_EG_MERCHANT_ID
+    );
+  
+    historicalLinks.push(
+      `└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg Official Listing</a>`
+    );
+  }
+  
+  if (resaleSeenRecently) {
+    const resaleUrl = buildProductUrl(
+      pid,
+      env,
+      AMAZON_RESALE_MERCHANT_ID
+    );
+  
+    historicalLinks.push(
+      `└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale Deals</a>`
+    );
+  }
+
+  if (historicalLinks.length) {
+    altLines.push(
+      "",
+      "💡 <b>Worth Checking:</b>",
+      ...historicalLinks,
+      "└ <i>Previously observed for this ASIN</i>"
+    );
+  }
+  
+  return altLines.length > 0
+    ? `\n\n💡 <b>Smart Alternatives:</b>\n${altLines.join("\n")}`
+    : "";
 }
 
 function convertHindiToArabic(text) {
