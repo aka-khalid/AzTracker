@@ -149,7 +149,7 @@ def fetch_batch(asin_list, retries=3):
                 new_listings = []
                 used_listings = []
 
-                for lst in getattr(item.offers_v2, 'listings', []):
+                for lst in all_listings:
                     try:
                         p_val = float(lst.price.money.amount)
                         s_name = "Unknown"
@@ -161,37 +161,30 @@ def fetch_batch(asin_list, retries=3):
                         c_val = "New"
                         c_info = getattr(lst, 'condition', None)
                         if c_info and getattr(c_info, 'value', None): c_val = c_info.value
-                        
-                        is_winner = getattr(lst, 'is_buy_box_winner', None)
-                        print(f"      [DEBUG] {asin} | Price: {p_val} | Seller: {s_name} | Condition: {c_val} | BuyBox: {is_winner}")
-                            
+                        is_winner = getattr(lst, 'is_buy_box_winner', False)
+
                         is_used = "used" in c_val.lower() or "refurbished" in c_val.lower()
-                        if is_used: used_listings.append((p_val, s_name, m_id))
-                        else: new_listings.append((p_val, s_name, m_id))
+                        if is_used:
+                            used_listings.append((p_val, s_name, m_id))
+                        else:
+                            new_listings.append((p_val, s_name, m_id, is_winner))
                     except: continue
 
-                new_price, new_seller, new_mid, amz_price = None, None, None, None
+                new_price, new_seller, new_mid = None, None, None
                 used_price, used_seller, used_mid = None, None, None
-                
+
                 if new_listings:
-                    best_new = min(new_listings, key=lambda x: x[0])
-                    new_price, new_seller, new_mid = best_new
-                    
-                    amz_new_list = [l for l in new_listings if "amazon" in l[1].lower()]
-                    if amz_new_list:
-                        best_amz = min(amz_new_list, key=lambda x: x[0])
-                        # 15% Premium Amazon Threshold Logic
-                        if best_amz[0] > best_new[0] and best_amz[0] <= best_new[0] * 1.15:
-                            amz_price = best_amz[0]
-                        elif best_amz[0] == best_new[0]:
-                            new_seller = best_amz[1]
-                        
+                    # Anchor to Buy Box winner if present, otherwise fallback to lowest
+                    winner = next((l for l in new_listings if l[3]), None)
+                    best_new = winner if winner else min(new_listings, key=lambda x: x[0])
+                    new_price, new_seller, new_mid = best_new[0], best_new[1], best_new[2]
+
                 if used_listings:
                     best_used = min(used_listings, key=lambda x: x[0])
                     used_price, used_seller, used_mid = best_used
-
+                    
                 if name:
-                    batch_results[asin] = (name, new_price, new_seller, new_mid, amz_price, used_price, used_seller, used_mid)
+                    batch_results[asin] = (name, new_price, new_seller, new_mid, used_price, used_seller, used_mid)
                     print(f"    ✅ Parsed: {name[:30]}... | New: {new_price} | Used: {used_price}")
                 else:
                     print(f"    ❌ Skipping {asin} - Missing Name Data")
@@ -277,7 +270,6 @@ async def async_main():
                         "new_price": price_data.get("price"),
                         "new_seller": price_data.get("seller", "Unknown"),
                         "new_mid": price_data.get("merchant_id"),
-                        "amz_price": None,
                         "used_price": None,
                         "used_seller": None,
                         "used_mid": None,
@@ -295,7 +287,7 @@ async def async_main():
         history_tasks = []
 
         for asin, res_tuple in all_fetched_results.items():
-            name, c_new_price, c_new_seller, c_new_mid, c_amz_price, c_used_price, c_used_seller, c_used_mid = res_tuple
+            name, c_new_price, c_new_seller, c_new_mid, c_used_price, c_used_seller, c_used_mid = res_tuple
             if c_new_price is not None: c_new_price = round(c_new_price, 2)
             if c_used_price is not None: c_used_price = round(c_used_price, 2)
             
@@ -310,23 +302,20 @@ async def async_main():
                 hist_url = f"{cf_base_url}/values/history:{asin}"
                 history_data = await async_get_kv(session, hist_url, cf_headers) or []
                 if not isinstance(history_data, list): history_data = []
-                
                 history_data.append({"n": c_new_price, "u": c_used_price, "t": unix_now})
                 history_data = history_data[-150:]
                 history_tasks.append(async_put_kv(session, hist_url, cf_headers, history_data))
                 history_updates += 1
-                
-            if (new_changed or used_changed or 
-                name != last_entry.get("name") or 
-                c_new_seller != last_entry.get("new_seller") or 
-                c_used_seller != last_entry.get("used_seller") or
-                c_amz_price != last_entry.get("amz_price")):
-                
+
+            if (new_changed or used_changed or
+                name != last_entry.get("name") or
+                c_new_seller != last_entry.get("new_seller") or
+                c_used_seller != last_entry.get("used_seller")):
+
                 updates[asin] = {
                     "new_price": c_new_price,
                     "new_seller": c_new_seller,
                     "new_mid": c_new_mid,
-                    "amz_price": c_amz_price,
                     "used_price": c_used_price,
                     "used_seller": c_used_seller,
                     "used_mid": c_used_mid,
@@ -349,7 +338,7 @@ async def async_main():
                 res = all_fetched_results.get(product_id)
                 if not res: continue
 
-                name, new_price, new_seller, new_mid, amz_price, used_price, used_seller, used_mid = res
+                name, new_price, new_seller, new_mid, used_price, used_seller, used_mid = res
                 
                 # ⬅️ LEGACY PROFILE SANITIZER
                 if "alert_sent" in p:
@@ -375,22 +364,17 @@ async def async_main():
                     safe_name = html.escape(display_name)
                     safe_seller = html.escape(seller) if seller else "Unknown"
                     
-                    # Context-Aware Smart Alternatives Builder
+                    # Smart Alternatives Builder
                     alert_alts = []
                     if cond_label.startswith("(New)"):
-                        if amz_price:
-                            alert_alts.append(f"└ 🛡️ <b>Amazon.eg:</b> {amz_price:,.2f} EGP <i>(New)</i>")
                         if used_price:
                             safe_used_seller = html.escape(used_seller) if used_seller else "Amazon Resale"
                             alert_alts.append(f"└ 📦 <b>{safe_used_seller}:</b> {used_price:,.2f} EGP <i>(Used)</i>")
                     else:
                         if new_price is not None:
-                            alert_alts.append(f"└ 📦 <b>Buy Box:</b> {new_price:,.2f} EGP <i>(New)</i>")
-                            if amz_price and amz_price != new_price:
-                                alert_alts.append(f"└ 🛡️ <b>Amazon.eg:</b> {amz_price:,.2f} EGP <i>(New)</i>")
+                            alert_alts.append(f"└ 🛒 <b>Buy Box:</b> {new_price:,.2f} EGP <i>(New)</i>")
                         else:
                             alert_alts.append(f"└ ❌ <b>Buy Box:</b> Out of Stock <i>(New)</i>")
-                            
                     final_smart_alts = ("\n\n💡 <b>Smart Alternatives:</b>\n" + "\n".join(alert_alts)) if alert_alts else ""
                     
                     if is_target:
