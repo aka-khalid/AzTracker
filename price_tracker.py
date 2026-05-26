@@ -151,15 +151,15 @@ def fetch_batch(asin_list, retries=3):
                         p_val = float(lst.price.money.amount)
                         s_name = "Unknown"
                         m_id = None
-                        
                         m_info = getattr(lst, 'merchant_info', None)
                         if m_info:
                             if getattr(m_info, 'name', None): s_name = m_info.name
                             if getattr(m_info, 'id', None): m_id = m_info.id
-                            
                         c_val = "New"
                         c_info = getattr(lst, 'condition', None)
                         if c_info and getattr(c_info, 'value', None): c_val = c_info.value
+                        
+                        print(f"      [DEBUG] {asin} | Price: {p_val} | Seller: {s_name} | Condition: {c_val} | Cond_raw: {c_info}")
                             
                         is_used = "used" in c_val.lower() or "refurbished" in c_val.lower()
                         if is_used: used_listings.append((p_val, s_name, m_id))
