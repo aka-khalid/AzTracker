@@ -143,6 +143,9 @@ def fetch_batch(asin_list, retries=3):
                 try: name = item.item_info.title.display_value
                 except: pass
 
+                all_listings = getattr(item.offers_v2, 'listings', [])
+                print(f"      [DEBUG] {asin} | Total listings returned: {len(all_listings)}")
+
                 new_listings = []
                 used_listings = []
 
