@@ -46,10 +46,11 @@ This document tracks the technical debt, security fortifications, feature expans
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Prune "zombie" `price:{asin}` shards from the database when no user is tracking them anymore.<br>
-  **The Strategy:** Compare the active `unique_asins` set against the total keys fetched from the `prefix=price:` query. Issue DELETE commands for any ASIN that exists in the database but not in the active tracking pool.<br>
-  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, after we fetch `unique_asins` from all users, we need to compare it to the full list of `price:*` keys in KV. Write a garbage collection block that identifies orphaned ASINs and adds bounded `DELETE` requests to purge them from the Cloudflare KV database."*
+  **The Goal:** Prune "zombie" `price:{asin}` shards from the database when no user is tracking them anymore, and fix the `hivemind_size` dashboard metric.<br>
+  **The Strategy:** Fetch the total keys from the `prefix=price:` query using a cursor loop. Compare this against the active `unique_asins` set and issue `DELETE` commands for orphaned ASINs. Simultaneously, use the true length of this fetched key array to accurately update the `hivemind_size` metric in `global:stats`, resolving the dashboard metric illusion.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, after we fetch `unique_asins` from all users, we need to compare it to the full list of `price:*` keys in KV. Write a paginated cursor loop to fetch all price keys. Build a garbage collection block that identifies orphaned ASINs and adds bounded `DELETE` requests to purge them. Finally, use the total count of those fetched keys to correctly define the `hivemind_size` variable before the `global:stats` payload is pushed."*
   </details>
+  
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
 
