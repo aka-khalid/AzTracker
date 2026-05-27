@@ -49,7 +49,7 @@ Follow these steps exactly in order. Skipping a step or misnaming a secret will 
    * **Access Key** (`AMZN_CREATORS_ACCESS_KEY`)
    * **Secret Key** (`AMZN_CREATORS_SECRET_KEY`)
    * **Partner Tag** (`AMZN_ASSOCIATES_TAG` - e.g., `yourname-21`)
-   * **API Version** (Usually `2023-10-01`. Save as `AMZN_API_VERSION`).
+   * **API Version** (Usually `3.2`. Save as `AMZN_API_VERSION`).
 
 ---
 
