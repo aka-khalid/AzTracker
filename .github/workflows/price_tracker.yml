@@ -31,40 +31,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Backup KV Price Shards
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          CF_BASE="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$CLOUDFLARE_KV_NAMESPACE_ID"
-          AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
-
-          for PREFIX in price history; do
-            KEYS=$(curl -s "$CF_BASE/keys?prefix=${PREFIX}:" -H "$AUTH" | jq -r '.result[].name // empty')
-            echo "{}" > ${PREFIX}_backup.json
-            for KEY in $KEYS; do
-              VALUE=$(curl -s "$CF_BASE/values/$KEY" -H "$AUTH")
-              ID="${KEY#${PREFIX}:}"
-              jq --arg k "$ID" --argjson v "$VALUE" '. + {($k): $v}' ${PREFIX}_backup.json > tmp.json && mv tmp.json ${PREFIX}_backup.json
-            done
-            echo "✅ ${PREFIX}: $(echo "$KEYS" | grep -c .) shards backed up."
-          done
-
-      - name: Upload Price Backup Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kv-prices-backup-${{ github.run_id }}
-          path: price_backup.json
-          retention-days: 7
-
-      - name: Upload History Backup Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kv-history-backup-${{ github.run_id }}
-          path: history_backup.json
-          retention-days: 7
-
       - name: Run price tracker
         env:
           TELEGRAM_BOT_TOKEN:         ${{ secrets.TELEGRAM_BOT_TOKEN }}
