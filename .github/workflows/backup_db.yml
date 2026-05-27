@@ -23,16 +23,31 @@ jobs:
         run: |
           CF_BASE="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$CLOUDFLARE_KV_NAMESPACE_ID"
           AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
-
+        
           for PREFIX in price history; do
-            KEYS=$(curl -s "$CF_BASE/keys?prefix=${PREFIX}:" -H "$AUTH" | jq -r '.result[].name // empty')
             echo "{}" > ${PREFIX}_backup.json
-            for KEY in $KEYS; do
-              VALUE=$(curl -s "$CF_BASE/values/$KEY" -H "$AUTH")
-              ID="${KEY#${PREFIX}:}"
-              jq --arg k "$ID" --argjson v "$VALUE" '. + {($k): $v}' ${PREFIX}_backup.json > tmp.json && mv tmp.json ${PREFIX}_backup.json
+            CURSOR=""
+            TOTAL=0
+        
+            while true; do
+              URL="$CF_BASE/keys?prefix=${PREFIX}:"
+              if [ -n "$CURSOR" ]; then URL="${URL}&cursor=${CURSOR}"; fi
+        
+              PAGE=$(curl -s "$URL" -H "$AUTH")
+              KEYS=$(echo "$PAGE" | jq -r '.result[].name // empty')
+              CURSOR=$(echo "$PAGE" | jq -r '.result_info.cursor // empty')
+        
+              for KEY in $KEYS; do
+                VALUE=$(curl -s "$CF_BASE/values/$KEY" -H "$AUTH")
+                ID="${KEY#${PREFIX}:}"
+                jq --arg k "$ID" --argjson v "$VALUE" '. + {($k): $v}' ${PREFIX}_backup.json > tmp.json && mv tmp.json ${PREFIX}_backup.json
+                TOTAL=$((TOTAL + 1))
+              done
+        
+              if [ -z "$CURSOR" ]; then break; fi
             done
-            echo "✅ ${PREFIX}: $(echo "$KEYS" | grep -c .) shards backed up."
+        
+            echo "✅ ${PREFIX}: $TOTAL shards backed up."
           done
 
       - name: Upload Price Backup Artifact
