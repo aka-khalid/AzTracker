@@ -19,8 +19,8 @@
 
 ## 🚀 Key Engineering Achievements
 
-### 🛡️ The Dual-Hysteresis "Anti-Flap" Engine
-Amazon's PA-API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a 16-run (two-hour) Hysteresis memory buffer. It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam and ensuring users only receive alerts for verified state changes.
+### 🛡️ The Time-Based Hysteresis "Anti-Flap" Engine
+Amazon's PA-API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a static timestamp-driven Hysteresis buffer (2.5 hours for 3rd-party sellers, 1 hour for Amazon). It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam and completely neutralizing Cloudflare KV write-amplification loops.
 
 ### ⚛️ Atomic Two-Phase Commit (2PC) Synchronization
 To prevent TOCTOU (Time-Of-Check to Time-Of-Use) race conditions across the distributed Cloudflare KV edge network, the Python engine utilizes an atomic Two-Phase Commit. It executes webhooks synchronously, merges Telegram delivery locks with backend tracking resets into a single state array, and pushes the synchronized payload in one parallel execution to guarantee database consensus.
@@ -56,6 +56,7 @@ graph TD;
     GH -- Delta-Only Logging --> KV_Hist[(☁️ CF KV: Global History)];
     GH -- Context-Aware Alert Routing --> TG[📲 Telegram Push Notification];
     GH -- Atomic 2PC Lock Sync --> KV;
+    GH_Backup[⏱️ GitHub Native Cron] -- 4-Hour Schedule --> KV_Backups[(☁️ CF KV: Auto-Backups)];
 ```
 
 ---
