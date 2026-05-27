@@ -17,6 +17,33 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Telegram requires an explicit HTTP POST to the `answerCallbackQuery` endpoint for every button click to resolve the client-side loading state. Currently, the `worker.js` just returns an empty Response on the `"ignore"` action.<br>
   **🤖 AI Execution Prompt:** *"I am working on AzTracker's `worker.js`. Locate the callback query handler where `action === 'ignore'`. Instead of returning an empty response, write a fetch call to the Telegram API `answerCallbackQuery` endpoint passing the `callback_query.id`. Ensure it doesn't block the worker's execution."*
   </details>
+- [ ] **The Partial 2PC Failure (Infinite Spam Loop Trap)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Prevent infinite target-alert spam loops caused by script timeouts during the Two-Phase Commit.<br>
+  **The Strategy:** Currently, `price_tracker.py` pushes `price:{asin}` updates to Cloudflare *before* sending Telegram alerts, and pushes `alert_sent` locks *after*. If the script crashes during the Telegram loop, the price updates but the lock fails, causing the alert to trigger again on the next run. We must invert this: Execute the Telegram loop *first*, collect the locks, and then push `price:`, `user:`, and `global:` in one single, atomic batch.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, the Two-Phase Commit is split across Phase 5 and Phase 6. I need to invert the execution order to make it truly atomic. Rewrite the logic so that `async_send_telegram` is executed first to populate `delivered_locks`. Then, aggregate all updates (`price:{asin}`, `user:{chat_id}:products` including the new locks, and `global:stats`) into a single `final_tasks` array. Finally, execute `await asyncio.gather(*final_tasks)` as the absolute last step of the engine."*
+  </details>
+
+- [ ] **The Bulk-Write Blindspot (Control Plane Rescue)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Neutralize Cloudflare KV REST API limits by replacing concurrent `PUT` requests with native `/bulk` array operations.<br>
+  **The Strategy:** Cloudflare KV's REST API has a strict 1,200 request / 5 min limit. Currently, `price_tracker.py` uses `asyncio.gather` to fire dozens of individual `PUT` requests. We must replace this with Cloudflare's `PUT /bulk` endpoint, packing all `price:`, `history:`, `user:`, and `global:` changes into a single JSON array, reducing 100+ API calls down to exactly 1.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, we are hitting Cloudflare KV rate limits because we are firing concurrent `PUT` requests for every updated key. Rewrite the final KV sync block. Instead of appending `async_put_kv` tasks to `final_tasks`, build a JSON array formatted as `[{"key": "...", "value": "..."}]`. Then, write a new helper function `async_put_kv_bulk` that executes a single `PUT` request to Cloudflare's native `/bulk` endpoint."*
+  </details>
+
+- [ ] **The "Dead ASIN" Quota Leak (MIA Hysteresis)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Stop wasting Amazon API quotas on completely delisted (404) ASINs without falling victim to transient PA-API omission glitches.<br>
+  **The Strategy:** Compare the requested batch ASINs against `all_fetched_results`. For any ASIN completely missing from the PA-API response, increment a `mia_streak` in its KV shard. If `mia_streak` exceeds 192 (24 hours), flag the ASIN as `delisted`. Auto-pause it in all users' active registries and send them an informational alert so they know the product was removed from Amazon.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, the engine completely ignores ASINs that the PA-API omits from its response. I need to build an 'MIA Hysteresis' engine. After the `fetch_batch` loop, find all ASINs that were requested but not returned. Increment an `mia_streak` integer in their `price:{asin}` dictionary. If `mia_streak > 192`, toggle `paused: True` for this ASIN in every user's `products` array, add a 'delisted' flag, and queue a Telegram alert informing the user the item was removed from Amazon."*
+  </details>
+
 
 ## ⚡ Phase 2: DevOps & Database Optimization (Speed & Scaling)
 
