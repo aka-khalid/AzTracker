@@ -15,7 +15,7 @@ import aiohttp
 import html
 from datetime import datetime
 from urllib.parse import urlencode
-import pytz
+from zoneinfo import ZoneInfo
 from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource, Condition
 
@@ -31,8 +31,6 @@ AMAZON_API_VERSION = os.environ.get("AMZN_API_VERSION", "")
 MAX_NAME_LEN = 60
 AMAZON_EG_MERCHANT_ID = os.environ.get("AMZN_EG_MERCHANT_ID", "A1ZVRGNO5AYLOV")
 AMAZON_RESALE_MERCHANT_ID = os.environ.get("AMZN_RESALE_MERCHANT_ID", "A2N2MP47XAP1MK")
-AMAZON_ALT_MAX_MULTIPLIER = 1.15
-MAX_USED_ALT_OFFERS = 2
 
 api = AmazonCreatorsApi(
     credential_id=AMAZON_ACCESS_KEY,
@@ -128,14 +126,18 @@ async def async_put_kv(session, url, headers, payload):
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
 def send_telegram(chat_id, text, reply_markup=None):
+    import json, urllib.request
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
-    if reply_markup: payload["reply_markup"] = reply_markup
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     try:
-        res = requests.post(url, json=payload, timeout=10)
-        return res.status_code == 200
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return res.status == 200
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Telegram sync fallback error: {e}")
         return False
 
 async def async_send_telegram(session, chat_id, text, reply_markup=None, max_retries=3):
@@ -145,7 +147,8 @@ async def async_send_telegram(session, chat_id, text, reply_markup=None, max_ret
         
     for attempt in range(max_retries):
         try:
-            async with session.post(url, json=payload, timeout=10) as response:
+            tg_timeout = aiohttp.ClientTimeout(total=15)
+            async with session.post(url, json=payload, timeout=tg_timeout) as response:
                 if response.status == 200: return True
                 elif response.status == 429:
                     resp_json = await response.json()
@@ -214,7 +217,9 @@ def fetch_batch(asin_list, retries=3):
                             used_listings.append(offer)
                         else:
                             print(f"      [WARN] Skipping unsupported condition for {asin}: {condition_value or 'missing'} / {subcondition_value or 'missing'}")
-                    except: continue
+                    except (AttributeError, TypeError, ValueError) as offer_err:
+                        print(f"      [WARN] Skipping malformed offer for {asin}: {offer_err}")
+                        continue
 
                 new_price, new_seller, new_mid = None, None, None
                 used_price, used_seller, used_mid = None, None, None
@@ -297,11 +302,12 @@ async def async_main():
 
     cf_headers = {"Authorization": f"Bearer {CF_API_TOKEN}", "Content-Type": "application/json"}
     cf_base_url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/storage/kv/namespaces/{CF_NAMESPACE_ID}"
-    cairo_tz = pytz.timezone('Africa/Cairo')
+    cairo_tz = ZoneInfo('Africa/Cairo')
     now = datetime.now(cairo_tz).strftime("%Y-%m-%d %H:%M %Z")
     unix_now_ms = int(time.time() * 1000)
 
-    async with aiohttp.ClientSession() as session:
+    kv_timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=kv_timeout) as session:
         # --- CONCURRENCY SHIELD ---
         # Limit simultaneous TCP connections to prevent Layer 7 floods & exhaustion
         sem = asyncio.Semaphore(15)
@@ -528,7 +534,11 @@ async def async_main():
                     "last_updated": unix_now_ms
                 }
 
-        if history_tasks: await asyncio.gather(*history_tasks)
+        if history_tasks:
+            try:
+                await asyncio.gather(*history_tasks)
+            except KVRateLimitedError as e:
+                await notify_admins_of_error(session, f"KV 429 during history writes — partial history loss.\n{e}")
 
         # 4. Evaluate prices & route personalized notifications
         dirty_users = set()
@@ -737,7 +747,11 @@ async def async_main():
         sync_users = dirty_users | set(delivered_locks.keys())
         if sync_users:
             for chat_id in sync_users:
-                latest_products = await bounded_get_kv(f"{cf_base_url}/values/user:{chat_id}:products") or []
+                try:
+                    latest_products = await bounded_get_kv(f"{cf_base_url}/values/user:{chat_id}:products") or []
+                except KVRateLimitedError as e:
+                    await notify_admins_of_error(session, f"KV 429 during 2PC fresh-fetch for user {chat_id} — sync aborted for this user.\n{e}")
+                    continue
                 if not isinstance(latest_products, list):
                     latest_products = []
 
@@ -788,7 +802,10 @@ async def async_main():
         # 6. Push System Stats with Dashboard Heartbeat Throttle
         hivemind_size = len(unique_asins)
         
-        old_stats = await bounded_get_kv(f"{cf_base_url}/values/global:stats") or {}
+        try:
+            old_stats = await bounded_get_kv(f"{cf_base_url}/values/global:stats") or {}
+        except KVRateLimitedError:
+            old_stats = {}  # skip throttle check, allow stats write
         old_active = old_stats.get("active_api_calls", 0)
         old_hivemind = old_stats.get("hivemind_size", 0)
         old_timestamp = old_stats.get("last_run_timestamp", 0)
