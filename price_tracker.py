@@ -222,7 +222,7 @@ def fetch_batch(asin_list, retries=3):
                 seen_amazon_eg = False
                 seen_resale = False
                 
-                used_offers = sorted(used_listings, key=lambda x: x["price"])
+                used_offers = sorted(used_listings, key=lambda x: (x["price"], x["seller"]))
 
                 if new_listings:
                     # Anchor to Buy Box winner if present, otherwise fallback to lowest
@@ -382,9 +382,9 @@ async def async_main():
                         "used_seller": None,
                         "used_mid": None,
                         "used_offers": [],
-                        "new_miss_streak": 0,
-                        "used_miss_streak": 0,
-                        "used_last_seen": None,
+                        "new_missing_since": None,
+                        "used_missing_since": None,
+                        "amazon_missing_since": None,
                         "amazon_price": None,
                         "amazon_seller": None,
                         "amazon_mid": None,
@@ -429,45 +429,53 @@ async def async_main():
             last_new_price = last_entry.get("new_price")
             last_used_price = last_entry.get("used_price")
 
-            # --- DUAL STICKY STATE (16-RUN ANTI-FLAP) ---
-            new_miss_streak = last_entry.get("new_miss_streak", 0)
-            used_miss_streak = last_entry.get("used_miss_streak", 0)
-            used_last_seen = last_entry.get("used_last_seen")
+            # --- TIME-BASED STICKY STATE ---
+            new_missing_since = last_entry.get("new_missing_since")
+            used_missing_since = last_entry.get("used_missing_since")
+            amazon_missing_since = last_entry.get("amazon_missing_since")
 
-            # New Price Anti-Flap
+            # New Price Anti-Flap (2.5 hours = 9000000 ms)
             if c_new_price is None and last_new_price is not None:
-                new_miss_streak += 1
-                if new_miss_streak < 16: 
+                if not new_missing_since: new_missing_since = unix_now_ms
+                if (unix_now_ms - new_missing_since) < 9000000:
                     c_new_price = last_new_price
                     c_new_seller = last_entry.get("new_seller")
                     c_new_mid = last_entry.get("new_mid")
             elif c_new_price is not None:
-                new_miss_streak = 0
+                new_missing_since = None
 
-            # Used Price Anti-Flap
+            # Used Price Anti-Flap (2.5 hours = 9000000 ms)
             if c_used_price is None and last_used_price is not None:
-                used_miss_streak += 1
-                if used_miss_streak < 16: 
+                if not used_missing_since: used_missing_since = unix_now_ms
+                if (unix_now_ms - used_missing_since) < 9000000:
                     c_used_price = last_used_price
                     c_used_seller = last_entry.get("used_seller")
                     c_used_mid = last_entry.get("used_mid")
                     c_used_offers = last_entry.get("used_offers", [])
-                else:
-                    used_last_seen = None
             elif c_used_price is not None:
-                used_miss_streak = 0
-                used_last_seen = unix_now_ms
+                used_missing_since = None
+
+            # Amazon Price Anti-Flap (1 hour = 3600000 ms)
+            if c_amazon_price is None and last_entry.get("amazon_price") is not None:
+                if not amazon_missing_since: amazon_missing_since = unix_now_ms
+                if (unix_now_ms - amazon_missing_since) < 3600000:
+                    c_amazon_price = last_entry.get("amazon_price")
+                    c_amazon_seller = last_entry.get("amazon_seller")
+                    c_amazon_mid = last_entry.get("amazon_mid")
+                    c_amazon_is_buybox = last_entry.get("amazon_is_buybox")
+            elif c_amazon_price is not None:
+                amazon_missing_since = None
             # --------------------------------------------
 
             # --- LAZY REFRESH TIMESTAMPS ---
             seen_amazon_eg_at = last_seen_amazon_eg_at
             if c_seen_amazon_eg:
-                if not last_seen_amazon_eg_at or (unix_now_ms - last_seen_amazon_eg_at) > 86400000:
+                if not last_seen_amazon_eg_at or (unix_now_ms - last_seen_amazon_eg_at) > 21600000:
                     seen_amazon_eg_at = unix_now_ms
                     
             seen_resale_at = last_seen_resale_at
             if c_seen_resale:
-                if not last_seen_resale_at or (unix_now_ms - last_seen_resale_at) > 86400000:
+                if not last_seen_resale_at or (unix_now_ms - last_seen_resale_at) > 21600000:
                     seen_resale_at = unix_now_ms
 
             new_changed = c_new_price != last_new_price
@@ -493,8 +501,9 @@ async def async_main():
                 c_amazon_mid != last_entry.get("amazon_mid") or
                 c_amazon_is_buybox != bool(last_entry.get("amazon_is_buybox", False)) or
                 c_used_offers != last_entry.get("used_offers", []) or
-                new_miss_streak != last_entry.get("new_miss_streak", 0) or
-                used_miss_streak != last_entry.get("used_miss_streak", 0) or
+                new_missing_since != last_entry.get("new_missing_since") or
+                used_missing_since != last_entry.get("used_missing_since") or
+                amazon_missing_since != last_entry.get("amazon_missing_since") or
                 seen_amazon_eg_at != last_entry.get("seen_amazon_eg_at") or
                 seen_resale_at != last_entry.get("seen_resale_at")):
 
@@ -506,9 +515,9 @@ async def async_main():
                     "used_seller": c_used_seller,
                     "used_mid": c_used_mid,
                     "used_offers": c_used_offers,
-                    "new_miss_streak": new_miss_streak,
-                    "used_miss_streak": used_miss_streak,
-                    "used_last_seen": used_last_seen,
+                    "new_missing_since": new_missing_since,
+                    "used_missing_since": used_missing_since,
+                    "amazon_missing_since": amazon_missing_since,
                     "seen_amazon_eg_at": seen_amazon_eg_at,
                     "seen_resale_at": seen_resale_at,
                     "amazon_price": c_amazon_price,
@@ -776,20 +785,24 @@ async def async_main():
                 if changed:
                     final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/user:{chat_id}:products", latest_products))
 
-        # Paginated count for hivemind system stats
-        hivemind_size = 0
-        cursor = ""
-        while True:
-            url = f"{cf_base_url}/keys?prefix=price:"
-            if cursor: url += f"&cursor={cursor}"
-            page_res = await bounded_get_kv(url)
-            if not page_res: break
-            hivemind_size += len(page_res.get("result", []))
-            cursor = page_res.get("result_info", {}).get("cursor")
-            if not cursor: break
+        # 6. Push System Stats with Dashboard Heartbeat Throttle
+        hivemind_size = len(unique_asins)
+        
+        old_stats = await bounded_get_kv(f"{cf_base_url}/values/global:stats") or {}
+        old_active = old_stats.get("active_api_calls", 0)
+        old_hivemind = old_stats.get("hivemind_size", 0)
+        old_timestamp = old_stats.get("last_run_timestamp", 0)
 
-        system_stats = {"active_api_calls": len(unique_asins), "hivemind_size": hivemind_size, "last_run_timestamp": unix_now_ms}
-        final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/global:stats", system_stats))
+        if (len(unique_asins) != old_active or 
+            hivemind_size != old_hivemind or 
+            (unix_now_ms - old_timestamp) > 1800000):
+            
+            system_stats = {
+                "active_api_calls": len(unique_asins), 
+                "hivemind_size": hivemind_size, 
+                "last_run_timestamp": unix_now_ms
+            }
+            final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/global:stats", system_stats))
 
         if final_tasks:
             write_results = await asyncio.gather(*final_tasks)
