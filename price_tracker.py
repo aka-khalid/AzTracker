@@ -302,15 +302,36 @@ async def async_main():
     unix_now_ms = int(time.time() * 1000)
 
     async with aiohttp.ClientSession() as session:
-        # 1. Fetch multi-tenant directory
-        keys_res = await async_get_kv(session, f"{cf_base_url}/keys?prefix=user:", cf_headers)
-        if not keys_res: return
+        # --- CONCURRENCY SHIELD ---
+        # Limit simultaneous TCP connections to prevent Layer 7 floods & exhaustion
+        sem = asyncio.Semaphore(15)
+
+        async def bounded_get_kv(url):
+            async with sem:
+                return await async_get_kv(session, url, cf_headers)
+
+        async def bounded_put_kv(url, payload):
+            async with sem:
+                return await async_put_kv(session, url, cf_headers, payload)
+
+        # 1. Fetch multi-tenant directory (PAGINATED)
+        user_keys = []
+        cursor = ""
+        while True:
+            url = f"{cf_base_url}/keys?prefix=user:"
+            if cursor: url += f"&cursor={cursor}"
+            page_res = await bounded_get_kv(url)
+            if not page_res: break
+            user_keys.extend(page_res.get("result", []))
+            cursor = page_res.get("result_info", {}).get("cursor")
+            if not cursor: break
+
+        if not user_keys: return
             
-        user_keys = keys_res.get("result", [])
         users_data = {}
         unique_asins = set()
 
-        fetch_tasks = [async_get_kv(session, f"{cf_base_url}/values/{k['name']}", cf_headers) for k in user_keys]
+        fetch_tasks = [bounded_get_kv(f"{cf_base_url}/values/{k['name']}") for k in user_keys]
         fetched_results = await asyncio.gather(*fetch_tasks)
 
         for k, products in zip(user_keys, fetched_results):
@@ -340,7 +361,7 @@ async def async_main():
 
         # 3. Fetch Price History & Legacy Wrapper
         global_prices = {}
-        price_tasks = [async_get_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers) for asin in all_fetched_results.keys()]
+        price_tasks = [bounded_get_kv(f"{cf_base_url}/values/price:{asin}") for asin in all_fetched_results.keys()]
         
         try:
             price_results = await asyncio.gather(*price_tasks)
@@ -368,7 +389,7 @@ async def async_main():
                         "amazon_seller": None,
                         "amazon_mid": None,
                         "amazon_is_buybox": False,
-                        "name": price_data.get("name"), # Preserved to prevent First-Run Write Storm
+                        "name": price_data.get("name"), 
                         "last_updated": price_data.get("last_updated")
                     }
                 else:
@@ -416,7 +437,7 @@ async def async_main():
             # New Price Anti-Flap
             if c_new_price is None and last_new_price is not None:
                 new_miss_streak += 1
-                if new_miss_streak < 16:  # Hold for ~160 mins (2.5 hours)
+                if new_miss_streak < 16: 
                     c_new_price = last_new_price
                     c_new_seller = last_entry.get("new_seller")
                     c_new_mid = last_entry.get("new_mid")
@@ -426,7 +447,7 @@ async def async_main():
             # Used Price Anti-Flap
             if c_used_price is None and last_used_price is not None:
                 used_miss_streak += 1
-                if used_miss_streak < 16:  # Hold for ~160 mins (2.5 hours)
+                if used_miss_streak < 16: 
                     c_used_price = last_used_price
                     c_used_seller = last_entry.get("used_seller")
                     c_used_mid = last_entry.get("used_mid")
@@ -454,11 +475,11 @@ async def async_main():
 
             if new_changed or used_changed:
                 hist_url = f"{cf_base_url}/values/history:{asin}"
-                history_data = await async_get_kv(session, hist_url, cf_headers) or []
+                history_data = await bounded_get_kv(hist_url) or []
                 if not isinstance(history_data, list): history_data = []
                 history_data.append({"n": c_new_price, "u": c_used_price, "t": unix_now})
                 history_data = history_data[-150:]
-                history_tasks.append(async_put_kv(session, hist_url, cf_headers, history_data))
+                history_tasks.append(bounded_put_kv(hist_url, history_data))
                 history_updates += 1
 
             if (new_changed or used_changed or
@@ -513,7 +534,6 @@ async def async_main():
                 
                 if product_id not in all_fetched_results: continue
 
-                # CRITICAL: Pull data from the Hysteresis-processed state
                 latest_state = updates.get(product_id) or global_prices.get(product_id, {})
                 if not latest_state: continue
 
@@ -529,7 +549,6 @@ async def async_main():
                 current_seen_amazon_eg_at = latest_state.get("seen_amazon_eg_at")
                 current_seen_resale_at = latest_state.get("seen_resale_at")
                 
-                # ⬅️ LEGACY PROFILE SANITIZER
                 if "alert_sent" in p:
                     p["alert_sent_new"] = p.get("alert_sent")
                     p["alert_sent_used"] = False
@@ -545,7 +564,6 @@ async def async_main():
                 def queue_alert(cond_label, price, last_price, seller, mid, is_target, alert_key):
                     base_url = f"https://www.amazon.eg/dp/{product_id}"
                     
-                    # --- CONTEXT-AWARE PRIMARY BUTTON ---
                     primary_mid = AMAZON_RESALE_MERCHANT_ID if "(Used" in cond_label else mid
                     
                     q_params = {}
@@ -560,7 +578,6 @@ async def async_main():
                     safe_name = html.escape(display_name)
                     safe_seller = html.escape(seller) if seller else "Unknown"
                     
-                    # --- PASSIVE INFORMATIVE LINKS (Other Options) ---
                     historical_links = []
                     current_seller_is_amazon = is_amazon_eg_merchant(mid)
                     current_seller_is_resale = is_amazon_resale_merchant(mid, seller)
@@ -645,7 +662,6 @@ async def async_main():
                     
                 target_alert = None
 
-                # Evaluate New
                 if new_price is not None:
                     if target_price and new_price > target_price:
                         if p.get("alert_sent_new", False):
@@ -664,7 +680,6 @@ async def async_main():
                         p["alert_sent_new"] = False
                         dirty_users.add(chat_id)
                             
-                # Evaluate Used
                 if used_price is not None:
                     if target_price and used_price > target_price:
                         if p.get("alert_sent_used", False):
@@ -708,13 +723,12 @@ async def async_main():
         final_tasks = []
         if updates:
             for asin, data in updates.items():
-                final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/price:{asin}", cf_headers, data))
+                final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/price:{asin}", data))
                 
-        # Merge dirty_users (OOS resets) AND delivered_locks (Target hits) simultaneously
         sync_users = dirty_users | set(delivered_locks.keys())
         if sync_users:
             for chat_id in sync_users:
-                latest_products = await async_get_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers) or []
+                latest_products = await bounded_get_kv(f"{cf_base_url}/values/user:{chat_id}:products") or []
                 if not isinstance(latest_products, list):
                     latest_products = []
 
@@ -730,7 +744,6 @@ async def async_main():
                 for current_product in latest_products:
                     current_asin = get_product_id(current_product.get("url"))
                     
-                    # 1. Apply Dirty Resets (OOS tracking & Sanity)
                     engine_product = engine_by_asin.get(current_asin)
                     if engine_product:
                         if current_product.get("name") != engine_product.get("name"):
@@ -751,7 +764,6 @@ async def async_main():
                             del current_product["alert_sent"]
                             changed = True
 
-                    # 2. Apply Telegram Confirmed Locks
                     lock_data = chat_delivered_locks.get(current_asin)
                     if lock_data:
                         same_target = current_product.get("target_price") == lock_data.get("target_price")
@@ -762,12 +774,22 @@ async def async_main():
                                     changed = True
 
                 if changed:
-                    final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/user:{chat_id}:products", cf_headers, latest_products))
+                    final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/user:{chat_id}:products", latest_products))
 
-        prices_keys_res = await async_get_kv(session, f"{cf_base_url}/keys?prefix=price:", cf_headers)
-        hivemind_size = len(prices_keys_res.get("result", [])) if prices_keys_res else 0
+        # Paginated count for hivemind system stats
+        hivemind_size = 0
+        cursor = ""
+        while True:
+            url = f"{cf_base_url}/keys?prefix=price:"
+            if cursor: url += f"&cursor={cursor}"
+            page_res = await bounded_get_kv(url)
+            if not page_res: break
+            hivemind_size += len(page_res.get("result", []))
+            cursor = page_res.get("result_info", {}).get("cursor")
+            if not cursor: break
+
         system_stats = {"active_api_calls": len(unique_asins), "hivemind_size": hivemind_size, "last_run_timestamp": unix_now_ms}
-        final_tasks.append(async_put_kv(session, f"{cf_base_url}/values/global:stats", cf_headers, system_stats))
+        final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/global:stats", system_stats))
 
         if final_tasks:
             write_results = await asyncio.gather(*final_tasks)
