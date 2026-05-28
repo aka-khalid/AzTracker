@@ -29,7 +29,7 @@ To prevent TOCTOU (Time-Of-Check to Time-Of-Use) race conditions across the dist
 AzTracker doesn't just track the Buy Box. It parses complex condition sub-schemas to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons (🛒 vs 📦) based on the exact condition of the targeted deal.
 
 ### 📉 Delta-Only Time-Series Logging
-Storing 96 identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts. 
+Storing **192** identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts. 
 * Limits array sizes to the last 150 price changes (up to ~3 years of historical fluctuations).
 * Keeps historical payloads under **4.6 KB**, guaranteeing sub-10ms read times at the edge.
 
@@ -87,7 +87,7 @@ AzTracker relies on a fully automated GitOps pipeline.
 
 ## 👨‍💻 Architect & Acknowledgements
 
-Engineered and maintained by **Khalid Ibrahim**.
+Engineered and maintained by **Khalid Ibrahim**, built upon core cloud infrastructure and system architecture principles.
 
 Special thanks to **[Abdelrahman Elkhayat](https://www.facebook.com/bodaa.elkhayat)** for generously providing the Amazon Creators API credentials that power the core tracking engine.
 
