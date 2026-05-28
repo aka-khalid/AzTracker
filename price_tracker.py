@@ -160,16 +160,18 @@ async def async_send_telegram(session, chat_id, text, reply_markup=None, max_ret
         try:
             tg_timeout = aiohttp.ClientTimeout(total=15)
             async with session.post(url, json=payload, timeout=tg_timeout) as response:
-                if response.status == 200: return True
+                if response.status == 200: 
+                    return True, 200
                 elif response.status == 429:
                     resp_json = await response.json()
                     wait_time = resp_json.get("parameters", {}).get("retry_after", 3)
                     await asyncio.sleep(wait_time)
                     continue 
-                else: return False
+                else: 
+                    return False, response.status
         except Exception as e:
-            return False
-    return False
+            return False, 0
+    return False, 0
 
 # ── Amazon Creators API Batch Fetch ───────────────────────────────────────────
 
@@ -780,10 +782,11 @@ async def async_main():
         # 5. Execute Webhooks & Unified Two-Phase Commit (2PC) Sync
         delivered_locks = {}
         failed_deliveries = 0
+        dead_users = set() # <-- NEW
         
         if outbox:
             for alert in outbox:
-                delivered = await async_send_telegram(session, alert["chat_id"], alert["text"], alert["markup"])
+                delivered, status_code = await async_send_telegram(session, alert["chat_id"], alert["text"], alert["markup"])
                 if delivered:
                     lock_keys = [key for key in alert.get("lock_keys", []) if key]
                     if lock_keys:
@@ -795,6 +798,9 @@ async def async_main():
                         product_locks["lock_keys"].update(lock_keys)
                 else:
                     failed_deliveries += 1
+                    # <-- NEW: Catch 403 Forbidden
+                    if status_code == 403:
+                        dead_users.add(alert["chat_id"])
                 await asyncio.sleep(0.5)
 
         final_tasks = []
@@ -802,7 +808,7 @@ async def async_main():
             for asin, data in updates.items():
                 bulk_payload.append({"key": f"price:{asin}", "value": json.dumps(data)})
                 
-        sync_users = dirty_users | set(delivered_locks.keys())
+        sync_users = dirty_users | set(delivered_locks.keys()) | dead_users 
         if sync_users:
             for chat_id in sync_users:
                 try:
@@ -813,7 +819,9 @@ async def async_main():
                 if not isinstance(latest_products, list):
                     latest_products = []
 
-                # ... (keep the inner loop logic identical) ...
+                # <-- NEW: Check if the user is in the pruning list
+                is_dead = chat_id in dead_users
+
                 engine_by_asin = {}
                 for engine_product in users_data.get(chat_id, []):
                     engine_asin = get_product_id(engine_product.get("url"))
@@ -823,8 +831,14 @@ async def async_main():
                 changed = False
 
                 for current_product in latest_products:
+                    # <-- NEW: Force pause all items if the user blocked the bot
+                    if is_dead and not current_product.get("paused", False):
+                        current_product["paused"] = True
+                        changed = True
+
                     current_asin = get_product_id(current_product.get("url"))
                     engine_product = engine_by_asin.get(current_asin)
+                    # ... (the rest of your loop remains untouched)
                     if engine_product:
                         if current_product.get("name") != engine_product.get("name"):
                             current_product["name"] = engine_product.get("name")
