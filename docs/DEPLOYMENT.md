@@ -99,11 +99,13 @@ The Cloudflare Worker needs permission to trigger your Python script on GitHub A
    ```
 4. Push these changes to your `main` branch on GitHub.
 5. **The Deployment:** Your GitHub Action (`deploy_worker.yml`) should automatically run and deploy the `worker.js` to Cloudflare. 
-6. **Inject Secrets to Cloudflare:** Once deployed, log into your Cloudflare Dashboard -> **Workers & Pages** -> select your `aztracker-bot` worker -> **Settings** -> **Variables and Secrets**. Add these three as **encrypted secrets**:
+6. **Inject Secrets to Cloudflare:** Once deployed, log into your Cloudflare Dashboard -> **Workers & Pages** -> select your `aztracker-bot` worker -> **Settings** -> **Variables and Secrets**. You must add these **six** encrypted secrets to match the GitHub deployment:
    * `TELEGRAM_BOT_TOKEN`
    * `TELEGRAM_WEBHOOK_SECRET` (Must match the one in GitHub)
    * `GH_WORKFLOW_TOKEN` (Must match the PAT in GitHub)
    * `CRON_AUTH_KEY` (Must match the one in GitHub)
+   * `TELEGRAM_ROOT_ADMIN_IDS` (Must match the one in GitHub for Admin UI access)
+   * `AMZN_ASSOCIATES_TAG` (Must match the one in GitHub for link generation)
 
 ---
 
