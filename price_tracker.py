@@ -378,7 +378,8 @@ async def async_main():
 
         # 3. Fetch Price History & Legacy Wrapper
         global_prices = {}
-        price_tasks = [bounded_get_kv(f"{cf_base_url}/values/price:{asin}") for asin in all_fetched_results.keys()]
+        # Fetch shards for ALL active ASINs to detect missing ones
+        price_tasks = [bounded_get_kv(f"{cf_base_url}/values/price:{asin}") for asin in unique_asins]
         
         try:
             price_results = await asyncio.gather(*price_tasks)
@@ -387,7 +388,7 @@ async def async_main():
             await notify_admins_of_error(session, err_msg)
             return
             
-        for asin, price_data in zip(all_fetched_results.keys(), price_results):
+        for asin, price_data in zip(unique_asins, price_results):
             if price_data:
                 # ⬅️ LEGACY SHARD WRAPPER
                 if "price" in price_data and "new_price" not in price_data:
@@ -413,12 +414,36 @@ async def async_main():
                     global_prices[asin] = price_data
 
         updates = {}
-
-        # ── DELTA HISTORY LOGGER (OR-Gate Trigger) ──
         history_updates = 0
         unix_now = int(time.time())
         bulk_payload = []
 
+        # ── MIA HYSTERESIS ENGINE (Dead ASIN Detection) ──
+        # FAILSAFE: If we expected items but got 0 back, assume a global PA-API outage. Do not start clocks.
+        missing_asins = set()
+        if not (len(unique_asins) > 0 and len(all_fetched_results) == 0):
+            missing_asins = unique_asins - set(all_fetched_results.keys())
+            
+        for asin in missing_asins:
+            last_entry = global_prices.get(asin, {})
+            mia_since = last_entry.get("mia_since_ms")
+            is_delisted = last_entry.get("delisted", False)
+            
+            new_state = last_entry.copy()
+            
+            # State 1: Just went missing. Stamp the time (1 KV Write)
+            if not mia_since:
+                new_state["mia_since_ms"] = unix_now_ms
+                updates[asin] = new_state
+                
+            # State 2: Missing for 24 hours (86,400,000 ms). Delist it (1 KV Write)
+            elif (unix_now_ms - mia_since) > 86400000 and not is_delisted:
+                new_state["delisted"] = True
+                updates[asin] = new_state
+                
+            # State 3: Missing, but under 24 hours. DO NOTHING. (0 KV Writes)
+
+        # ── DELTA HISTORY LOGGER (OR-Gate Trigger) ──
         for asin, res_tuple in all_fetched_results.items():
             (
                 name,
@@ -523,7 +548,9 @@ async def async_main():
                 used_missing_since != last_entry.get("used_missing_since") or
                 amazon_missing_since != last_entry.get("amazon_missing_since") or
                 seen_amazon_eg_at != last_entry.get("seen_amazon_eg_at") or
-                seen_resale_at != last_entry.get("seen_resale_at")):
+                seen_resale_at != last_entry.get("seen_resale_at") or
+                last_entry.get("mia_since_ms") is not None or
+                last_entry.get("delisted", False)):
 
                 updates[asin] = {
                     "new_price": c_new_price,
@@ -543,7 +570,9 @@ async def async_main():
                     "amazon_mid": c_amazon_mid,
                     "amazon_is_buybox": c_amazon_is_buybox,
                     "name": name,
-                    "last_updated": unix_now_ms
+                    "last_updated": unix_now_ms,
+                    "mia_since_ms": None,
+                    "delisted": False
                 }
 
         # 4. Evaluate prices & route personalized notifications
@@ -556,11 +585,34 @@ async def async_main():
                 url = p.get("url")
                 if not url: continue
                 product_id = get_product_id(url)
-                
-                if product_id not in all_fetched_results: continue
 
                 latest_state = updates.get(product_id) or global_prices.get(product_id, {})
                 if not latest_state: continue
+
+                # 1. Detect Delisted ASINs first
+                if latest_state.get("delisted"):
+                    p["paused"] = True
+                    dirty_users.add(chat_id)
+                    safe_name = html.escape(truncate_name(latest_state.get("name", "Unknown Product")))
+                    msg = (
+                        f"🚨 <b>ITEM DELISTED FROM AMAZON</b>\n\n"
+                        f"📦 <b>{safe_name}</b>\n"
+                        f"└ 🆔 <code>{product_id}</code>\n\n"
+                        f"Amazon has completely removed this product page (404 Not Found) for 24+ consecutive hours.\n\n"
+                        f"<i>Your tracking for this item has been automatically paused.</i>"
+                    )
+                    outbox.append({
+                        "chat_id": chat_id,
+                        "product_id": product_id,
+                        "target_price": None,
+                        "lock_keys": [],
+                        "text": msg,
+                        "markup": None
+                    })
+                    continue
+
+                # 2. If missing but not yet fully delisted, skip standard evaluation
+                if product_id not in all_fetched_results: continue
 
                 name = latest_state.get("name", "Unknown Product")
                 new_price = latest_state.get("new_price")
