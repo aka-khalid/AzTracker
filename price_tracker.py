@@ -844,14 +844,21 @@ async def async_main():
                 
         sync_users = dirty_users | set(delivered_locks.keys()) | dead_users 
         if sync_users:
-            for chat_id in sync_users:
+            # 2PC TOCTOU Fix: Fetch all sync states concurrently to compress the race window
+            async def fetch_user_state(cid):
                 try:
-                    latest_products = await bounded_get_kv(f"{cf_base_url}/values/user:{chat_id}:products") or []
+                    res = await bounded_get_kv(f"{cf_base_url}/values/user:{cid}:products")
+                    return cid, (res if isinstance(res, list) else [])
                 except KVRateLimitedError as e:
-                    await notify_admins_of_error(session, f"KV 429 during 2PC fresh-fetch for user {chat_id} — sync aborted for this user.\n{e}")
-                    continue
-                if not isinstance(latest_products, list):
-                    latest_products = []
+                    await notify_admins_of_error(session, f"KV 429 during 2PC fresh-fetch for user {cid} — sync aborted for this user.\n{e}")
+                    return cid, None
+
+            fetch_tasks = [fetch_user_state(cid) for cid in sync_users]
+            fresh_user_states = await asyncio.gather(*fetch_tasks)
+
+            for chat_id, latest_products in fresh_user_states:
+                if latest_products is None:
+                    continue  # Skip this user; rate limit occurred
 
                 # <-- NEW: Check if the user is in the pruning list
                 is_dead = chat_id in dead_users
@@ -872,7 +879,7 @@ async def async_main():
 
                     current_asin = get_product_id(current_product.get("url"))
                     engine_product = engine_by_asin.get(current_asin)
-                    # ... (the rest of your loop remains untouched)
+                    
                     if engine_product:
                         if current_product.get("name") != engine_product.get("name"):
                             current_product["name"] = engine_product.get("name")
