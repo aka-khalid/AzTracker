@@ -62,7 +62,7 @@ export default {
       const baseUrl = url.origin; 
       
       if (payload.callback_query) {
-        await handleCallback(payload.callback_query, env, baseUrl); 
+        await handleCallback(payload.callback_query, env, baseUrl, ctx); 
       } else if (payload.message && payload.message.text) {
         await handleMessage(payload.message, env);
       }
@@ -246,7 +246,16 @@ async function handleMessage(message, env) {
   });
 }
 
-async function handleCallback(callback, env, baseUrl) {
+async function handleCallback(callback, env, baseUrl, ctx) {
+  // Global Callback Resolution: Instantly stop the UI loading spinner for ALL buttons
+  ctx.waitUntil(
+    fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callback.id })
+    }).catch(e => console.error("answerCallbackQuery failed", e))
+  );
+
   const data = callback.data;
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
