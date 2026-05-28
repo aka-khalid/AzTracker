@@ -13,6 +13,7 @@ import re
 import asyncio
 import aiohttp
 import html
+import json
 from datetime import datetime
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -121,6 +122,16 @@ def send_telegram_sync_fallback(error_message):
 
 async def async_put_kv(session, url, headers, payload):
     async with session.put(url, headers=headers, json=payload) as response:
+        return response.status == 200
+
+async def async_put_kv_bulk(session, cf_base_url, headers, payload):
+    """Executes a native Cloudflare KV Bulk write operation."""
+    if not payload: return True
+    url = f"{cf_base_url}/bulk"
+    async with session.put(url, headers=headers, json=payload) as response:
+        if response.status != 200:
+            err_text = await response.text()
+            print(f"KV Bulk Write Error: {err_text}")
         return response.status == 200
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -406,7 +417,7 @@ async def async_main():
         # ── DELTA HISTORY LOGGER (OR-Gate Trigger) ──
         history_updates = 0
         unix_now = int(time.time())
-        history_tasks = []
+        bulk_payload = []
 
         for asin, res_tuple in all_fetched_results.items():
             (
@@ -493,7 +504,8 @@ async def async_main():
                 if not isinstance(history_data, list): history_data = []
                 history_data.append({"n": c_new_price, "u": c_used_price, "t": unix_now})
                 history_data = history_data[-150:]
-                history_tasks.append(bounded_put_kv(hist_url, history_data))
+                # Cloudflare Bulk requires the value to be a stringified JSON
+                bulk_payload.append({"key": f"history:{asin}", "value": json.dumps(history_data)})
                 history_updates += 1
 
             if (new_changed or used_changed or
@@ -533,12 +545,6 @@ async def async_main():
                     "name": name,
                     "last_updated": unix_now_ms
                 }
-
-        if history_tasks:
-            try:
-                await asyncio.gather(*history_tasks)
-            except KVRateLimitedError as e:
-                await notify_admins_of_error(session, f"KV 429 during history writes — partial history loss.\n{e}")
 
         # 4. Evaluate prices & route personalized notifications
         dirty_users = set()
@@ -742,7 +748,7 @@ async def async_main():
         final_tasks = []
         if updates:
             for asin, data in updates.items():
-                final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/price:{asin}", data))
+                bulk_payload.append({"key": f"price:{asin}", "value": json.dumps(data)})
                 
         sync_users = dirty_users | set(delivered_locks.keys())
         if sync_users:
@@ -755,28 +761,24 @@ async def async_main():
                 if not isinstance(latest_products, list):
                     latest_products = []
 
+                # ... (keep the inner loop logic identical) ...
                 engine_by_asin = {}
                 for engine_product in users_data.get(chat_id, []):
                     engine_asin = get_product_id(engine_product.get("url"))
-                    if engine_asin:
-                        engine_by_asin[engine_asin] = engine_product
+                    if engine_asin: engine_by_asin[engine_asin] = engine_product
 
                 chat_delivered_locks = delivered_locks.get(chat_id, {})
                 changed = False
 
                 for current_product in latest_products:
                     current_asin = get_product_id(current_product.get("url"))
-                    
                     engine_product = engine_by_asin.get(current_asin)
                     if engine_product:
                         if current_product.get("name") != engine_product.get("name"):
                             current_product["name"] = engine_product.get("name")
                             changed = True
 
-                        same_alert_context = (
-                            current_product.get("target_price") == engine_product.get("target_price") and
-                            current_product.get("paused", False) == engine_product.get("paused", False)
-                        )
+                        same_alert_context = (current_product.get("target_price") == engine_product.get("target_price") and current_product.get("paused", False) == engine_product.get("paused", False))
                         if same_alert_context:
                             for field in ("alert_sent_new", "alert_sent_used"):
                                 if field in engine_product and current_product.get(field) != engine_product[field]:
@@ -797,15 +799,14 @@ async def async_main():
                                     changed = True
 
                 if changed:
-                    final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/user:{chat_id}:products", latest_products))
+                    bulk_payload.append({"key": f"user:{chat_id}:products", "value": json.dumps(latest_products)})
 
         # 6. Push System Stats with Dashboard Heartbeat Throttle
         hivemind_size = len(unique_asins)
-        
         try:
             old_stats = await bounded_get_kv(f"{cf_base_url}/values/global:stats") or {}
         except KVRateLimitedError:
-            old_stats = {}  # skip throttle check, allow stats write
+            old_stats = {}  
         old_active = old_stats.get("active_api_calls", 0)
         old_hivemind = old_stats.get("hivemind_size", 0)
         old_timestamp = old_stats.get("last_run_timestamp", 0)
@@ -819,12 +820,13 @@ async def async_main():
                 "hivemind_size": hivemind_size, 
                 "last_run_timestamp": unix_now_ms
             }
-            final_tasks.append(bounded_put_kv(f"{cf_base_url}/values/global:stats", system_stats))
+            bulk_payload.append({"key": "global:stats", "value": json.dumps(system_stats)})
 
-        if final_tasks:
-            write_results = await asyncio.gather(*final_tasks)
-            if not all(write_results):
-                await notify_admins_of_error(session, "CRITICAL: KV Unified 2PC Sync experienced partial failures.")
+        # The True Atomic Single-Push Execution
+        if bulk_payload:
+            success = await async_put_kv_bulk(session, cf_base_url, cf_headers, bulk_payload)
+            if not success:
+                await notify_admins_of_error(session, "CRITICAL: KV Unified 2PC Bulk Sync failed. State integrity compromised.")
                 
         if failed_deliveries:
             await notify_admins_of_error(session, f"Telegram delivery failed for {failed_deliveries} alert(s); locks were not persisted.")
