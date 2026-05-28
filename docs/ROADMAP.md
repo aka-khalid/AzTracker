@@ -84,6 +84,14 @@ This document tracks the technical debt, security fortifications, feature expans
 - [x] **Anti-Flap Hysteresis Engine:** Built a 16-run holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
 - [x] **Restock & Out-of-Stock Tracking:** Modified engine to declare OOS only after 16 misses, triggering highly accurate `🚨 RESTOCK ALERT` notifications.
 - [x] **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
+- [ ] **The Invisible Flash Deal UI Bug (`worker.js`)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Prevent isolated Amazon Resale restocks (`[None, Price, None]`) from becoming invisible on the Chart.js UI, and properly label the data to reflect the backend architecture.<br>
+  **The Strategy:** Currently, `worker.js` uses a hardcoded `pointRadius` filter that hides data points if there is more than one isolated restock in history. We must replace this with a dynamic callback function that renders a dot if the point is bounded by `null`. Simultaneously, we must rename the dataset label to "Lowest Used Offer" to clarify that the graph plots the market floor, not individual asset tracking.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js`, locate the `Chart.js` configuration inside `renderChartHTML`. I need to make two updates to the Used dataset. First, change its `label` from 'Used (EGP)' to 'Lowest Used Offer (EGP)'. Second, replace the hardcoded `pointRadius` logic with a dynamic function: `pointRadius: function(ctx) { const index = ctx.dataIndex; const data = ctx.dataset.data; if (data[index] === null) return 0; const prev = index > 0 ? data[index - 1] : null; const next = index < data.length - 1 ? data[index + 1] : null; return (prev === null || next === null) ? 4 : 0; }`. Ensure `spanGaps` remains `false`."*
+  </details>
 - [ ] **Chart Analytics UI (ATH, ATL, Avg)**
   <details>
   <summary><b>View Execution Brief</b></summary>
