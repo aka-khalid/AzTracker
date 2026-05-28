@@ -97,7 +97,7 @@ async function handleMessage(message, env, ctx) {
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins } = await getUserRoles(chatId, env, ctx);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) {
     await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
@@ -113,10 +113,8 @@ async function handleMessage(message, env, ctx) {
     
     const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Broadcasting...</b>`);
     
-    const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
-    const allUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
     let successCount = 0;
-    for (const userId of allUsers) {
+    for (const userId of approvedUsers) {
       try {
         await sendTelegram(env, userId, `📢 <b>System Update</b>\n\n${text}`);
         successCount++;
@@ -172,10 +170,11 @@ async function handleMessage(message, env, ctx) {
 
   if (isAdmin && isNumericId) {
     const targetId = text;
+    // Check authoritative isolated key to prevent overriding clashes
     const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
     const isTargetRoot = rootAdmins.includes(targetId);
-    const isTargetAdmin = isTargetRoot || targetRole === "admin";
-    const isTargetApproved = isTargetAdmin || targetRole === "approved";
+    const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
+    const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
 
     let buttons = [];
     if (isRootAdmin) {
@@ -279,7 +278,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
   
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins } = await getUserRoles(chatId, env, ctx);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) return;
 
@@ -287,16 +286,23 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
   if (data.startsWith("approve_") && isAdmin) {
     const targetId = data.replace("approve_", "");
+    if (!approvedUsers.includes(targetId)) {
+      approvedUsers.push(targetId);
+      await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
+    }
+    // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
     await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
     await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
     await sendTelegram(env, targetId, `🎉 <b>You have been approved!</b>\nAn admin has granted you access to AzTracker. Run /start to boot your control console.`);
   }
   else if (data.startsWith("revoke_") && isAdmin) {
     const targetId = data.replace("revoke_", "");
-    const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
-    if (rootAdmins.includes(targetId) || targetRole === "admin") return;
+    if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
     
+    const updatedUsers = approvedUsers.filter(id => id !== targetId);
+    await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
     await env.AZTRACKER_DB.delete(`auth:${targetId}`);
+    
     await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
     await env.AZTRACKER_DB.delete(`ui:${targetId}`);
     
@@ -304,12 +310,18 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   }
   else if (data.startsWith("promote_") && isRootAdmin) {
     const targetId = data.replace("promote_", "");
+    if (!admins.includes(targetId)) {
+      admins.push(targetId);
+      await env.AZTRACKER_DB.put("global:admins", JSON.stringify(admins));
+    }
     await env.AZTRACKER_DB.put(`auth:${targetId}`, "admin");
     await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`);
     await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
   }
   else if (data.startsWith("demote_") && isRootAdmin) {
     const targetId = data.replace("demote_", "");
+    const updatedAdmins = admins.filter(id => id !== targetId);
+    await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
     await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
     await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
   }
@@ -324,29 +336,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     return;
   }
     else if (data === "admin_panel" && isAdmin) {
-    // Merge counts for accurate stats
-    const legacyAdmins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-    const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-    
-    const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
-    const allAuthIds = listRes.keys.map(k => k.name.replace("auth:", ""));
-    const roles = await Promise.all(allAuthIds.map(id => env.AZTRACKER_DB.get(`auth:${id}`)));
-
-    const combinedAdmins = new Set([...legacyAdmins]);
-    const combinedGuests = new Set([...legacyApproved]);
-
-    allAuthIds.forEach((id, index) => {
-        if (roles[index] === "admin") combinedAdmins.add(id);
-        else combinedGuests.add(id);
-    });
-
-    let guestCount = 0;
-    combinedGuests.forEach(id => {
-        if (!combinedAdmins.has(id) && !rootAdmins.includes(id)) guestCount++;
-    });
-
-    let adminCount = new Set([...combinedAdmins, ...rootAdmins]).size;
-
+    const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
     const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
     
     let lastRunText = "Fetching from GitHub...";
@@ -360,8 +350,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
-           `👥 <b>Approved Guests:</b> ${guestCount}\n` +
-           `🛡️ <b>Admins:</b> ${adminCount}\n\n` +
+           `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
+           `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
            `📡 <b>Active Tracking Pool:</b> ${stats.active_api_calls} / 450\n` +
            `🗄️ <b>Global Database:</b> ${stats.hivemind_size} ASINs\n` +
            `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
@@ -395,8 +385,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     const targetId = data.replace("manage_user_", "");
     const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
     const isTargetRoot = rootAdmins.includes(targetId);
-    const isTargetAdmin = isTargetRoot || targetRole === "admin";
-    const isTargetApproved = isTargetAdmin || targetRole === "approved";
+    const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
+    const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
 
     let buttons = [];
     if (isRootAdmin) {
@@ -735,15 +725,9 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 async function renderUserList(env, chatId, messageId, page = 0) {
-  // Merge legacy arrays and new atomic keys dynamically
-  const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-  const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
-  const authUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
-
-  // Combine and remove duplicates
-  const allApproved = [...new Set([...legacyApproved, ...authUsers])];
-
-  if (allApproved.length === 0) {
+  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  
+  if (approvedUsers.length === 0) {
     const text = `👥 <b>Approved Users Directory</b>\n\nNo approved guest profiles exist in the core server database right now.`;
     const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
@@ -751,10 +735,10 @@ async function renderUserList(env, chatId, messageId, page = 0) {
   }
 
   const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(allApproved.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(approvedUsers.length / ITEMS_PER_PAGE);
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
-  const pagedUsers = allApproved.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const pagedUsers = approvedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
   const userPromises = pagedUsers.map(async (id) => {
     try {
@@ -1200,38 +1184,83 @@ function convertHindiToArabic(text) {
   return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
 }
 
-async function getUserRoles(arg1, arg2) {
-  // 1. Bulletproof argument parsing to prevent the 'undefined.get' crash
-  const env = typeof arg1 === 'object' && arg1 !== null ? arg1 : arg2;
-  const chatId = typeof arg1 === 'string' ? arg1 : String(arg2);
+// 💥 THE VULNERABILITY FIX 💥
+// Retains monolithic array backwards compatibility to fix UI crashes 
+// while introducing Cache-Busting fallback to fix the TOCTOU overwrite race condition.
+async function getUserRoles(chatId, env, ctx) {
+  const cache = caches.default;
+  const cacheReq = new Request(`https://auth.internal/user/${chatId}`);
+  
+  let roles;
+  const cached = await cache.match(cacheReq);
+  
+  if (cached) {
+    roles = await cached.json();
+    
+    // CACHE BUSTING: Fixes the 60s trap vulnerability.
+    // If the cache says they aren't approved, bypass the cache and check their direct auth key.
+    if (!roles.isApproved) {
+      const freshRole = await env.AZTRACKER_DB.get(`auth:${chatId}`);
+      if (freshRole === "admin" || freshRole === "approved") {
+        roles.isApproved = true;
+        if (freshRole === "admin") roles.isAdmin = true;
+        
+        if (ctx && ctx.waitUntil) {
+          ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
+            headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+          })));
+        }
+      }
+    }
+  } else {
+    const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+    const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
+    let isRootAdmin = rootAdmins.includes(chatId);
+    
+    // Keep arrays so we don't break destructuring downstream
+    const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+    const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+    
+    let role = await env.AZTRACKER_DB.get(`auth:${chatId}`);
+    
+    // Automatic Migration & Self-Healing
+    if (!role) {
+      if (admins.includes(chatId)) {
+        role = "admin";
+        if (ctx && ctx.waitUntil) ctx.waitUntil(env.AZTRACKER_DB.put(`auth:${chatId}`, "admin"));
+      } else if (approvedUsers.includes(chatId)) {
+        role = "approved";
+        if (ctx && ctx.waitUntil) ctx.waitUntil(env.AZTRACKER_DB.put(`auth:${chatId}`, "approved"));
+      }
+    }
+    
+    if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatId) {
+        isRootAdmin = true;
+    }
 
-  // 2. Fetch Legacy Arrays (Safe Read)
-  const legacyAdmins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-  const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+    const isAdmin = isRootAdmin || role === "admin" || admins.includes(chatId);
+    const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
 
-  // 3. Fetch Atomic Key
-  let role = await env.AZTRACKER_DB.get(`auth:${chatId}`);
-
-  // 4. Fallback to Legacy if no Atomic Key
-  if (!role) {
-     if (legacyAdmins.includes(chatId)) role = "admin";
-     else if (legacyApproved.includes(chatId)) role = "approved";
+    // Provide exactly the object shape the UI needs, preventing Promise.all array crashes.
+    roles = { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers };
+    
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
+        headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+      })));
+    }
   }
+  
+  return roles;
+}
 
-  // 5. Root Admin Fallbacks
-  const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
-  const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
-  let isRootAdmin = rootAdmins.includes(chatId);
-
-  // Failsafe: If env vars are missing, temporarily trust the first legacy admin as root
-  if (!isRootAdmin && rootAdmins.length === 0 && legacyAdmins.length > 0 && legacyAdmins[0] === chatId) {
-      isRootAdmin = true;
-  }
-
-  const isAdmin = isRootAdmin || role === "admin";
-  const isApproved = isAdmin || role === "approved";
-
-  return { isRootAdmin, isAdmin, isApproved, rootAdmins };
+async function deleteTelegramMessage(env, chatId, messageId) {
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteMessage`;
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+  });
 }
 
 async function expandAmazonUrl(url) {
