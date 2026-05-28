@@ -23,6 +23,18 @@ export default {
         return new Response(JSON.stringify({ error: "Invalid ASIN" }), { status: 400 });
       }
 
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      
+      if (!exp || !sig || Date.now() > parseInt(exp)) {
+        return new Response(JSON.stringify({ error: "Unauthorized or Expired Token" }), { status: 401 });
+      }
+      
+      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, asin, exp);
+      if (sig !== expectedSig) {
+        return new Response(JSON.stringify({ error: "Invalid Signature" }), { status: 401 });
+      }
+
       const historyData = await env.AZTRACKER_DB.get(`history:${asin}`, "json") || [];
       
       return new Response(JSON.stringify(historyData), {
@@ -40,7 +52,11 @@ export default {
         return new Response("Invalid ASIN", { status: 400 });
       }
       const safeAsin = asin.toUpperCase();
-      const html = renderChartHTML(safeAsin);
+      
+      const exp = Date.now() + (2 * 60 * 60 * 1000); // 2-hour TTL
+      const sig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, safeAsin, exp);
+      
+      const html = renderChartHTML(safeAsin, exp, sig);
       return new Response(html, {
         status: 200,
         headers: { "Content-Type": "text/html;charset=UTF-8" }
@@ -1082,6 +1098,19 @@ function escapeHtml(unsafe) {
     return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+async function generateSignature(secret, asin, exp) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw", 
+    enc.encode(secret || "fallback_secret"), 
+    { name: "HMAC", hash: "SHA-256" }, 
+    false, 
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, enc.encode(`${asin}:${exp}`));
+  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function toPrice(value) {
   if (value === undefined || value === null || value === "") return null;
   const price = Number(value);
@@ -1310,7 +1339,7 @@ async function fetchLastWorkflowRun(env) {
 
 // ── Web App HTML Renderer ───────────────────────────────────────────────────
 
-function renderChartHTML(asin) {
+function renderChartHTML(asin, exp, sig) {
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -1359,7 +1388,14 @@ function renderChartHTML(asin) {
 
         async function loadData() {
             try {
-                const response = await fetch('/api/history/${asin}');
+                // 1. INJECT EXPIRY AND SIGNATURE PARAMS INTO THE FETCH URL
+                const response = await fetch('/api/history/${asin}?exp=${exp}&sig=${sig}');
+                
+                // 2. CATCH UNAUTHORIZED REQUESTS (e.g. expired tokens)
+                if (!response.ok) {
+                    throw new Error('Authentication failed or token expired.');
+                }
+                
                 const data = await response.json();
                 
                 document.getElementById('loading').style.display = 'none';
@@ -1457,6 +1493,7 @@ function renderChartHTML(asin) {
                     }
                 });
             } catch (err) {
+                // 3. DISPLAY ERROR TO USER IF TOKEN FAILS
                 document.getElementById('loading').innerText = 'Failed to load chart data.';
             }
         }
