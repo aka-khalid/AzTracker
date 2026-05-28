@@ -57,7 +57,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Wrap the `getUserRoles()` fetch inside `worker.js` with Cloudflare's native `caches.default` API using a 60-second TTL.<br>
   **🤖 AI Execution Prompt:** *"In `worker.js`, I need to cache the `getUserRoles` KV fetches. Please rewrite the authorization function to check `caches.default.match()` using a synthetic Request object before falling back to `env.AZTRACKER_DB.get()`. If falling back, `caches.default.put()` the result with a 60-second Cache-Control header."*
   </details>
-- [ ] **Dead-User Pruning (403 Handling)**
+- [x] **Dead-User Pruning (403 Handling)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
@@ -65,7 +65,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** When `async_send_telegram()` in `price_tracker.py` receives an HTTP 403 Forbidden, append that user ID to a "dead_users" set. During the KV sync phase, toggle all their items to `paused: true`.<br>
   **🤖 AI Execution Prompt:** *"In `price_tracker.py`, update `async_send_telegram` to return a specific '403' flag if the user blocked the bot. If this flag is caught in the delivery loop, add the chat_id to a `dead_users` set. During the final Two-Phase Commit, inject logic to iterate over `dead_users` and set `paused = True` for all their active items."*
   </details>
-- [x] **Orphaned Data Leak (Garbage Collection)**
+- [ ] **Orphaned Data Leak (Garbage Collection)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
