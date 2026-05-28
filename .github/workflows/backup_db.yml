@@ -50,6 +50,25 @@ jobs:
             echo "✅ ${PREFIX}: $TOTAL shards backed up."
           done
 
+          # ── DASHBOARD STATS OFFLOAD ──
+          # Count the true database size from the backup file
+          HIVEMIND_SIZE=$(jq 'length' history_backup.json)
+          
+          # Fetch the current global:stats payload safely
+          STATS_PAGE=$(curl -s "$CF_BASE/values/global:stats" -H "$AUTH")
+          if ! echo "$STATS_PAGE" | jq . >/dev/null 2>&1; then STATS_PAGE="{}"; fi
+          
+          # Inject the new hivemind_size
+          NEW_STATS=$(echo "$STATS_PAGE" | jq --argjson hm "$HIVEMIND_SIZE" '.hivemind_size = $hm')
+          
+          # Push the atomic update back to KV
+          curl -s -X PUT "$CF_BASE/values/global:stats" \
+               -H "$AUTH" \
+               -H "Content-Type: application/json" \
+               -d "$NEW_STATS"
+               
+          echo "✅ Dashboard hivemind_size securely updated to: $HIVEMIND_SIZE"
+
       - name: Upload Price Backup Artifact
         uses: actions/upload-artifact@v4
         with:
