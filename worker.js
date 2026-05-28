@@ -64,7 +64,7 @@ export default {
       if (payload.callback_query) {
         await handleCallback(payload.callback_query, env, baseUrl, ctx); 
       } else if (payload.message && payload.message.text) {
-        await handleMessage(payload.message, env);
+        await handleMessage(payload.message, env, ctx);
       }
       return new Response("OK", { status: 200 });
     } catch (err) {
@@ -76,12 +76,12 @@ export default {
 
 // ── Interceptors ────────────────────────────────────────────────────────────
 
-async function handleMessage(message, env) {
+async function handleMessage(message, env, ctx) {
   const text = convertHindiToArabic(message.text).trim();
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) {
     await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
@@ -260,7 +260,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
   
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) return;
 
@@ -1147,7 +1147,16 @@ function convertHindiToArabic(text) {
   return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
 }
 
-async function getUserRoles(chatId, env) {
+async function getUserRoles(chatId, env, ctx) {
+  const cache = caches.default;
+  // Construct a synthetic Request URL to act as our edge cache key
+  const cacheReq = new Request(`https://auth.internal/user/${chatId}`);
+  
+  const cached = await cache.match(cacheReq);
+  if (cached) {
+    return await cached.json();
+  }
+
   const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
   const isRootAdmin = rootAdmins.includes(chatId);
   const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
@@ -1155,7 +1164,20 @@ async function getUserRoles(chatId, env) {
   const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   const isApproved = isAdmin || approvedUsers.includes(chatId);
 
-  return { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers };
+  const roles = { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers };
+  
+  const res = new Response(JSON.stringify(roles), {
+    headers: { 
+      "Cache-Control": "s-maxage=60", 
+      "Content-Type": "application/json" 
+    }
+  });
+  
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(cache.put(cacheReq, res));
+  }
+  
+  return roles;
 }
 
 async function deleteTelegramMessage(env, chatId, messageId) {
