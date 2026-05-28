@@ -69,6 +69,7 @@ graph TD;
 * 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request. Batches of 10 items are sent simultaneously to deeply optimize API limits.
 * 📱 **Mobile Deep-Link Extraction:** Automatically resolves `amzn.to` and `amzn.eu` short links shared directly from the Amazon mobile app.
 * 🚨 **Automated Crash Reporting:** Fatal workflow exceptions push full tracebacks directly to Root Admins via Telegram.
+* ⚡ **Edge-Cached Authorization:** Leverages Cloudflare's in-memory `caches.default` API with synthetic internal routing to heavily minimize KV read quota consumption during ChatOps interactions.
 
 ---
 
