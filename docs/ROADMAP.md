@@ -88,14 +88,6 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** When `async_send_telegram()` in `price_tracker.py` receives an HTTP 403 Forbidden, append that user ID to a "dead_users" set. During the KV sync phase, toggle all their items to `paused: true`.<br>
   **🤖 AI Execution Prompt:** *"In `price_tracker.py`, update `async_send_telegram` to return a specific '403' flag if the user blocked the bot. If this flag is caught in the delivery loop, add the chat_id to a `dead_users` set. During the final Two-Phase Commit, inject logic to iterate over `dead_users` and set `paused = True` for all their active items."*
   </details>
-- [x] **Orphaned Data Leak (Garbage Collection)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Prune "zombie" `price:{asin}` shards from the database when no user is tracking them anymore, and fix the `hivemind_size` dashboard metric.<br>
-  **The Strategy:** Fetch the total keys from the `prefix=price:` query using a cursor loop. Compare this against the active `unique_asins` set and issue `DELETE` commands for orphaned ASINs. Simultaneously, use the true length of this fetched key array to accurately update the `hivemind_size` metric in `global:stats`, resolving the dashboard metric illusion.<br>
-  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, after we fetch `unique_asins` from all users, we need to compare it to the full list of `price:*` keys in KV. Write a paginated cursor loop to fetch all price keys. Build a garbage collection block that identifies orphaned ASINs and adds bounded `DELETE` requests to purge them. Finally, use the total count of those fetched keys to correctly define the `hivemind_size` variable before the `global:stats` payload is pushed."*
-  </details>
   
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
@@ -149,6 +141,8 @@ This document tracks the technical debt, security fortifications, feature expans
 
 - **"Target Met" Stagnation Fix:** Rejected. Modifying the engine to continuously send alerts for new all-time lows *after* a target is met violates the strict "Zero-Spam Boolean Lock" philosophy. If a target is met, the system alerts once and locks.
 - **Multi-Button Product Dashboard:** Rejected. Stacking redundant Telegram inline buttons for every hidden merchant on the `/manage` dashboard creates extreme UI fatigue. Kept as clean, embedded HTML text links.
+- **Real-Time Database Garbage Collection:** Rejected. Implementing a paginated `.list()` sweep inside the per-minute Python engine exhausts Cloudflare's 1,000/day REST API free tier limits within hours. Hivemind sizing has been securely offloaded to the 4-hour GitHub Actions backup cron, and real-time GC is indefinitely suspended.
+
 
 ## 🌍 Phase 4: Platform Expansion (Growth)
 
