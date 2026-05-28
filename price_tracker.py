@@ -104,6 +104,10 @@ async def async_get_kv(session, url, headers):
             raise KVRateLimitedError(f"KV rate limited on GET {url}")
         return None
 
+async def async_delete_kv(session, url, headers):
+    async with session.delete(url, headers=headers) as response:
+        return response.status == 200
+
 async def notify_admins_of_error(session, error_message):
     if not ALLOWED_USERS: return
     admin_ids = [uid.strip() for uid in ALLOWED_USERS.split(",") if uid.strip()]
@@ -333,6 +337,10 @@ async def async_main():
             async with sem:
                 return await async_put_kv(session, url, cf_headers, payload)
 
+        async def bounded_delete_kv(url):
+            async with sem:
+                return await async_delete_kv(session, url, cf_headers)
+
         # 1. Fetch multi-tenant directory (PAGINATED)
         user_keys = []
         cursor = ""
@@ -366,6 +374,32 @@ async def async_main():
 
         if not unique_asins: return
         active_products = [{"asin": a} for a in unique_asins]
+
+        # --- NEW: 1.5 Garbage Collection & Hivemind Sizing ---
+        all_price_asins = set()
+        price_cursor = ""
+        while True:
+            p_url = f"{cf_base_url}/keys?prefix=price:"
+            if price_cursor: p_url += f"&cursor={price_cursor}"
+            p_res = await bounded_get_kv(p_url)
+            if not p_res: break
+            
+            for k in p_res.get("result", []):
+                # Format is "price:B0XXXXXX", we want the ASIN
+                asin = k["name"].split(":")[1]
+                all_price_asins.add(asin)
+                
+            price_cursor = p_res.get("result_info", {}).get("cursor")
+            if not price_cursor: break
+
+        orphaned_asins = all_price_asins - unique_asins
+        if orphaned_asins:
+            delete_tasks = [bounded_delete_kv(f"{cf_base_url}/values/price:{asin}") for asin in orphaned_asins]
+            await asyncio.gather(*delete_tasks)
+
+        # The true size of the database is the keys we found minus the ones we just deleted
+        true_hivemind_size = len(all_price_asins) - len(orphaned_asins)
+        # ----------------------------------------------------
 
         # 2. Batch and Fetch
         BATCH_SIZE = 10
@@ -868,7 +902,7 @@ async def async_main():
                     bulk_payload.append({"key": f"user:{chat_id}:products", "value": json.dumps(latest_products)})
 
         # 6. Push System Stats with Dashboard Heartbeat Throttle
-        hivemind_size = len(unique_asins)
+        hivemind_size = true_hivemind_size
         try:
             old_stats = await bounded_get_kv(f"{cf_base_url}/values/global:stats") or {}
         except KVRateLimitedError:
