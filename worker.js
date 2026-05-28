@@ -303,15 +303,18 @@ async function handleCallback(callback, env, baseUrl) {
   else if (data === "ignore") {
     return;
   }
-  else if (data === "admin_panel" && isAdmin) {
+    else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
+    const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
     
-    const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0, last_run_timestamp: null };
+    let lastRunText = "Fetching from GitHub...";
+    const ghRun = await fetchLastWorkflowRun(env);
     
-    let lastRunText = "Pending...";
-    if (stats.last_run_timestamp) {
-        const date = new Date(stats.last_run_timestamp);
-        lastRunText = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+    if (ghRun && ghRun.updated_at) {
+        const date = new Date(ghRun.updated_at);
+        const timeStr = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+        const stateTag = ghRun.status === "in_progress" ? " <i>(🔄 Running...)</i>" : "";
+        lastRunText = `${timeStr}${stateTag}`;
     }
     
     let text = `👑 <b>Admin Dashboard</b>\n\n` +
@@ -333,7 +336,7 @@ async function handleCallback(callback, env, baseUrl) {
     adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
 
     await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
-  }
+    }
   else if (data === "broadcast_init" && isRootAdmin) {
     await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
     const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
@@ -1251,6 +1254,27 @@ async function sendAppMessage(env, chatId, text, replyMarkup = null) {
     await env.AZTRACKER_DB.put(key, res.result.message_id.toString());
   }
   return res;
+}
+
+async function fetchLastWorkflowRun(env) {
+  try {
+    const url = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/price_tracker.yml/runs?per_page=1`;
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
+        "User-Agent": "AzTracker-Bot",
+        "Accept": "application/vnd.github+json"
+      }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.workflow_runs && data.workflow_runs.length > 0) {
+        const run = data.workflow_runs[0];
+        return { status: run.status, updated_at: run.updated_at };
+      }
+    }
+  } catch (e) { console.error("GitHub API error", e); }
+  return null;
 }
 
 // ── Web App HTML Renderer ───────────────────────────────────────────────────
