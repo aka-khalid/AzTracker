@@ -40,6 +40,29 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** We implemented a zero-write timestamp engine. Instead of iterating a counter, the engine stamps a `mia_since_ms` epoch when an ASIN vanishes, costing 0 writes while it waits. We also built a "Zero-Return Outage" failsafe: if the PA-API returns 0 items, the engine aborts MIA logic entirely. After a true 24-hour omission, the item is flagged `delisted`, paused globally, and a final Telegram warning is dispatched.
   </details>
 
+- [x] **Unauthenticated Data Proxy Shield (DDoW Vector)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Prevent unauthorized scrapers from draining the 100,000/day Cloudflare KV Read quota via the public `/api/history/:asin` endpoint.<br>
+  **The Strategy:** Implemented a cryptographic HMAC-SHA256 token system utilizing the WebCrypto API. The Worker generates a 2-hour TTL token signed by the `TELEGRAM_WEBHOOK_SECRET` upon rendering the UI, which the client-side JS passes back. Illegitimate or expired requests are rejected at the edge with an HTTP 401, resulting in 0 database reads.
+  </details>
+
+- [x] **2PC TOCTOU User Data Protection**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Eliminate the 40-second Time-Of-Check to Time-Of-Use race condition during the Two-Phase Commit pipeline in the Python engine.<br>
+  **The Strategy:** Replaced the sequential `bounded_get_kv()` loop with concurrent `asyncio.gather()` execution. The fetch phase was compressed from `O(N)` down to `O(1)`, shrinking the vulnerability window to milliseconds and ensuring user state modifications in Telegram are not silently overwritten.
+  </details>
+
+- [x] **Atomic Authorization State Migration**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Resolve edge cache poisoning and read-modify-write race conditions when multiple admins execute approval commands simultaneously.<br>
+  **The Strategy:** Deprecated the monolithic `global:approved_users` arrays in favor of isolated `auth:{chat_id}` keys. Built a transparent backward-compatibility wrapper in `worker.js` that lazily migrates legacy array users to their atomic keys upon their next bot interaction.
+  </details>
 
 ## ⚡ Phase 2: DevOps & Database Optimization (Speed & Scaling)
 
