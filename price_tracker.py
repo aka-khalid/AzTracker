@@ -375,32 +375,6 @@ async def async_main():
         if not unique_asins: return
         active_products = [{"asin": a} for a in unique_asins]
 
-        # --- NEW: 1.5 Garbage Collection & Hivemind Sizing ---
-        all_price_asins = set()
-        price_cursor = ""
-        while True:
-            p_url = f"{cf_base_url}/keys?prefix=price:"
-            if price_cursor: p_url += f"&cursor={price_cursor}"
-            p_res = await bounded_get_kv(p_url)
-            if not p_res: break
-            
-            for k in p_res.get("result", []):
-                # Format is "price:B0XXXXXX", we want the ASIN
-                asin = k["name"].split(":")[1]
-                all_price_asins.add(asin)
-                
-            price_cursor = p_res.get("result_info", {}).get("cursor")
-            if not price_cursor: break
-
-        orphaned_asins = all_price_asins - unique_asins
-        if orphaned_asins:
-            delete_tasks = [bounded_delete_kv(f"{cf_base_url}/values/price:{asin}") for asin in orphaned_asins]
-            await asyncio.gather(*delete_tasks)
-
-        # The true size of the database is the keys we found minus the ones we just deleted
-        true_hivemind_size = len(all_price_asins) - len(orphaned_asins)
-        # ----------------------------------------------------
-
         # 2. Batch and Fetch
         BATCH_SIZE = 10
         batches = [active_products[i:i + BATCH_SIZE] for i in range(0, len(active_products), BATCH_SIZE)]
@@ -909,22 +883,23 @@ async def async_main():
                     bulk_payload.append({"key": f"user:{chat_id}:products", "value": json.dumps(latest_products)})
 
         # 6. Push System Stats with Dashboard Heartbeat Throttle
-        hivemind_size = true_hivemind_size
         try:
             old_stats = await bounded_get_kv(f"{cf_base_url}/values/global:stats") or {}
         except KVRateLimitedError:
             old_stats = {}  
+            
         old_active = old_stats.get("active_api_calls", 0)
         old_hivemind = old_stats.get("hivemind_size", 0)
         old_timestamp = old_stats.get("last_run_timestamp", 0)
 
+        # We no longer calculate hivemind_size here to save KV LIST quotas. 
+        # The 4-hour GitHub backup cron securely handles the total count.
         if (len(unique_asins) != old_active or 
-            hivemind_size != old_hivemind or 
             (unix_now_ms - old_timestamp) > 1800000):
             
             system_stats = {
                 "active_api_calls": len(unique_asins), 
-                "hivemind_size": hivemind_size, 
+                "hivemind_size": old_hivemind, # Preserve the cron's injected value
                 "last_run_timestamp": unix_now_ms
             }
             bulk_payload.append({"key": "global:stats", "value": json.dumps(system_stats)})
