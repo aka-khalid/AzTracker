@@ -9,39 +9,35 @@ This document tracks the technical debt, security fortifications, feature expans
 - [x] **Header-Based Scheduler Auth:** Move the scheduler secret out of the query string and into the `x-scheduler-key` HTTP header.
 - [x] **State-Overwrite Race Condition (2PC):** Implemented a Unified Atomic Two-Phase Commit (2PC) to sync Telegram delivery locks and backend resets simultaneously.
 - [x] **Double-Ping UI Spam Resolution:** Unified `target_alert` assignments across New and Used evaluation blocks to allow seamless message piggybacking.
-- [ ] **Pagination Loading Hang (`answerCallbackQuery`)**
+- [x] **Pagination Loading Hang (`answerCallbackQuery`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Stop the Telegram inline button from spinning endlessly when a user clicks a passive button like `📄 1/3`.<br>
-  **The Strategy:** Telegram requires an explicit HTTP POST to the `answerCallbackQuery` endpoint for every button click to resolve the client-side loading state. Currently, the `worker.js` just returns an empty Response on the `"ignore"` action.<br>
-  **🤖 AI Execution Prompt:** *"I am working on AzTracker's `worker.js`. Locate the callback query handler where `action === 'ignore'`. Instead of returning an empty response, write a fetch call to the Telegram API `answerCallbackQuery` endpoint passing the `callback_query.id`. Ensure it doesn't block the worker's execution."*
+  **The Goal:** Stop the Telegram inline button from spinning endlessly when a user clicks any passive or background-processing button.<br>
+  **The Strategy:** Instead of patching individual buttons like `"ignore"`, we implemented a global interceptor. We added a `ctx.waitUntil()` fetch call to Telegram's `answerCallbackQuery` endpoint at the absolute top of the `handleCallback` pipeline. This instantly kills the loading spinner for all UI interactions without blocking the edge worker's main execution thread.
   </details>
-- [ ] **The Partial 2PC Failure (Infinite Spam Loop Trap)**
+- [x] **The Partial 2PC Failure (Infinite Spam Loop Trap)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Prevent infinite target-alert spam loops caused by script timeouts during the Two-Phase Commit.<br>
-  **The Strategy:** Currently, `price_tracker.py` pushes `price:{asin}` updates to Cloudflare *before* sending Telegram alerts, and pushes `alert_sent` locks *after*. If the script crashes during the Telegram loop, the price updates but the lock fails, causing the alert to trigger again on the next run. We must invert this: Execute the Telegram loop *first*, collect the locks, and then push `price:`, `user:`, and `global:` in one single, atomic batch.<br>
-  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, the Two-Phase Commit is split across Phase 5 and Phase 6. I need to invert the execution order to make it truly atomic. Rewrite the logic so that `async_send_telegram` is executed first to populate `delivered_locks`. Then, aggregate all updates (`price:{asin}`, `user:{chat_id}:products` including the new locks, and `global:stats`) into a single `final_tasks` array. Finally, execute `await asyncio.gather(*final_tasks)` as the absolute last step of the engine."*
+  **The Goal:** Prevent infinite target-alert spam loops caused by script timeouts breaking the Two-Phase Commit.<br>
+  **The Strategy:** Executed alongside the Bulk-Write patch. We completely removed the scattered `asyncio.gather` database pushes. The engine now executes the Telegram delivery loop *first*, collects the locks, and serializes everything (history, prices, users, locks, and stats) into a single, strictly atomic payload executed as the absolute last step of the engine.
   </details>
 
-- [ ] **The Bulk-Write Blindspot (Control Plane Rescue)**
+- [x] **The Bulk-Write Blindspot (Control Plane Rescue)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Neutralize Cloudflare KV REST API limits by replacing concurrent `PUT` requests with native `/bulk` array operations.<br>
-  **The Strategy:** Cloudflare KV's REST API has a strict 1,200 request / 5 min limit. Currently, `price_tracker.py` uses `asyncio.gather` to fire dozens of individual `PUT` requests. We must replace this with Cloudflare's `PUT /bulk` endpoint, packing all `price:`, `history:`, `user:`, and `global:` changes into a single JSON array, reducing 100+ API calls down to exactly 1.<br>
-  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, we are hitting Cloudflare KV rate limits because we are firing concurrent `PUT` requests for every updated key. Rewrite the final KV sync block. Instead of appending `async_put_kv` tasks to `final_tasks`, build a JSON array formatted as `[{"key": "...", "value": "..."}]`. Then, write a new helper function `async_put_kv_bulk` that executes a single `PUT` request to Cloudflare's native `/bulk` endpoint."*
+  **The Goal:** Neutralize Cloudflare KV REST API limits by replacing concurrent `PUT` requests with a native `/bulk` array operation.<br>
+  **The Strategy:** We eliminated the massive `asyncio.gather` block that was firing dozens of concurrent `PUT` requests and triggering 429 Rate Limits. Replaced it with a single `bulk_payload` JSON array routed through a new `async_put_kv_bulk` helper, compressing 100+ API calls down to exactly 1.
   </details>
 
-- [ ] **The "Dead ASIN" Quota Leak (MIA Hysteresis)**
+- [x] **The "Dead ASIN" Quota Leak (MIA Hysteresis)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Stop wasting Amazon API quotas on completely delisted (404) ASINs without falling victim to transient PA-API omission glitches.<br>
-  **The Strategy:** Compare the requested batch ASINs against `all_fetched_results`. For any ASIN completely missing from the PA-API response, increment a `mia_streak` in its KV shard. If `mia_streak` exceeds 192 (24 hours), flag the ASIN as `delisted`. Auto-pause it in all users' active registries and send them an informational alert so they know the product was removed from Amazon.<br>
-  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, the engine completely ignores ASINs that the PA-API omits from its response. I need to build an 'MIA Hysteresis' engine. After the `fetch_batch` loop, find all ASINs that were requested but not returned. Increment an `mia_streak` integer in their `price:{asin}` dictionary. If `mia_streak > 192`, toggle `paused: True` for this ASIN in every user's `products` array, add a 'delisted' flag, and queue a Telegram alert informing the user the item was removed from Amazon."*
+  **The Goal:** Stop wasting Amazon API quotas on completely delisted (404) ASINs without triggering false-positive mass deletions during PA-API outages.<br>
+  **The Strategy:** We implemented a zero-write timestamp engine. Instead of iterating a counter, the engine stamps a `mia_since_ms` epoch when an ASIN vanishes, costing 0 writes while it waits. We also built a "Zero-Return Outage" failsafe: if the PA-API returns 0 items, the engine aborts MIA logic entirely. After a true 24-hour omission, the item is flagged `delisted`, paused globally, and a final Telegram warning is dispatched.
   </details>
 
 
