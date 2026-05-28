@@ -324,18 +324,28 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     return;
   }
     else if (data === "admin_panel" && isAdmin) {
+    // Merge counts for accurate stats
+    const legacyAdmins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+    const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+    
     const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
     const allAuthIds = listRes.keys.map(k => k.name.replace("auth:", ""));
     const roles = await Promise.all(allAuthIds.map(id => env.AZTRACKER_DB.get(`auth:${id}`)));
-    
-    let guestCount = 0;
-    let adminCount = rootAdmins.length;
+
+    const combinedAdmins = new Set([...legacyAdmins]);
+    const combinedGuests = new Set([...legacyApproved]);
+
     allAuthIds.forEach((id, index) => {
-        if (!rootAdmins.includes(id)) {
-             if (roles[index] === "admin") adminCount++;
-             else guestCount++;
-        }
+        if (roles[index] === "admin") combinedAdmins.add(id);
+        else combinedGuests.add(id);
     });
+
+    let guestCount = 0;
+    combinedGuests.forEach(id => {
+        if (!combinedAdmins.has(id) && !rootAdmins.includes(id)) guestCount++;
+    });
+
+    let adminCount = new Set([...combinedAdmins, ...rootAdmins]).size;
 
     const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
     
@@ -725,10 +735,15 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 async function renderUserList(env, chatId, messageId, page = 0) {
+  // Merge legacy arrays and new atomic keys dynamically
+  const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
-  const approvedUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
-  
-  if (approvedUsers.length === 0) {
+  const authUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
+
+  // Combine and remove duplicates
+  const allApproved = [...new Set([...legacyApproved, ...authUsers])];
+
+  if (allApproved.length === 0) {
     const text = `👥 <b>Approved Users Directory</b>\n\nNo approved guest profiles exist in the core server database right now.`;
     const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
@@ -736,10 +751,10 @@ async function renderUserList(env, chatId, messageId, page = 0) {
   }
 
   const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(approvedUsers.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(allApproved.length / ITEMS_PER_PAGE);
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
-  const pagedUsers = approvedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const pagedUsers = allApproved.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
   const userPromises = pagedUsers.map(async (id) => {
     try {
@@ -1185,48 +1200,38 @@ function convertHindiToArabic(text) {
   return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
 }
 
-async function getUserRoles(chatId, env, ctx) {
-  const cache = caches.default;
-  const cacheReq = new Request(`https://auth.internal/user/${chatId}`);
-  
-  const cached = await cache.match(cacheReq);
-  if (cached) {
-    return await cached.json();
+async function getUserRoles(arg1, arg2) {
+  // 1. Bulletproof argument parsing to prevent the 'undefined.get' crash
+  const env = typeof arg1 === 'object' && arg1 !== null ? arg1 : arg2;
+  const chatId = typeof arg1 === 'string' ? arg1 : String(arg2);
+
+  // 2. Fetch Legacy Arrays (Safe Read)
+  const legacyAdmins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+  const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+
+  // 3. Fetch Atomic Key
+  let role = await env.AZTRACKER_DB.get(`auth:${chatId}`);
+
+  // 4. Fallback to Legacy if no Atomic Key
+  if (!role) {
+     if (legacyAdmins.includes(chatId)) role = "admin";
+     else if (legacyApproved.includes(chatId)) role = "approved";
   }
 
-  const rootAdmins = (env.TELEGRAM_ROOT_ADMIN_IDS || "").split(",");
-  const isRootAdmin = rootAdmins.includes(chatId);
-  
-  let role = await env.AZTRACKER_DB.get(`auth:${chatId}`);
-  if (!role) {
-     // Legacy Fallback & Migration
-     const admins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-     const approved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-     if (admins.includes(chatId)) { 
-         role = "admin"; 
-         await env.AZTRACKER_DB.put(`auth:${chatId}`, "admin"); 
-     }
-     else if (approved.includes(chatId)) { 
-         role = "approved"; 
-         await env.AZTRACKER_DB.put(`auth:${chatId}`, "approved"); 
-     }
+  // 5. Root Admin Fallbacks
+  const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+  const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
+  let isRootAdmin = rootAdmins.includes(chatId);
+
+  // Failsafe: If env vars are missing, temporarily trust the first legacy admin as root
+  if (!isRootAdmin && rootAdmins.length === 0 && legacyAdmins.length > 0 && legacyAdmins[0] === chatId) {
+      isRootAdmin = true;
   }
 
   const isAdmin = isRootAdmin || role === "admin";
   const isApproved = isAdmin || role === "approved";
 
-  // Notice we dropped 'admins' and 'approvedUsers' from the return object
-  const roles = { isRootAdmin, isAdmin, isApproved, rootAdmins };
-  
-  const res = new Response(JSON.stringify(roles), {
-    headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
-  });
-  
-  if (ctx && ctx.waitUntil) {
-    ctx.waitUntil(cache.put(cacheReq, res));
-  }
-  
-  return roles;
+  return { isRootAdmin, isAdmin, isApproved, rootAdmins };
 }
 
 async function expandAmazonUrl(url) {
