@@ -170,7 +170,6 @@ async function handleMessage(message, env, ctx) {
 
   if (isAdmin && isNumericId) {
     const targetId = text;
-    // Check authoritative isolated key to prevent overriding clashes
     const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
     const isTargetRoot = rootAdmins.includes(targetId);
     const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
@@ -179,12 +178,12 @@ async function handleMessage(message, env, ctx) {
     let buttons = [];
     if (isRootAdmin) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `promote_${targetId}` }]);
-      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `demote_${targetId}` }]);
+      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
+      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
     } else if (isAdmin) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
       if (isTargetAdmin) {
         await sendAppMessage(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
         return;
@@ -284,7 +283,47 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
   const userDbKey = `user:${chatId}:products`;
 
-  if (data.startsWith("approve_") && isAdmin) {
+  if (data.startsWith("confRevoke_") && isAdmin) {
+    const targetId = data.replace("confRevoke_", "");
+    const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire tracking profile will be erased. This cannot be undone.</i>`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [
+        [{ text: "✅ Yes, Revoke", callback_data: `revoke_${targetId}` }],
+        [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+      ]
+    });
+  }
+  else if (data.startsWith("confDemote_") && isRootAdmin) {
+    const targetId = data.replace("confDemote_", "");
+    const text = `⚠️ <b>Confirm Demotion</b>\n\nAre you sure you want to strip Admin privileges from ID <code>${targetId}</code>?`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [
+        [{ text: "✅ Yes, Demote", callback_data: `demote_${targetId}` }],
+        [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+      ]
+    });
+  }
+  else if (data.startsWith("confPromote_") && isRootAdmin) {
+    const targetId = data.replace("confPromote_", "");
+    const text = `⚠️ <b>Confirm Promotion</b>\n\nAre you sure you want to grant full Admin privileges to ID <code>${targetId}</code>?`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [
+        [{ text: "✅ Yes, Promote", callback_data: `promote_${targetId}` }],
+        [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+      ]
+    });
+  }
+  else if (data.startsWith("confClearTgt_")) {
+    const pid = data.replace("confClearTgt_", "");
+    const text = `⚠️ <b>Confirm Target Removal</b>\n\nAre you sure you want to clear the target price for ASIN <code>${pid}</code>?`;
+    await editTelegramMessage(env, chatId, messageId, text, {
+      inline_keyboard: [
+        [{ text: "✅ Yes, Clear Target", callback_data: `cleartarget_${pid}` }],
+        [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+      ]
+    });
+  }
+  else if (data.startsWith("approve_") && isAdmin) {
     const targetId = data.replace("approve_", "");
     if (!approvedUsers.includes(targetId)) {
       approvedUsers.push(targetId);
@@ -391,12 +430,12 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     let buttons = [];
     if (isRootAdmin) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `promote_${targetId}` }]);
-      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `demote_${targetId}` }]);
+      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
+      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
     } else if (isAdmin) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `revoke_${targetId}` }]);
+      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
     }
     
     if (isTargetApproved) {
@@ -970,7 +1009,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
                `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
   const targetBtn = product.target_price 
-    ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
+    ? { text: "❌ Clear Target", callback_data: `confClearTgt_${pid}` }
     : { text: "🎯 Set Target", callback_data: `settarget_${pid}` };
 
     const keyboard = {
@@ -1548,4 +1587,6 @@ function renderChartHTML(asin, exp, sig) {
 </body>
 </html>
   `;
+}
+
 }
