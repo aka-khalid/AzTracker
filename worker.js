@@ -613,29 +613,11 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
 
   const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
   
-  const prices = {};
-  await Promise.all(pagedProducts.map(async (p) => {
-    const pid = getAsinFromUrl(p.url);
-    if (pid) {
-      try { 
-        const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
-        if (data) prices[pid] = data;
-      } catch (err) {
-        console.error(`KV Read failed for shard price:${pid}`, err);
-      }
-    }
-  }));
-  
   const keyboard = { inline_keyboard: [] };
 
   pagedProducts.forEach((p) => {
     const pid = getAsinFromUrl(p.url);
-    let name = pid;
-    if (prices[pid] && typeof prices[pid] === 'object' && prices[pid].name) {
-      name = prices[pid].name;
-    } else if (p.name) {
-      name = p.name;
-    }
+    let name = p.name ? p.name : pid;
     if (name.length > 30) name = name.substring(0, 27) + "...";
     
     const statusIcon = p.paused ? "⏸️" : "✅";
@@ -870,30 +852,12 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
   const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-
-  const prices = {};
-  await Promise.all(pagedProducts.map(async (p) => {
-    const pid = getAsinFromUrl(p.url);
-    if (pid) {
-      try { 
-        const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
-        if (data) prices[pid] = data;
-      } catch (err) {
-        console.error(`KV Read failed for shard price:${pid}`, err);
-      }
-    }
-  }));
   
   const keyboard = { inline_keyboard: [] };
   
   pagedProducts.forEach((p) => {
     const pid = getAsinFromUrl(p.url);
-    let name = pid;
-    if (prices[pid] && typeof prices[pid] === 'object' && prices[pid].name) {
-      name = prices[pid].name;
-    } else if (p.name) {
-      name = p.name;
-    }
+    let name = p.name ? p.name : pid;
     if (name.length > 30) name = name.substring(0, 27) + "...";
     
     const statusIcon = p.paused ? "⏸️" : "✅";
@@ -1365,23 +1329,7 @@ async function sendTelegram(env, chatId, text, replyMarkup = null) {
   return res.json();
 }
 
-async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
-  const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
-  if (replyMarkup) body.reply_markup = replyMarkup;
-  
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  
-  // THE PROOF INJECTION
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error(`TELEGRAM API REJECTION: ${res.status} - ${errText}`);
-  }
-}
+async function editTelegramMessage(
 
 function extractNameFromUrl(url) {
   try {
