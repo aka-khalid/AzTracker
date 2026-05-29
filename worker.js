@@ -1329,7 +1329,23 @@ async function sendTelegram(env, chatId, text, replyMarkup = null) {
   return res.json();
 }
 
-async function editTelegramMessage(
+async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
+  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
+  const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  // The Blindness Fix: explicitly catch and log Telegram rejections (429, 400, 403)
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`Telegram API Error [editMessageText]: ${res.status} - ${errText}`);
+  }
+}
 
 function extractNameFromUrl(url) {
   try {
