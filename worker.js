@@ -90,6 +90,70 @@ export default {
   }
 };
 
+// ── Write-Through Edge Cache Helpers (Optimistic UI) ────────────────────────
+
+async function getUserProducts(chatId, env, ctx) {
+  const cache = caches.default;
+  const cacheReq = new Request(`https://kv.internal/user/${chatId}/products`);
+  
+  const cached = await cache.match(cacheReq);
+  if (cached) {
+    return await cached.json();
+  }
+  
+  const dbKey = `user:${chatId}:products`;
+  const products = await env.AZTRACKER_DB.get(dbKey, "json") || [];
+  
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(products), {
+      headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+    })));
+  }
+  return products;
+}
+
+async function saveUserProducts(chatId, products, env, ctx) {
+  const dbKey = `user:${chatId}:products`;
+  
+  // 1. FOREGROUND: Hard-await the Edge Cache update.
+  // This guarantees the UI renderer gets the new data instantly, bypassing KV lag.
+  const cache = caches.default;
+  const cacheReq = new Request(`https://kv.internal/user/${chatId}/products`);
+  await cache.put(cacheReq, new Response(JSON.stringify(products), {
+    headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+  }));
+
+  // 2. BACKGROUND: Send the slow KV database save into the background.
+  // The UI will NOT wait for this. If it takes 8 seconds, the user will never know.
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(
+      env.AZTRACKER_DB.put(dbKey, JSON.stringify(products))
+        .catch(err => console.error("Background KV Save Failed:", err))
+    );
+  } else {
+    // Failsafe if waitUntil isn't available
+    await env.AZTRACKER_DB.put(dbKey, JSON.stringify(products));
+  }
+}
+
+async function getPriceData(pid, env, ctx) {
+  const cache = caches.default;
+  const cacheReq = new Request(`https://kv.internal/price/${pid}`);
+  const cachedPrice = await cache.match(cacheReq);
+  
+  if (cachedPrice) {
+      return await cachedPrice.json();
+  } else {
+      const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+      if (data && ctx && ctx.waitUntil) {
+          ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(data), {
+              headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+          })));
+      }
+      return data;
+  }
+}
+
 // ── Interceptors ────────────────────────────────────────────────────────────
 
 async function handleMessage(message, env, ctx) {
@@ -141,15 +205,14 @@ async function handleMessage(message, env, ctx) {
       return;
     }
 
-    const userDbKey = `user:${chatId}:products`;
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    let products = await getUserProducts(chatId, env, ctx);
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       products[pIndex].target_price = num;
       products[pIndex].alert_sent = false; 
       products[pIndex].alert_sent_new = false; 
       products[pIndex].alert_sent_used = false; 
-      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+      await saveUserProducts(chatId, products, env, ctx);
     }
     
     await env.AZTRACKER_DB.delete(stateKey);
@@ -170,6 +233,7 @@ async function handleMessage(message, env, ctx) {
 
   if (isAdmin && isNumericId) {
     const targetId = text;
+    // Check authoritative isolated key to prevent overriding clashes
     const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
     const isTargetRoot = rootAdmins.includes(targetId);
     const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
@@ -219,8 +283,7 @@ async function handleMessage(message, env, ctx) {
       return;
     }
 
-    const userDbKey = `user:${chatId}:products`;
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    let products = await getUserProducts(chatId, env, ctx);
     
     if (products.some(p => getAsinFromUrl(p.url) === pid)) {
       await editTelegramMessage(env, chatId, tempMessageId, "⚠️ <b>You are already tracking this product!</b>", {
@@ -231,7 +294,7 @@ async function handleMessage(message, env, ctx) {
 
     const extractedName = extractNameFromUrl(expandedUrl);
     products.push({ url: `https://www.amazon.eg/dp/${pid}`, paused: false, name: extractedName });
-    await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+    await saveUserProducts(chatId, products, env, ctx);
 
     const title = extractedName ? extractedName : pid;
     const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
@@ -252,7 +315,7 @@ async function handleMessage(message, env, ctx) {
 
   if (text === "/start" || text === "/manage") {
     await deleteTelegramMessage(env, chatId, messageId);
-    await renderMainMenu(env, chatId, null, isAdmin);
+    await renderMainMenu(env, chatId, null, isAdmin, ctx);
     return;
   }
 
@@ -264,15 +327,6 @@ async function handleMessage(message, env, ctx) {
 }
 
 async function handleCallback(callback, env, baseUrl, ctx) {
-  // Global Callback Resolution: Instantly stop the UI loading spinner for ALL buttons
-  ctx.waitUntil(
-    fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callback.id })
-    }).catch(e => console.error("answerCallbackQuery failed", e))
-  );
-
   const data = callback.data;
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
@@ -280,8 +334,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) return;
-
-  const userDbKey = `user:${chatId}:products`;
 
   if (data.startsWith("confRevoke_") && isAdmin) {
     const targetId = data.replace("confRevoke_", "");
@@ -343,6 +395,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     await env.AZTRACKER_DB.delete(`auth:${targetId}`);
     
     await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
+    // Also remove from cache
+    const cache = caches.default;
+    if (ctx && ctx.waitUntil) ctx.waitUntil(cache.delete(new Request(`https://kv.internal/user/${targetId}/products`)));
+    
     await env.AZTRACKER_DB.delete(`ui:${targetId}`);
     
     await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
@@ -365,16 +421,26 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
   }
   else if (data === "main_menu") {
-    await renderMainMenu(env, chatId, messageId, isAdmin);
+    await renderMainMenu(env, chatId, messageId, isAdmin, ctx);
   }
   else if (data.startsWith("list_products_")) {
     const page = parseInt(data.replace("list_products_", "")) || 0;
-    await renderProductList(env, chatId, messageId, page);
+    await renderProductList(env, chatId, messageId, page, ctx);
   }
   else if (data === "ignore") {
+    // Specifically intercept and stop the loading spinner ONLY for passive buttons
+    if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(
+          fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ callback_query_id: callback.id })
+          }).catch(e => console.error("answerCallbackQuery failed", e))
+        );
+    }
     return;
   }
-    else if (data === "admin_panel" && isAdmin) {
+  else if (data === "admin_panel" && isAdmin) {
     const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
     const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
     
@@ -407,7 +473,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
 
     await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
-    }
+  }
   else if (data === "broadcast_init" && isRootAdmin) {
     await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
     const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
@@ -418,7 +484,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   else if (data.startsWith("list_users") && isAdmin) {
     const parts = data.split("_");
     const page = parts[2] ? parseInt(parts[2]) : 0; 
-    await renderUserList(env, chatId, messageId, page);
+    await renderUserList(env, chatId, messageId, page, ctx);
   }
   else if (data.startsWith("manage_user_") && isAdmin) {
     const targetId = data.replace("manage_user_", "");
@@ -451,26 +517,26 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     const parts = data.split("_");
     const targetId = parts[1];
     const page = parts[2] ? parseInt(parts[2]) : 0; 
-    await renderAdminUserProducts(env, chatId, messageId, targetId, page);
+    await renderAdminUserProducts(env, chatId, messageId, targetId, page, ctx);
   }
   else if (data.startsWith("admView_") && isAdmin) {
     const parts = data.split("_");
     const targetId = parts[1];
     const pid = parts[2];
-    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
+    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, ctx);
   }
   else if (data.startsWith("admTog_") && isAdmin) {
     const parts = data.split("_");
     const targetId = parts[1];
     const pid = parts[2];
-    const targetDbKey = `user:${targetId}:products`;
-    let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+    
+    let products = await getUserProducts(targetId, env, ctx);
     const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (idx !== -1) {
       products[idx].paused = !products[idx].paused;
-      await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
+      await saveUserProducts(targetId, products, env, ctx);
     }
-    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
+    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, ctx);
   }
   else if (data.startsWith("confirmDel_")) {
     const pid = data.replace("confirmDel_", "");
@@ -500,10 +566,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     const parts = data.split("_");
     const targetId = parts[1];
     const pid = parts[2];
-    const targetDbKey = `user:${targetId}:products`;
-    let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+    
+    let products = await getUserProducts(targetId, env, ctx);
     const filtered = products.filter(p => getAsinFromUrl(p.url) !== pid);
-    await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(filtered));
+    await saveUserProducts(targetId, filtered, env, ctx);
     
     await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
       inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
@@ -554,39 +620,39 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   }
   else if (data.startsWith("cleartarget_")) {
     const pid = data.replace("cleartarget_", "");
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    let products = await getUserProducts(chatId, env, ctx);
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       delete products[pIndex].target_price;
       delete products[pIndex].alert_sent; 
       delete products[pIndex].alert_sent_new; 
       delete products[pIndex].alert_sent_used; 
-      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+      await saveUserProducts(chatId, products, env, ctx);
     }
-    await renderProductView(env, chatId, messageId, pid, baseUrl);
+    await renderProductView(env, chatId, messageId, pid, baseUrl, ctx);
   }
   else if (data.startsWith("view_")) {
     const pid = data.replace("view_", "");
     await env.AZTRACKER_DB.delete(`state:${chatId}`); 
-    await renderProductView(env, chatId, messageId, pid, baseUrl);
+    await renderProductView(env, chatId, messageId, pid, baseUrl, ctx);
   }
   else if (data.startsWith("pause_") || data.startsWith("resume_")) {
     const action = data.split("_")[0];
     const pid = data.split("_")[1];
 
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    let products = await getUserProducts(chatId, env, ctx);
     const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (idx !== -1) {
       products[idx].paused = (action === "pause");
-      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+      await saveUserProducts(chatId, products, env, ctx);
     }
-    await renderProductView(env, chatId, messageId, pid, baseUrl);
+    await renderProductView(env, chatId, messageId, pid, baseUrl, ctx);
   }
   else if (data.startsWith("remove_")) {
     const pid = data.replace("remove_", "");
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    let products = await getUserProducts(chatId, env, ctx);
     const filteredProducts = products.filter(p => getAsinFromUrl(p.url) !== pid);
-    await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(filteredProducts));
+    await saveUserProducts(chatId, filteredProducts, env, ctx);
     
     await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
       inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
@@ -596,9 +662,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 // ── UI Renderers ────────────────────────────────────────────────────────────
 
-async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 0) {
-  const targetDbKey = `user:${targetId}:products`;
-  const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 0, ctx) {
+  const products = await getUserProducts(targetId, env, ctx) || [];
 
   if (products.length === 0) {
     const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\n\nThis user currently has no active or paused products in their database.`;
@@ -618,7 +683,7 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
     const pid = getAsinFromUrl(p.url);
     if (pid) {
       try { 
-        const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+        const data = await getPriceData(pid, env, ctx);
         if (data) prices[pid] = data;
       } catch (err) {
         console.error(`KV Read failed for shard price:${pid}`, err);
@@ -661,12 +726,11 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl) {
-  const targetDbKey = `user:${targetId}:products`;
-  const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, ctx) {
+  const products = await getUserProducts(targetId, env, ctx) || [];
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
   const prices = {};
-  const priceData = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+  const priceData = await getPriceData(pid, env, ctx);
   if (priceData) prices[pid] = priceData;
 
   if (!product) return;
@@ -763,7 +827,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
-async function renderUserList(env, chatId, messageId, page = 0) {
+async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   
   if (approvedUsers.length === 0) {
@@ -825,9 +889,8 @@ async function renderUserList(env, chatId, messageId, page = 0) {
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
-  const userDbKey = `user:${chatId}:products`;
-  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ctx) {
+  const products = await getUserProducts(chatId, env, ctx) || [];
   
   const total = products.length;
   const active = products.filter(p => !p.paused).length;
@@ -854,9 +917,8 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   }
 }
 
-async function renderProductList(env, chatId, messageId, page = 0) {
-  const userDbKey = `user:${chatId}:products`;
-  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+async function renderProductList(env, chatId, messageId, page = 0, ctx) {
+  const products = await getUserProducts(chatId, env, ctx) || [];
   
   if (products.length === 0) {
     const text = `❌ <b>Your tracking list is empty.</b>\n\nPaste an Amazon.eg link in the chat box to begin tracking!`;
@@ -876,7 +938,7 @@ async function renderProductList(env, chatId, messageId, page = 0) {
     const pid = getAsinFromUrl(p.url);
     if (pid) {
       try { 
-        const data = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+        const data = await getPriceData(pid, env, ctx);
         if (data) prices[pid] = data;
       } catch (err) {
         console.error(`KV Read failed for shard price:${pid}`, err);
@@ -919,12 +981,11 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderProductView(env, chatId, messageId, pid, baseUrl) {
-  const userDbKey = `user:${chatId}:products`;
-  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+async function renderProductView(env, chatId, messageId, pid, baseUrl, ctx) {
+  const products = await getUserProducts(chatId, env, ctx) || [];
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
   const prices = {};
-  const priceData = await env.AZTRACKER_DB.get(`price:${pid}`, "json");
+  const priceData = await getPriceData(pid, env, ctx);
   if (priceData) prices[pid] = priceData;
 
   if (!product) return;
@@ -1009,7 +1070,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
                `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
   const targetBtn = product.target_price 
-    ? { text: "❌ Clear Target", callback_data: `confClearTgt_${pid}` }
+    ? { text: "❌ Clear Target", callback_data: `cleartarget_${pid}` }
     : { text: "🎯 Set Target", callback_data: `settarget_${pid}` };
 
     const keyboard = {
@@ -1369,11 +1430,16 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
   const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  await fetch(url, {
+  
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
+
+  if (!res.ok) {
+    console.error("🚨 TELEGRAM REJECTED PAYLOAD:", await res.text());
+  }
 }
 
 function extractNameFromUrl(url) {
@@ -1527,19 +1593,33 @@ function renderChartHTML(asin, exp, sig) {
                                 backgroundColor: lineColor + '20',
                                 borderWidth: 2,
                                 pointBackgroundColor: lineColor,
-                                pointRadius: newPrices.filter(x => x !== null).length === 1 ? 4 : 0,
+                                pointRadius: function(context) {
+                                    const index = context.dataIndex;
+                                    const d = context.dataset.data;
+                                    if (d[index] === null) return 0;
+                                    const prev = index > 0 ? d[index - 1] : null;
+                                    const next = index < d.length - 1 ? d[index + 1] : null;
+                                    return (prev === null || next === null) ? 4 : 0;
+                                },
                                 stepped: true,
                                 spanGaps: false,
                                 fill: true
                             },
                             {
-                                label: 'Used (EGP)',
+                                label: 'Lowest Used Offer (EGP)',
                                 data: usedPrices,
                                 borderColor: '#4caf50',
                                 borderDash: [5, 5],
                                 borderWidth: 2,
                                 pointBackgroundColor: '#4caf50',
-                                pointRadius: usedPrices.filter(x => x !== null).length === 1 ? 4 : 0,
+                                pointRadius: function(context) {
+                                    const index = context.dataIndex;
+                                    const d = context.dataset.data;
+                                    if (d[index] === null) return 0;
+                                    const prev = index > 0 ? d[index - 1] : null;
+                                    const next = index < d.length - 1 ? d[index + 1] : null;
+                                    return (prev === null || next === null) ? 4 : 0;
+                                },
                                 stepped: true,
                                 spanGaps: false,
                                 fill: false
