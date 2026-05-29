@@ -410,7 +410,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   else if (data.startsWith("list_users") && isAdmin) {
     const parts = data.split("_");
     const page = parts[2] ? parseInt(parts[2]) : 0; 
-    await renderUserList(env, chatId, messageId, page);
+    await renderUserList(env, chatId, messageId, page, ctx);
   }
   else if (data.startsWith("manage_user_") && isAdmin) {
     const targetId = data.replace("manage_user_", "");
@@ -747,7 +747,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
-async function renderUserList(env, chatId, messageId, page = 0) {
+async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // 1. Merge legacy arrays and new atomic keys dynamically
   const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
@@ -769,11 +769,13 @@ async function renderUserList(env, chatId, messageId, page = 0) {
 
   const pagedUsers = allApproved.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
+  // 2. EDGE-CACHED RESOLUTION: Parallel fetch wrapped in Cloudflare's cache
+  const resolvedUsers = await Promise.all(pagedUsers.map(id => resolveUserProfile(env, id, ctx)));
+
   const keyboard = { inline_keyboard: [] };
 
-  // 2. INSTANT RENDERING: Map directly from the IDs without querying the Telegram API
-  pagedUsers.forEach((id) => {
-    keyboard.inline_keyboard.push([{ text: `👤 User (${id})`, callback_data: `manage_user_${id}` }]);
+  resolvedUsers.forEach((user) => {
+    keyboard.inline_keyboard.push([{ text: `👤 ${user.label}`, callback_data: `manage_user_${user.id}` }]);
   });
 
   if (totalPages > 1) {
@@ -1242,6 +1244,43 @@ async function getUserRoles(chatId, env, ctx) {
   }
   
   return roles;
+}
+
+async function resolveUserProfile(env, id, ctx) {
+  const cache = caches.default;
+  // Use a synthetic internal URL as the cache key
+  const cacheReq = new Request(`https://profile.internal/user/${id}`);
+
+  const cached = await cache.match(cacheReq);
+  if (cached) {
+    const data = await cached.json();
+    return { id, label: data.label };
+  }
+
+  try {
+    // GET request enables native Cloudflare Edge caching
+    const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat?chat_id=${id}`);
+    const data = await res.json();
+
+    if (data.ok && data.result) {
+      const profile = data.result;
+      const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
+      const formatName = profile.username ? `${fullName} (@${profile.username})` : fullName;
+      const label = formatName || id;
+
+      // Cache the resolved name for 24 hours (86400 seconds)
+      if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify({ label }), {
+          headers: { "Cache-Control": "s-maxage=86400", "Content-Type": "application/json" }
+        })));
+      }
+
+      return { id, label };
+    }
+  } catch (e) {
+    console.error(`Failed to fetch chat profile for ID ${id}:`, e);
+  }
+  return { id, label: `Unknown User (${id})` };
 }
 
 async function deleteTelegramMessage(env, chatId, messageId) {
