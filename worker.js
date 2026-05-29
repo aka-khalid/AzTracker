@@ -1369,11 +1369,18 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
   const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  await fetch(url, {
+  
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
+  
+  // THE PROOF INJECTION
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`TELEGRAM API REJECTION: ${res.status} - ${errText}`);
+  }
 }
 
 function extractNameFromUrl(url) {
