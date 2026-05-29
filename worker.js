@@ -1588,5 +1588,3 @@ function renderChartHTML(asin, exp, sig) {
 </html>
   `;
 }
-
-}
