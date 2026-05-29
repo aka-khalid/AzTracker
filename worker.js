@@ -264,15 +264,6 @@ async function handleMessage(message, env, ctx) {
 }
 
 async function handleCallback(callback, env, baseUrl, ctx) {
-  // Global Callback Resolution: Instantly stop the UI loading spinner for ALL buttons
-  ctx.waitUntil(
-    fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callback.id })
-    }).catch(e => console.error("answerCallbackQuery failed", e))
-  );
-
   const data = callback.data;
   const messageId = callback.message.message_id;
   const chatId = callback.message.chat.id.toString();
@@ -283,8 +274,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
   const userDbKey = `user:${chatId}:products`;
 
-  if (data.startsWith("confRevoke_") && isAdmin) {
-    const targetId = data.replace("confRevoke_", "");
+  try {
+    if (data.startsWith("confRevoke_") && isAdmin) {
+      const targetId = data.replace("confRevoke_", "");
     const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire tracking profile will be erased. This cannot be undone.</i>`;
     await editTelegramMessage(env, chatId, messageId, text, {
       inline_keyboard: [
@@ -583,14 +575,24 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     await renderProductView(env, chatId, messageId, pid, baseUrl);
   }
   else if (data.startsWith("remove_")) {
-    const pid = data.replace("remove_", "");
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
-    const filteredProducts = products.filter(p => getAsinFromUrl(p.url) !== pid);
-    await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(filteredProducts));
-    
-    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
-      inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
-    });
+      const pid = data.replace("remove_", "");
+      let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+      const filteredProducts = products.filter(p => getAsinFromUrl(p.url) !== pid);
+      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(filteredProducts));
+      
+      await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
+        inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
+      });
+    }
+  } finally {
+    // Global Callback Resolution: Deferred to the end to maintain biological UI locking (spinner)
+    ctx.waitUntil(
+      fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callback_query_id: callback.id })
+      }).catch(e => console.error("answerCallbackQuery failed", e))
+    );
   }
 }
 
@@ -746,9 +748,15 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 async function renderUserList(env, chatId, messageId, page = 0) {
-  const approvedUsers = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-  
-  if (approvedUsers.length === 0) {
+  // 1. Merge legacy arrays and new atomic keys dynamically
+  const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
+  const authUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
+
+  // Combine and remove duplicates
+  const allApproved = [...new Set([...legacyApproved, ...authUsers])];
+
+  if (allApproved.length === 0) {
     const text = `👥 <b>Approved Users Directory</b>\n\nNo approved guest profiles exist in the core server database right now.`;
     const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
@@ -756,37 +764,16 @@ async function renderUserList(env, chatId, messageId, page = 0) {
   }
 
   const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(approvedUsers.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(allApproved.length / ITEMS_PER_PAGE);
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
-  const pagedUsers = approvedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const pagedUsers = allApproved.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
-  const userPromises = pagedUsers.map(async (id) => {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: id })
-      });
-      const data = await res.json();
-      
-      if (data.ok && data.result) {
-        const profile = data.result;
-        const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
-        const formatName = profile.username ? `${fullName} (@${profile.username})` : fullName;
-        return { id, label: formatName || id };
-      }
-    } catch (e) {
-      console.error(`Failed to fetch chat profile for ID ${id}:`, e);
-    }
-    return { id, label: `Unknown User (${id})` }; 
-  });
-
-  const resolvedUsers = await Promise.all(userPromises);
   const keyboard = { inline_keyboard: [] };
-  
-  resolvedUsers.forEach((user) => {
-    keyboard.inline_keyboard.push([{ text: `👤 ${user.label}`, callback_data: `manage_user_${user.id}` }]);
+
+  // 2. INSTANT RENDERING: Map directly from the IDs without querying the Telegram API
+  pagedUsers.forEach((id) => {
+    keyboard.inline_keyboard.push([{ text: `👤 User (${id})`, callback_data: `manage_user_${id}` }]);
   });
 
   if (totalPages > 1) {
