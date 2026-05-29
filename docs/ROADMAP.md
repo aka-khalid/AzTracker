@@ -6,7 +6,7 @@ This document tracks the technical debt, security fortifications, feature expans
 
 - [x] **The Regex URL Parser:** Replace fragile splits in `price_tracker.py` with robust regex to ensure tracking queries never break the API batch fetch.
 - [x] **Zero-Trust Webhook Validation:** Implement `X-Telegram-Bot-Api-Secret-Token` header verification to guarantee only Telegram's official servers can trigger the endpoint.
-- [ ] **Header-Based Scheduler Auth:** Move the scheduler secret out of the query string and into the `x-scheduler-key` HTTP header. *(Note: Codebase still retains an OR fallback `url.searchParams.get("key")` in `worker.js`. Must be fully expunged to close the URL logging vulnerability).*
+- [x] **Header-Based Scheduler Auth:** Move the scheduler secret out of the query string and into the `x-scheduler-key` HTTP header.
 - [x] **State-Overwrite Race Condition (2PC):** Implemented a Unified Atomic Two-Phase Commit (2PC) to sync Telegram delivery locks and backend resets simultaneously.
 - [x] **Double-Ping UI Spam Resolution:** Unified `target_alert` assignments across New and Used evaluation blocks to allow seamless message piggybacking.
 - [x] **Pagination Loading Hang (`answerCallbackQuery`)**
@@ -95,6 +95,7 @@ This document tracks the technical debt, security fortifications, feature expans
 - [x] **Anti-Flap Hysteresis Engine:** Built a 16-run holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
 - [x] **Restock & Out-of-Stock Tracking:** Modified engine to declare OOS only after 16 misses, triggering highly accurate `🚨 RESTOCK ALERT` notifications.
 - [x] **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
+- [x] **Destructive Action Confirmations:** Added stateless edge-routed confirmation gates for Revoke, Demote, Promote, and Clear Target actions to prevent fat-finger accidents.
 - [ ] **The Invisible Flash Deal UI Bug (`worker.js`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
