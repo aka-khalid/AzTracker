@@ -1038,7 +1038,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
 async function handleScheduler(request, env, ctx) {
   const url = new URL(request.url);
-  const providedKey = url.searchParams.get("key") || request.headers.get("x-scheduler-key");
+  const providedKey = request.headers.get("x-scheduler-key");
 
   if (!env.CRON_AUTH_KEY || providedKey !== env.CRON_AUTH_KEY) {
     return new Response("Unauthorized", { status: 401 });
