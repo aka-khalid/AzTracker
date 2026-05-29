@@ -13,8 +13,8 @@ This document tracks the technical debt, security fortifications, feature expans
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Stop the Telegram inline button from spinning endlessly when a user clicks any passive or background-processing button.<br>
-  **The Strategy:** Instead of patching individual buttons like `"ignore"`, we implemented a global interceptor. We added a `ctx.waitUntil()` fetch call to Telegram's `answerCallbackQuery` endpoint at the absolute top of the `handleCallback` pipeline. This instantly kills the loading spinner for all UI interactions without blocking the edge worker's main execution thread.
+  **The Goal:** Stop the Telegram inline button from spinning endlessly without creating a "UX Dead Zone" where premature resolution triggers ghost clicks.<br>
+  **The Strategy:** Wrapped the entire `handleCallback` routing pipeline in a `try/finally` block. The `ctx.waitUntil(fetch(...answerCallbackQuery))` interceptor is executed in the `finally` stage. This guarantees the Telegram loading spinner locks the user's UI for the exact millisecond duration of the Cloudflare execution, naturally defeating client-side debounce spam while satisfying Telegram's API callback requirements.
   </details>
 - [x] **The Partial 2PC Failure (Infinite Spam Loop Trap)**
   <details>
