@@ -64,7 +64,7 @@ graph TD;
 ## ✨ System Features
 
 * 👥 **Multi-Tenant VIP Access:** Isolated tracking databases for approved users.
-* 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system to manage guests, revoke access, or promote admins entirely through inline buttons.
+* 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system to manage guests, revoke access, or promote admins entirely through inline buttons, protected by stateless confirmation gates.
 * 🎯 **Strict Boolean Target Locks:** Users set specific budgets. The engine features zero-spam target locks—alerting exactly once upon matching the target price and remaining silent until the price rebounds or sells out.
 * 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request. Batches of 10 items are sent simultaneously to deeply optimize API limits.
 * 📱 **Mobile Deep-Link Extraction:** Automatically resolves `amzn.to` and `amzn.eu` short links shared directly from the Amazon mobile app.
