@@ -130,6 +130,28 @@ async function handleMessage(message, env, ctx) {
   }
   
   if (activeState) {
+    if (activeState.startsWith("setlimit_")) {
+      const targetId = activeState.replace("setlimit_", "");
+      const newLimit = parseInt(text);
+
+      if (isNaN(newLimit) || newLimit < 1) {
+        await deleteTelegramMessage(env, chatId, messageId);
+        await sendAppMessage(env, chatId, "⚠️ <b>Invalid limit.</b> Please enter a valid positive number.", {
+          inline_keyboard: [[{ text: "⬅️ Back", callback_data: `manage_user_${targetId}` }]]
+        });
+        return;
+      }
+
+      await env.AZTRACKER_DB.put(`limit:${targetId}`, newLimit.toString());
+      await env.AZTRACKER_DB.delete(stateKey);
+      await deleteTelegramMessage(env, chatId, messageId);
+
+      await sendAppMessage(env, chatId, `✅ <b>Limit Updated!</b>\n\nUser <code>${targetId}</code> can now track up to <b>${newLimit}</b> items.`, {
+        inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]]
+      });
+      return;
+    }
+
     const pid = activeState;
     const num = parseFloat(text);
     
@@ -175,6 +197,11 @@ async function handleMessage(message, env, ctx) {
     const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
     const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
 
+    const limitRaw = await env.AZTRACKER_DB.get(`limit:${targetId}`);
+    const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
+    const userLimit = limitRaw !== null ? parseInt(limitRaw) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
+    const limitDisplay = isTargetAdmin ? "∞ (Unlimited)" : userLimit;
+
     let buttons = [];
     if (isRootAdmin) {
       if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
@@ -192,11 +219,14 @@ async function handleMessage(message, env, ctx) {
 
     if (isTargetApproved) {
       buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+      if (!isTargetAdmin) {
+         buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
+      }
     }
 
     if (buttons.length > 0) {
       const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
-      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
+      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
       await sendAppMessage(env, chatId, statusMsg, { inline_keyboard: buttons });
     }
     return;
@@ -220,7 +250,36 @@ async function handleMessage(message, env, ctx) {
     }
 
     const userDbKey = `user:${chatId}:products`;
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+    const limitKey = `limit:${chatId}`;
+
+    const [productsRaw, limitRaw] = await Promise.all([
+      env.AZTRACKER_DB.get(userDbKey, "json"),
+      env.AZTRACKER_DB.get(limitKey)
+    ]);
+
+    let products = productsRaw || [];
+
+    if (!isAdmin) {
+      const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
+      if (isNaN(defaultLimit)) {
+        await editTelegramMessage(env, chatId, tempMessageId, `⚠️ <b>System Error:</b> Global tracking limit is unconfigured. Please contact an admin.`, {
+          inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+        });
+        return;
+      }
+
+      const userLimit = limitRaw !== null ? parseInt(limitRaw) : defaultLimit;
+
+      if (products.length >= userLimit) {
+        await editTelegramMessage(env, chatId, tempMessageId, `⛔ <b>Limit Reached</b>\n\nYou are tracking ${products.length} items, but your current limit is ${userLimit}.\n\nPlease delete some products to free up space before adding new ones.`, {
+          inline_keyboard: [
+            [{ text: "📦 Manage My Products", callback_data: "list_products_0" }],
+            [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+          ]
+        });
+        return;
+      }
+    }
     
     if (products.some(p => getAsinFromUrl(p.url) === pid)) {
       await editTelegramMessage(env, chatId, tempMessageId, "⚠️ <b>You are already tracking this product!</b>", {
@@ -256,7 +315,6 @@ async function handleMessage(message, env, ctx) {
     return;
   }
 
-
   await deleteTelegramMessage(env, chatId, messageId);
   await sendAppMessage(env, chatId, "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.", {
     inline_keyboard: [[{ text: "🏠 Open Main Menu", callback_data: "main_menu" }]]
@@ -277,304 +335,326 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   try {
     if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
-    const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire tracking profile will be erased. This cannot be undone.</i>`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "✅ Yes, Revoke", callback_data: `revoke_${targetId}` }],
-        [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
-      ]
-    });
-  }
-  else if (data.startsWith("confDemote_") && isRootAdmin) {
-    const targetId = data.replace("confDemote_", "");
-    const text = `⚠️ <b>Confirm Demotion</b>\n\nAre you sure you want to strip Admin privileges from ID <code>${targetId}</code>?`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "✅ Yes, Demote", callback_data: `demote_${targetId}` }],
-        [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
-      ]
-    });
-  }
-  else if (data.startsWith("confPromote_") && isRootAdmin) {
-    const targetId = data.replace("confPromote_", "");
-    const text = `⚠️ <b>Confirm Promotion</b>\n\nAre you sure you want to grant full Admin privileges to ID <code>${targetId}</code>?`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "✅ Yes, Promote", callback_data: `promote_${targetId}` }],
-        [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
-      ]
-    });
-  }
-  else if (data.startsWith("confClearTgt_")) {
-    const pid = data.replace("confClearTgt_", "");
-    const text = `⚠️ <b>Confirm Target Removal</b>\n\nAre you sure you want to clear the target price for ASIN <code>${pid}</code>?`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "✅ Yes, Clear Target", callback_data: `cleartarget_${pid}` }],
-        [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
-      ]
-    });
-  }
-  else if (data.startsWith("approve_") && isAdmin) {
-    const targetId = data.replace("approve_", "");
-    if (!approvedUsers.includes(targetId)) {
-      approvedUsers.push(targetId);
-      await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
+      const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire tracking profile will be erased. This cannot be undone.</i>`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Revoke", callback_data: `revoke_${targetId}` }],
+          [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+        ]
+      });
     }
-    // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
-    await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
-    await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
-    await sendTelegram(env, targetId, `🎉 <b>You have been approved!</b>\nAn admin has granted you access to AzTracker. Run /start to boot your control console.`);
-  }
-  else if (data.startsWith("revoke_") && isAdmin) {
-    const targetId = data.replace("revoke_", "");
-    if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
-    
-    const updatedUsers = approvedUsers.filter(id => id !== targetId);
-    await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
-    await env.AZTRACKER_DB.delete(`auth:${targetId}`);
-    
-    await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
-    await env.AZTRACKER_DB.delete(`ui:${targetId}`);
-    
-    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
-  }
-  else if (data.startsWith("promote_") && isRootAdmin) {
-    const targetId = data.replace("promote_", "");
-    if (!admins.includes(targetId)) {
-      admins.push(targetId);
-      await env.AZTRACKER_DB.put("global:admins", JSON.stringify(admins));
+    else if (data.startsWith("confDemote_") && isRootAdmin) {
+      const targetId = data.replace("confDemote_", "");
+      const text = `⚠️ <b>Confirm Demotion</b>\n\nAre you sure you want to strip Admin privileges from ID <code>${targetId}</code>?`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Demote", callback_data: `demote_${targetId}` }],
+          [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+        ]
+      });
     }
-    await env.AZTRACKER_DB.put(`auth:${targetId}`, "admin");
-    await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`);
-    await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
-  }
-  else if (data.startsWith("demote_") && isRootAdmin) {
-    const targetId = data.replace("demote_", "");
-    const updatedAdmins = admins.filter(id => id !== targetId);
-    await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
-    await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
-    await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
-  }
-  else if (data === "main_menu") {
-    await renderMainMenu(env, chatId, messageId, isAdmin);
-  }
-  else if (data.startsWith("list_products_")) {
-    const page = parseInt(data.replace("list_products_", "")) || 0;
-    await renderProductList(env, chatId, messageId, page);
-  }
-  else if (data === "ignore") {
-    return;
-  }
+    else if (data.startsWith("confPromote_") && isRootAdmin) {
+      const targetId = data.replace("confPromote_", "");
+      const text = `⚠️ <b>Confirm Promotion</b>\n\nAre you sure you want to grant full Admin privileges to ID <code>${targetId}</code>?`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Promote", callback_data: `promote_${targetId}` }],
+          [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+        ]
+      });
+    }
+    else if (data.startsWith("confClearTgt_")) {
+      const pid = data.replace("confClearTgt_", "");
+      const text = `⚠️ <b>Confirm Target Removal</b>\n\nAre you sure you want to clear the target price for ASIN <code>${pid}</code>?`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Clear Target", callback_data: `cleartarget_${pid}` }],
+          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+        ]
+      });
+    }
+    else if (data.startsWith("approve_") && isAdmin) {
+      const targetId = data.replace("approve_", "");
+      if (!approvedUsers.includes(targetId)) {
+        approvedUsers.push(targetId);
+        await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
+      }
+      // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
+      await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
+      await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
+      await sendTelegram(env, targetId, `🎉 <b>You have been approved!</b>\nAn admin has granted you access to AzTracker. Run /start to boot your control console.`);
+    }
+    else if (data.startsWith("revoke_") && isAdmin) {
+      const targetId = data.replace("revoke_", "");
+      if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
+      
+      const updatedUsers = approvedUsers.filter(id => id !== targetId);
+      await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
+      await env.AZTRACKER_DB.delete(`auth:${targetId}`);
+      
+      await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
+      await env.AZTRACKER_DB.delete(`ui:${targetId}`);
+      await env.AZTRACKER_DB.delete(`limit:${targetId}`);
+      
+      await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
+    }
+    else if (data.startsWith("promote_") && isRootAdmin) {
+      const targetId = data.replace("promote_", "");
+      if (!admins.includes(targetId)) {
+        admins.push(targetId);
+        await env.AZTRACKER_DB.put("global:admins", JSON.stringify(admins));
+      }
+      await env.AZTRACKER_DB.put(`auth:${targetId}`, "admin");
+      await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`);
+      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
+    }
+    else if (data.startsWith("demote_") && isRootAdmin) {
+      const targetId = data.replace("demote_", "");
+      const updatedAdmins = admins.filter(id => id !== targetId);
+      await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
+      await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
+      await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
+    }
+    else if (data === "main_menu") {
+      await renderMainMenu(env, chatId, messageId, isAdmin);
+    }
+    else if (data.startsWith("list_products_")) {
+      const page = parseInt(data.replace("list_products_", "")) || 0;
+      await renderProductList(env, chatId, messageId, page);
+    }
+    else if (data === "ignore") {
+      return;
+    }
     else if (data === "admin_panel" && isAdmin) {
-    const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
-    const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
-    
-    let lastRunText = "Fetching from GitHub...";
-    const ghRun = await fetchLastWorkflowRun(env);
-    
-    if (ghRun && ghRun.updated_at) {
-        const date = new Date(ghRun.updated_at);
-        const timeStr = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
-        const stateTag = ghRun.status === "in_progress" ? " <i>(🔄 Running...)</i>" : "";
-        lastRunText = `${timeStr}${stateTag}`;
-    }
-    
-    let text = `👑 <b>Admin Dashboard</b>\n\n` +
-           `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
-           `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
-           `📡 <b>Active Tracking Pool:</b> ${stats.active_api_calls} / 450\n` +
-           `🗄️ <b>Global Database:</b> ${stats.hivemind_size} ASINs\n` +
-           `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
-           `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
-    
-    let adminButtons = [
-      [{ text: "👥 View Approved Users", callback_data: "list_users" }]
-    ];
-    
-    if (isRootAdmin) {
-      adminButtons.push([{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }]);
-    }
-    
-    adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
+      const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
+      const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
+      
+      let lastRunText = "Fetching from GitHub...";
+      const ghRun = await fetchLastWorkflowRun(env);
+      
+      if (ghRun && ghRun.updated_at) {
+          const date = new Date(ghRun.updated_at);
+          const timeStr = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
+          const stateTag = ghRun.status === "in_progress" ? " <i>(🔄 Running...)</i>" : "";
+          lastRunText = `${timeStr}${stateTag}`;
+      }
+      
+      let text = `👑 <b>Admin Dashboard</b>\n\n` +
+             `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
+             `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
+             `📡 <b>Active Tracking Pool:</b> ${stats.active_api_calls} / 450\n` +
+             `🗄️ <b>Global Database:</b> ${stats.hivemind_size} ASINs\n` +
+             `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
+             `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
+      
+      let adminButtons = [
+        [{ text: "👥 View Approved Users", callback_data: "list_users" }]
+      ];
+      
+      if (isRootAdmin) {
+        adminButtons.push([{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }]);
+      }
+      
+      adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
 
-    await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
+      await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
     }
-  else if (data === "broadcast_init" && isRootAdmin) {
-    await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
-    const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [[{ text: "❌ Cancel", callback_data: "admin_panel" }]]
-    });
-  }
-  else if (data.startsWith("list_users") && isAdmin) {
-    const parts = data.split("_");
-    const page = parts[2] ? parseInt(parts[2]) : 0; 
-    await renderUserList(env, chatId, messageId, page, ctx);
-  }
-  else if (data.startsWith("manage_user_") && isAdmin) {
-    const targetId = data.replace("manage_user_", "");
-    const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
-    const isTargetRoot = rootAdmins.includes(targetId);
-    const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
-    const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
+    else if (data === "broadcast_init" && isRootAdmin) {
+      await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
+      const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [[{ text: "❌ Cancel", callback_data: "admin_panel" }]]
+      });
+    }
+    else if (data.startsWith("list_users") && isAdmin) {
+      const parts = data.split("_");
+      const page = parts[2] ? parseInt(parts[2]) : 0; 
+      await renderUserList(env, chatId, messageId, page, ctx);
+    }
+    else if (data.startsWith("manage_user_") && isAdmin) {
+      const targetId = data.replace("manage_user_", "");
+      const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
+      const isTargetRoot = rootAdmins.includes(targetId);
+      const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
+      const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
 
-    let buttons = [];
-    if (isRootAdmin) {
-      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
-      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
-    } else if (isAdmin) {
-      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-    }
-    
-    if (isTargetApproved) {
-      buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
-    }
-    buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
+      const limitRaw = await env.AZTRACKER_DB.get(`limit:${targetId}`);
+      const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
+      const userLimit = limitRaw !== null ? parseInt(limitRaw) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
+      const limitDisplay = isTargetAdmin ? "∞ (Unlimited)" : userLimit;
 
-    const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
-    const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n\n<i>Select an action below:</i>`;
-    await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
-  }
-  else if (data.startsWith("admProd_") && isAdmin) {
-    const parts = data.split("_");
-    const targetId = parts[1];
-    const page = parts[2] ? parseInt(parts[2]) : 0; 
-    await renderAdminUserProducts(env, chatId, messageId, targetId, page);
-  }
-  else if (data.startsWith("admView_") && isAdmin) {
-    const parts = data.split("_");
-    const targetId = parts[1];
-    const pid = parts[2];
-    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
-  }
-  else if (data.startsWith("admTog_") && isAdmin) {
-    const parts = data.split("_");
-    const targetId = parts[1];
-    const pid = parts[2];
-    const targetDbKey = `user:${targetId}:products`;
-    let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
-    const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
-    if (idx !== -1) {
-      products[idx].paused = !products[idx].paused;
-      await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
-    }
-    await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
-  }
-  else if (data.startsWith("confirmDel_")) {
-    const pid = data.replace("confirmDel_", "");
-    const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your tracking list?\n\n<i>This action cannot be undone.</i>`;
-    
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
-        [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
-      ]
-    });
-  }
-  else if (data.startsWith("admConfDel_") && isAdmin) {
-    const parts = data.split("_");
-    const targetId = parts[1];
-    const pid = parts[2];
-    const text = `⚠️ <b>Confirm Admin Deletion</b>\n\nAre you sure you want to force-delete ASIN <code>${pid}</code> from user <code>${targetId}</code>'s registry?\n\n<i>This action cannot be undone.</i>`;
-    
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [
-        [{ text: "✅ Yes, Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
-        [{ text: "❌ Cancel", callback_data: `admView_${targetId}_${pid}` }]
-      ]
-    });
-  }
-  else if (data.startsWith("admDel_") && isAdmin) {
-    const parts = data.split("_");
-    const targetId = parts[1];
-    const pid = parts[2];
-    const targetDbKey = `user:${targetId}:products`;
-    let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
-    const filtered = products.filter(p => getAsinFromUrl(p.url) !== pid);
-    await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(filtered));
-    
-    await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
-      inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
-    });
-  }
-  else if (data === "global_track" && isAdmin) {
-    const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
-    const now = Date.now();
-    const cooldown = 10 * 60 * 1000;
+      let buttons = [];
+      if (isRootAdmin) {
+        if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+        if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
+        if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
+        if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
+      } else if (isAdmin) {
+        if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+        if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
+      }
+      
+      if (isTargetApproved) {
+        buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+        if (!isTargetAdmin) {
+           buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
+        }
+      }
+      buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
 
-    if (lastTrigger && (now - parseInt(lastTrigger)) < cooldown) {
-        const remaining = Math.ceil((cooldown - (now - parseInt(lastTrigger))) / 60000);
-        await editTelegramMessage(env, chatId, messageId,
-            `⏳ <b>Cooldown Active</b>\n\nNext check available in <b>${remaining} minute(s)</b>.`, {
+      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
+      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
+      await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
+    }
+    else if (data.startsWith("set_limit_init_") && isAdmin) {
+      const targetId = data.replace("set_limit_init_", "");
+      await env.AZTRACKER_DB.put(`state:${chatId}`, `setlimit_${targetId}`, { expirationTtl: 300 });
+
+      const limitRaw = await env.AZTRACKER_DB.get(`limit:${targetId}`);
+      const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
+      const userLimit = limitRaw !== null ? parseInt(limitRaw) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
+
+      const text = `⚙️ <b>Set Tracking Limit</b>\n\nUser ID: <code>${targetId}</code>\nCurrent Limit: <b>${userLimit}</b>\n\nPlease type the new maximum number of products this user can track.`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [[{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]]
+      });
+    }
+    else if (data.startsWith("admProd_") && isAdmin) {
+      const parts = data.split("_");
+      const targetId = parts[1];
+      const page = parts[2] ? parseInt(parts[2]) : 0; 
+      await renderAdminUserProducts(env, chatId, messageId, targetId, page);
+    }
+    else if (data.startsWith("admView_") && isAdmin) {
+      const parts = data.split("_");
+      const targetId = parts[1];
+      const pid = parts[2];
+      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
+    }
+    else if (data.startsWith("admTog_") && isAdmin) {
+      const parts = data.split("_");
+      const targetId = parts[1];
+      const pid = parts[2];
+      const targetDbKey = `user:${targetId}:products`;
+      let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+      const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+      if (idx !== -1) {
+        products[idx].paused = !products[idx].paused;
+        await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
+      }
+      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
+    }
+    else if (data.startsWith("confirmDel_")) {
+      const pid = data.replace("confirmDel_", "");
+      const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your tracking list?\n\n<i>This action cannot be undone.</i>`;
+      
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
+          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+        ]
+      });
+    }
+    else if (data.startsWith("admConfDel_") && isAdmin) {
+      const parts = data.split("_");
+      const targetId = parts[1];
+      const pid = parts[2];
+      const text = `⚠️ <b>Confirm Admin Deletion</b>\n\nAre you sure you want to force-delete ASIN <code>${pid}</code> from user <code>${targetId}</code>'s registry?\n\n<i>This action cannot be undone.</i>`;
+      
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
+          [{ text: "❌ Cancel", callback_data: `admView_${targetId}_${pid}` }]
+        ]
+      });
+    }
+    else if (data.startsWith("admDel_") && isAdmin) {
+      const parts = data.split("_");
+      const targetId = parts[1];
+      const pid = parts[2];
+      const targetDbKey = `user:${targetId}:products`;
+      let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
+      const filtered = products.filter(p => getAsinFromUrl(p.url) !== pid);
+      await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(filtered));
+      
+      await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
+        inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
+      });
+    }
+    else if (data === "global_track" && isAdmin) {
+      const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
+      const now = Date.now();
+      const cooldown = 10 * 60 * 1000;
+
+      if (lastTrigger && (now - parseInt(lastTrigger)) < cooldown) {
+          const remaining = Math.ceil((cooldown - (now - parseInt(lastTrigger))) / 60000);
+          await editTelegramMessage(env, chatId, messageId,
+              `⏳ <b>Cooldown Active</b>\n\nNext check available in <b>${remaining} minute(s)</b>.`, {
+              inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+          });
+          return;
+      }
+
+      await env.AZTRACKER_DB.put("global:last_trigger", now.toString(), { expirationTtl: 700 });
+      await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
+      try {
+        const triggered = await triggerWorkflow(env);
+        if (triggered) { 
+          await editTelegramMessage(env, chatId, messageId, "✅ <b>Workflow successfully triggered!</b>\nChecks are running in the background.", {
             inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
-        });
-        return;
-    }
-
-    await env.AZTRACKER_DB.put("global:last_trigger", now.toString(), { expirationTtl: 700 });
-    await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
-    try {
-      const triggered = await triggerWorkflow(env);
-      if (triggered) { 
-        await editTelegramMessage(env, chatId, messageId, "✅ <b>Workflow successfully triggered!</b>\nChecks are running in the background.", {
+          });
+        }
+      } catch (error) {
+        await editTelegramMessage(env, chatId, messageId, `❌ <b>GitHub API Error:</b>\n<code>${error.message}</code>`, {
           inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
         });
       }
-    } catch (error) {
-      await editTelegramMessage(env, chatId, messageId, `❌ <b>GitHub API Error:</b>\n<code>${error.message}</code>`, {
-        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+    }
+    else if (data === "help_add") {
+      const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [[{ text: "⬅️ Back", callback_data: "main_menu" }]]
       });
     }
-  }
-  else if (data === "help_add") {
-    const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [[{ text: "⬅️ Back", callback_data: "main_menu" }]]
-    });
-  }
-  else if (data.startsWith("settarget_")) {
-    const pid = data.replace("settarget_", "");
-    await env.AZTRACKER_DB.put(`state:${chatId}`, pid, { expirationTtl: 300 });
-    const text = `🎯 <b>Set Target Price</b>\n\nASIN: <code>${pid}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).`;
-    await editTelegramMessage(env, chatId, messageId, text, {
-      inline_keyboard: [[{ text: "❌ Cancel", callback_data: `view_${pid}` }]]
-    });
-  }
-  else if (data.startsWith("cleartarget_")) {
-    const pid = data.replace("cleartarget_", "");
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
-    const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
-    if (pIndex !== -1) {
-      delete products[pIndex].target_price;
-      delete products[pIndex].alert_sent; 
-      delete products[pIndex].alert_sent_new; 
-      delete products[pIndex].alert_sent_used; 
-      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+    else if (data.startsWith("settarget_")) {
+      const pid = data.replace("settarget_", "");
+      await env.AZTRACKER_DB.put(`state:${chatId}`, pid, { expirationTtl: 300 });
+      const text = `🎯 <b>Set Target Price</b>\n\nASIN: <code>${pid}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).`;
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [[{ text: "❌ Cancel", callback_data: `view_${pid}` }]]
+      });
     }
-    await renderProductView(env, chatId, messageId, pid, baseUrl);
-  }
-  else if (data.startsWith("view_")) {
-    const pid = data.replace("view_", "");
-    await env.AZTRACKER_DB.delete(`state:${chatId}`); 
-    await renderProductView(env, chatId, messageId, pid, baseUrl);
-  }
-  else if (data.startsWith("pause_") || data.startsWith("resume_")) {
-    const action = data.split("_")[0];
-    const pid = data.split("_")[1];
+    else if (data.startsWith("cleartarget_")) {
+      const pid = data.replace("cleartarget_", "");
+      let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+      const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+      if (pIndex !== -1) {
+        delete products[pIndex].target_price;
+        delete products[pIndex].alert_sent; 
+        delete products[pIndex].alert_sent_new; 
+        delete products[pIndex].alert_sent_used; 
+        await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+      }
+      await renderProductView(env, chatId, messageId, pid, baseUrl);
+    }
+    else if (data.startsWith("view_")) {
+      const pid = data.replace("view_", "");
+      await env.AZTRACKER_DB.delete(`state:${chatId}`); 
+      await renderProductView(env, chatId, messageId, pid, baseUrl);
+    }
+    else if (data.startsWith("pause_") || data.startsWith("resume_")) {
+      const action = data.split("_")[0];
+      const pid = data.split("_")[1];
 
-    let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
-    const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
-    if (idx !== -1) {
-      products[idx].paused = (action === "pause");
-      await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+      let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
+      const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
+      if (idx !== -1) {
+        products[idx].paused = (action === "pause");
+        await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
+      }
+      await renderProductView(env, chatId, messageId, pid, baseUrl);
     }
-    await renderProductView(env, chatId, messageId, pid, baseUrl);
-  }
-  else if (data.startsWith("remove_")) {
+    else if (data.startsWith("remove_")) {
       const pid = data.replace("remove_", "");
       let products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
       const filteredProducts = products.filter(p => getAsinFromUrl(p.url) !== pid);
@@ -798,13 +878,30 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
 
 async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   const userDbKey = `user:${chatId}:products`;
-  const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
-  
+  const limitKey = `limit:${chatId}`;
+
+  const [productsRaw, limitRaw] = await Promise.all([
+      env.AZTRACKER_DB.get(userDbKey, "json"),
+      env.AZTRACKER_DB.get(limitKey)
+  ]);
+
+  const products = productsRaw || [];
+  let limitText = "∞";
+
+  if (!isAdmin) {
+    const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
+    if (!isNaN(defaultLimit)) {
+        limitText = limitRaw !== null ? parseInt(limitRaw) : defaultLimit;
+    } else {
+        limitText = "⚠️ Error";
+    }
+  }
+
   const total = products.length;
   const active = products.filter(p => !p.paused).length;
   const paused = total - active;
 
-  const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Tracked Items:</b> ${total}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
+  const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Tracked Items:</b> ${total} / ${limitText}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
 
   const keyboard = {
     inline_keyboard: [
