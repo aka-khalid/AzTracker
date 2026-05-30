@@ -229,6 +229,7 @@ async function handleMessage(message, env, ctx) {
     }
 
     if (isTargetApproved) {
+      // VERTICAL PRIVACY LOCK: Normal admins CANNOT view Root Admin products
       if (isRootAdmin || !isTargetRoot) {
          buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
       }
@@ -528,6 +529,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       if (isTargetApproved) {
+        // VERTICAL PRIVACY LOCK: Normal admins CANNOT view Root Admin products
         if (isRootAdmin || !isTargetRoot) {
            buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
         }
@@ -855,6 +857,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
                `${smartAlts}\n\n` +
                `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
+  // HORIZONTAL READ-ONLY AUDITING: Strip write buttons if caller shouldn't have access
   const isTargetAdmin = admins.includes(targetId) || rootAdmins.includes(targetId);
   const canWrite = isRootAdmin || !isTargetAdmin;
 
@@ -885,13 +888,13 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
   const authUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
 
-  // Combine and remove duplicates
-  const allApproved = [...new Set([...legacyApproved, ...authUsers])];
-
   // RBAC Directory Scoping: Fetch cached roles
   const { admins, rootAdmins } = await getUserRoles(chatId, env, ctx);
 
-  // Strip only the caller's own card from visibility
+  // CRITICAL FIX: Combine arrays and inject rootAdmins to make them visible
+  const allApproved = [...new Set([...legacyApproved, ...authUsers, ...rootAdmins])];
+
+  // CRITICAL FIX: Strip only the caller's own card from visibility
   const visibleUsers = allApproved.filter(id => id !== chatId);
 
   if (visibleUsers.length === 0) {
