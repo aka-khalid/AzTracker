@@ -138,21 +138,52 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `price_tracker.py`, extract the current hour from the `cairo_tz` datetime object. If the hour is >= 23 or <= 7, modify the `async_send_telegram` payload to include `"disable_notification": True`. However, if `is_target` is True, bypass this and always push the notification audibly."*
   </details>
 
+## 🔐 Phase 4: Identity Provisioning & Security Governance
+
+- [ ] **Strict Region-Lock Enforcement (Dynamic Geofencing)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Prevent global ASIN scope leaks where non-EG links (e.g., `.ae`) trigger false "Already Tracked" flags or implicitly coerce foreign products into the Egyptian database.<br>
+  **The Strategy:** Broaden the `isAmazonLink` regex listener to intercept all global Amazon domains. Dynamically parse the domain (`amazon.eg`, `amazon.ae`) via regex, validate it against a `SUPPORTED_REGIONS` whitelist array, and issue a clean "Region Not Supported" error for non-whitelisted domains.<br>
+  **Future-Proofing:** Ensure the extracted `productDomain` is primed to be saved into the user's JSON KV dictionary when Phase 5 activates.
+  </details>
+- [ ] **Automated Access Provisioning (The Join Queue)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Eliminate manual ID hand-offs and build a scalable join-request pipeline.<br>
+  **The Strategy:** Introduce a new JSON array key: `queue:pending`. Unapproved users clicking `/start` will push their ID to this array via a "Request Access" button. This fires a highly stateful push notification to Admins. If Admin A clicks Approve, the callback instantly updates the original message for all admins to prevent redundant clicks. Introduce a `🔔 Pending Requests` dynamic button in the Admin Dashboard.
+  </details>
+- [ ] **Object-Level IAM Metadata (Creator Tags)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Provide standard admins with immediate context on who approved a specific user.<br>
+  **The Strategy:** Introduce a sidecar KV string key `approved_by:{userId}` storing the approver's ID to avoid breaking the Python engine's existing `auth:{id}` contract. During the UI loop, run this ID through the edge-cached `resolveUserProfile` function to dynamically render "Approved by: [Name]" on the User Management Card.
+  </details>
+- [ ] **Forensic Security Audit Log (Web App SIEM)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Implement a forensic paper trail for granular CRUD actions without draining Read/List quotas or cluttering Telegram UI.<br>
+  **The Strategy:** Introduce `global:audit_log` as a rolling JSON array hard-capped at 50 events. Hook all state-modifying admin callbacks (Revoke, Limit Change, Delete) to push lightweight events here. Build a dedicated `/audit` HTML Web App route secured by HMAC token verification (verifying both expiration and Root Admin authorization) to render a color-coded HTML table.
+  </details>
+
+## 🌍 Phase 5: Platform Expansion (Growth)
+
+- [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Scale the bot beyond Egypt using the foundation built in Phase 4.<br>
+  **The Strategy:** Leverage the `productDomain` extraction implemented in the Phase 4 Geofence update. Inject `region: productDomain` into the `user:{chat_id}` KV object when a product is added. Move the `AMZN_ASSOCIATES_TAG` and `Country` hardcodes out of the global scope. Dynamically group `fetch_batch` execution queues by region in `price_tracker.py` rather than pooling all ASINs universally together.<br>
+  **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region rather than pooling all ASINs together."*
+  </details>
+
 ## 🛑 Intentional Architectural Boundaries
 *Features explicitly rejected to preserve the core product vision.*
 
 - **"Target Met" Stagnation Fix:** Rejected. Modifying the engine to continuously send alerts for new all-time lows *after* a target is met violates the strict "Zero-Spam Boolean Lock" philosophy. If a target is met, the system alerts once and locks.
 - **Multi-Button Product Dashboard:** Rejected. Stacking redundant Telegram inline buttons for every hidden merchant on the `/manage` dashboard creates extreme UI fatigue. Kept as clean, embedded HTML text links.
 - **Real-Time Database Garbage Collection:** Rejected. Implementing a paginated `.list()` sweep inside the per-minute Python engine exhausts Cloudflare's 1,000/day REST API free tier limits within hours. Hivemind sizing has been securely offloaded to the 4-hour GitHub Actions backup cron, and real-time GC is indefinitely suspended.
-
-
-## 🌍 Phase 4: Platform Expansion (Growth)
-
-- [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Scale the bot beyond Egypt.<br>
-  **The Strategy:** Move the `AMZN_ASSOCIATES_TAG` and `Country.EG` hardcodes into the `user:{chat_id}` KV object. Initialize the `AmazonCreatorsApi` dynamically per batch based on the user's regional preferences.<br>
-  **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions. Walk me through the architecture of storing regional preferences (EG, AE, SA) inside the user's KV profile, and how to dynamically group `fetch_batch` execution queues by region rather than pooling all ASINs together."*
-  </details>
