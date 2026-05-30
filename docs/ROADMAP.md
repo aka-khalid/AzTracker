@@ -72,6 +72,7 @@ This document tracks the technical debt, security fortifications, feature expans
 - [x] **KV Write Quota Auditing:** Transitioned the jitter lock mechanism to use Cloudflare's in-memory standard caching API instead of KV, freeing up quota.
 - [x] **Time-Based Write Amplification Shield:** Replaced volatile iteration counters with static UNIX timestamps for the Anti-Flap engine. Reduced Lazy Refresh metadata TTLs to 6 hours, and implemented a strict 30-minute heartbeat throttle on the global dashboard stats, reducing daily KV overhead writes to near-zero.
 - [x] **KV Pagination Blindspot:** Implemented `cursor` while-loops for multi-tenant KV fetches to safely bypass Cloudflare's 1,000-key response truncation limit.
+- [x] **Resource Quota Controller (Grandfather Clause):** Implemented an environment-driven product limit (`DEFAULT_USER_PRODUCT_LIMIT`) governed by isolated `limit:{chat_id}` overrides. Includes a soft-downgrade clause preventing destructive sync collisions if an admin lowers a user's quota below their current item count.
 - [x] **KV Read Optimization in Webhook (`caches.default`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
