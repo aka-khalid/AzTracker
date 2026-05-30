@@ -749,24 +749,28 @@ async def async_main():
                     return outbox_item
                     
                 target_alert = None
-
+                
                 if new_price is not None:
                     if target_price and new_price > target_price:
                         if p.get("alert_sent_new", False):
                             p["alert_sent_new"] = False
                             dirty_users.add(chat_id)
+                            
                     if target_price:
                         if new_price <= target_price and not p.get("alert_sent_new", False):
                             target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new")
-                else:
-                    if last_new_price is None and not is_initial_scan:
-                        target_alert = queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new")
-                    elif last_new_price is not None and new_price < last_new_price:
-                        target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
-                else:
+                            
+                    else: 
+                        if last_new_price is None and not is_initial_scan:
+                            target_alert = queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new")
+                        elif last_new_price is not None and new_price < last_new_price:
+                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
+                            
+                else: 
                     if p.get("alert_sent_new", False):
                         p["alert_sent_new"] = False
                         dirty_users.add(chat_id)
+
                             
                 if used_price is not None:
                     if target_price and used_price > target_price:
