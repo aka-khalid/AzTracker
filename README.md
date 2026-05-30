@@ -70,6 +70,7 @@ graph TD;
 * 📱 **Mobile Deep-Link Extraction:** Automatically resolves `amzn.to` and `amzn.eu` short links shared directly from the Amazon mobile app.
 * 🚨 **Automated Crash Reporting:** Fatal workflow exceptions push full tracebacks directly to Root Admins via Telegram.
 * ⚡ **Edge-Cached Authorization:** Leverages Cloudflare's in-memory `caches.default` API with synthetic internal routing to heavily minimize KV read quota consumption during ChatOps interactions.
+* 🎛️ **Granular Resource Quotas:** Global environment-driven tracking limits with individual admin overrides. Features a "Grandfather Clause" to safely govern capacity limits without causing destructive data loss.
 
 ---
 
