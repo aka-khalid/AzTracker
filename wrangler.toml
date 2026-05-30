@@ -9,3 +9,4 @@ id = "90fcfcb742fe4d7299087c076bd1ba4d"
 [vars]
 GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"
+DEFAULT_USER_PRODUCT_LIMIT = "5"
