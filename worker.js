@@ -107,6 +107,15 @@ async function handleMessage(message, env, ctx) {
   const stateKey = `state:${chatId}`;
   const activeState = await env.AZTRACKER_DB.get(stateKey);
   
+  // --- OVERRIDE BLOCK ---
+  if (text === "/start" || text === "/manage") {
+    if (activeState) await env.AZTRACKER_DB.delete(stateKey);
+    await deleteTelegramMessage(env, chatId, messageId);
+    await renderMainMenu(env, chatId, null, isAdmin);
+    return;
+  }
+  // -------------------------------
+
   if (activeState === 'broadcast' && isRootAdmin) {
     await env.AZTRACKER_DB.delete(stateKey);
     await deleteTelegramMessage(env, chatId, messageId);
@@ -416,6 +425,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
     }
     else if (data === "main_menu") {
+      await env.AZTRACKER_DB.delete(`state:${chatId}`);
       await renderMainMenu(env, chatId, messageId, isAdmin);
     }
     else if (data.startsWith("list_products_")) {
@@ -426,6 +436,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       return;
     }
     else if (data === "admin_panel" && isAdmin) {
+      await env.AZTRACKER_DB.delete(`state:${chatId}`);
       const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
       const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
       
@@ -472,6 +483,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await renderUserList(env, chatId, messageId, page, ctx);
     }
     else if (data.startsWith("manage_user_") && isAdmin) {
+      await env.AZTRACKER_DB.delete(`state:${chatId}`);
       const targetId = data.replace("manage_user_", "");
       const targetRole = await env.AZTRACKER_DB.get(`auth:${targetId}`);
       const isTargetRoot = rootAdmins.includes(targetId);
