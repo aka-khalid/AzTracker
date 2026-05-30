@@ -428,15 +428,33 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         await env.AZTRACKER_DB.put("global:admins", JSON.stringify(admins));
       }
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "admin");
-      await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`);
-      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users.\n\nTo approve someone, simply copy their Telegram ID and paste it as a message directly into this chat. Run /start to access your admin dashboard.`);
+      
+      // CRITICAL FIX: Bust the edge cache for both the caller and the target
+      if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${chatId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      }
+      
+      await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`, {
+        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_users" }]]
+      });
+      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
     }
     else if (data.startsWith("demote_") && isRootAdmin) {
       const targetId = data.replace("demote_", "");
       const updatedAdmins = admins.filter(id => id !== targetId);
       await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
-      await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`);
+      
+      // CRITICAL FIX: Bust the edge cache for both the caller and the target
+      if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${chatId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      }
+      
+      await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`, {
+        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_users" }]]
+      });
     }
     else if (data === "main_menu") {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
