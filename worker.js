@@ -226,14 +226,12 @@ async function handleMessage(message, env, ctx) {
         buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
       }
       if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-      if (isTargetAdmin) {
-        await sendAppMessage(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
-        return;
-      }
     }
 
     if (isTargetApproved) {
-      buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+      if (isRootAdmin || !isTargetRoot) {
+         buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+      }
       if (!isTargetAdmin) {
          buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
       }
@@ -405,6 +403,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
       const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
+      
       await sendTelegram(env, targetId, welcomeMessage);
     }
     else if (data.startsWith("revoke_") && isAdmin) {
@@ -526,9 +525,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
         }
         if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-        if (isTargetAdmin) {
-          await sendAppMessage(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
-          return;
+      }
+      
+      if (isTargetApproved) {
+        if (isRootAdmin || !isTargetRoot) {
+           buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
+        }
+        if (!isTargetAdmin) {
+           buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
         }
       }
       buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
@@ -553,18 +557,21 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("admProd_") && isAdmin) {
       const parts = data.split("_");
       const targetId = parts[1];
+      if (!isRootAdmin && rootAdmins.includes(targetId)) return; // IDOR Protection
       const page = parts[2] ? parseInt(parts[2]) : 0; 
       await renderAdminUserProducts(env, chatId, messageId, targetId, page);
     }
     else if (data.startsWith("admView_") && isAdmin) {
       const parts = data.split("_");
       const targetId = parts[1];
+      if (!isRootAdmin && rootAdmins.includes(targetId)) return; // IDOR Protection
       const pid = parts[2];
-      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
+      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins);
     }
     else if (data.startsWith("admTog_") && isAdmin) {
       const parts = data.split("_");
       const targetId = parts[1];
+      if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
       const pid = parts[2];
       const targetDbKey = `user:${targetId}:products`;
       let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
@@ -573,7 +580,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         products[idx].paused = !products[idx].paused;
         await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
       }
-      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl);
+      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins);
     }
     else if (data.startsWith("confirmDel_")) {
       const pid = data.replace("confirmDel_", "");
@@ -589,6 +596,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("admConfDel_") && isAdmin) {
       const parts = data.split("_");
       const targetId = parts[1];
+      if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
       const pid = parts[2];
       const text = `⚠️ <b>Confirm Admin Deletion</b>\n\nAre you sure you want to force-delete ASIN <code>${pid}</code> from user <code>${targetId}</code>'s registry?\n\n<i>This action cannot be undone.</i>`;
       
@@ -602,6 +610,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("admDel_") && isAdmin) {
       const parts = data.split("_");
       const targetId = parts[1];
+      if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
       const pid = parts[2];
       const targetDbKey = `user:${targetId}:products`;
       let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
@@ -756,7 +765,7 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl) {
+async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins) {
   const targetDbKey = `user:${targetId}:products`;
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
   const product = products.find(p => getAsinFromUrl(p.url) === pid);
@@ -846,18 +855,30 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
                `${smartAlts}\n\n` +
                `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
 
-    const keyboard = {
-    inline_keyboard: [
-      [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
-      [{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }],
-      [{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }],
-      [{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }],
-      [{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}_0` }]
-    ]
-  };
+  const isTargetAdmin = admins.includes(targetId) || rootAdmins.includes(targetId);
+  const canWrite = isRootAdmin || !isTargetAdmin;
+
+  let inline_keyboard = [
+    [{ text: "🛒 Open in Amazon.eg", url: productUrl }]
+  ];
+
+  if (canWrite) {
+    inline_keyboard.push([{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }]);
+  }
+
+  inline_keyboard.push([{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }]);
+
+  if (canWrite) {
+    inline_keyboard.push([{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }]);
+  }
+
+  inline_keyboard.push([{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}_0` }]);
+
+  const keyboard = { inline_keyboard };
 
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
+
 async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // 1. Merge legacy arrays and new atomic keys dynamically
   const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
@@ -867,18 +888,24 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // Combine and remove duplicates
   const allApproved = [...new Set([...legacyApproved, ...authUsers])];
 
-  if (allApproved.length === 0) {
-    const text = `👥 <b>Approved Users Directory</b>\n\nNo approved guest profiles exist in the core server database right now.`;
+  // RBAC Directory Scoping: Fetch cached roles
+  const { admins, rootAdmins } = await getUserRoles(chatId, env, ctx);
+
+  // Strip only the caller's own card from visibility
+  const visibleUsers = allApproved.filter(id => id !== chatId);
+
+  if (visibleUsers.length === 0) {
+    const text = `👥 <b>Approved Users Directory</b>\n\nNo other profile records exist in the database right now.`;
     const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
     return;
   }
 
   const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(allApproved.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(visibleUsers.length / ITEMS_PER_PAGE);
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
-  const pagedUsers = allApproved.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const pagedUsers = visibleUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
   // 2. EDGE-CACHED RESOLUTION: Parallel fetch wrapped in Cloudflare's cache
   const resolvedUsers = await Promise.all(pagedUsers.map(id => resolveUserProfile(env, id, ctx)));
@@ -886,7 +913,12 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   const keyboard = { inline_keyboard: [] };
 
   resolvedUsers.forEach((user) => {
-    keyboard.inline_keyboard.push([{ text: `👤 ${user.label}`, callback_data: `manage_user_${user.id}` }]);
+    // Dynamic Identity Badging
+    let icon = "👤";
+    if (rootAdmins.includes(user.id)) icon = "👑";
+    else if (admins.includes(user.id)) icon = "🛡️";
+
+    keyboard.inline_keyboard.push([{ text: `${icon} ${user.label}`, callback_data: `manage_user_${user.id}` }]);
   });
 
   if (totalPages > 1) {
