@@ -643,6 +643,7 @@ async def async_main():
                     dirty_users.add(chat_id)
                     
                 display_name = truncate_name(name)
+                is_initial_scan = product_id not in global_prices
                 last_entry = global_prices.get(product_id, {})
                 last_new_price = last_entry.get("new_price")
                 last_used_price = last_entry.get("used_price")
@@ -758,10 +759,10 @@ async def async_main():
                         if new_price <= target_price and not p.get("alert_sent_new", False):
                             target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new")
                     else:
-                        if last_new_price is None:
-                            target_alert = queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new")
-                        elif new_price < last_new_price:
-                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
+                if last_new_price is None and not is_initial_scan:
+                    target_alert = queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new")
+                elif last_new_price is not None and new_price < last_new_price:
+                    target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
                 else:
                     if p.get("alert_sent_new", False):
                         p["alert_sent_new"] = False
