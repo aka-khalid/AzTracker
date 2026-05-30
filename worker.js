@@ -391,7 +391,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
-      await sendTelegram(env, targetId, `🎉 <b>You have been approved!</b>\nAn admin has granted you access to AzTracker. Run /start to boot your control console.`);
+      
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of 5 tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
+      
+      await sendTelegram(env, targetId, welcomeMessage);
     }
     else if (data.startsWith("revoke_") && isAdmin) {
       const targetId = data.replace("revoke_", "");
