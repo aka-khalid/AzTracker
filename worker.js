@@ -100,7 +100,7 @@ async function handleMessage(message, env, ctx) {
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) {
-    await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nIf you know an admin, send them this ID to get approved:\n<code>${chatId}</code>`);
+    await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nTo request access, forward this exact message to an Admin:\n\n<i>"Hi, please grant me tracking access. My ID is <code>${chatId}</code>. You can approve me by pasting this ID directly into the AzTracker bot."</i>`);
     return;
   }
 
@@ -213,12 +213,18 @@ async function handleMessage(message, env, ctx) {
 
     let buttons = [];
     if (isRootAdmin) {
-      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+      if (!isTargetApproved) {
+        buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+        buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
+      }
       if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
       if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
       if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
     } else if (isAdmin) {
-      if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+      if (!isTargetApproved) {
+        buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+        buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
+      }
       if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
       if (isTargetAdmin) {
         await sendAppMessage(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
@@ -382,6 +388,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         ]
       });
     }
+    else if (data.startsWith("reject_") && isAdmin) {
+      const targetId = data.replace("reject_", "");
+      await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been explicitly denied access.`);
+      await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
+    }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
       if (!approvedUsers.includes(targetId)) {
@@ -392,8 +403,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
       
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of 5 tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
-      
+      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
       await sendTelegram(env, targetId, welcomeMessage);
     }
     else if (data.startsWith("revoke_") && isAdmin) {
@@ -418,7 +429,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "admin");
       await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`);
-      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
+      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users.\n\nTo approve someone, simply copy their Telegram ID and paste it as a message directly into this chat. Run /start to access your admin dashboard.`);
     }
     else if (data.startsWith("demote_") && isRootAdmin) {
       const targetId = data.replace("demote_", "");
@@ -453,10 +464,12 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           lastRunText = `${timeStr}${stateTag}`;
       }
       
+      const globalLimit = env.GLOBAL_POOL_LIMIT || "450";
+      
       let text = `👑 <b>Admin Dashboard</b>\n\n` +
              `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
              `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
-             `📡 <b>Active Tracking Pool:</b> ${stats.active_api_calls} / 450\n` +
+             `📡 <b>Active Tracking Pool:</b> ${stats.active_api_calls} / ${globalLimit}\n` +
              `🗄️ <b>Global Database:</b> ${stats.hivemind_size} ASINs\n` +
              `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
              `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
@@ -500,19 +513,22 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       let buttons = [];
       if (isRootAdmin) {
-        if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+        if (!isTargetApproved) {
+          buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+          buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
+        }
         if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
         if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
         if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
       } else if (isAdmin) {
-        if (!isTargetApproved) buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+        if (!isTargetApproved) {
+          buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
+          buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
+        }
         if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-      }
-      
-      if (isTargetApproved) {
-        buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
-        if (!isTargetAdmin) {
-           buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
+        if (isTargetAdmin) {
+          await sendAppMessage(env, chatId, `⚠️ ID <code>${targetId}</code> belongs to an Admin. Interception blocked.`);
+          return;
         }
       }
       buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
