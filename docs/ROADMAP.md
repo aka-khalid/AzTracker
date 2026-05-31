@@ -91,7 +91,7 @@ This document tracks the technical debt, security fortifications, feature expans
 - [x] **Restock & Out-of-Stock Tracking:** Modified engine to declare OOS only after 16 misses, triggering highly accurate `🚨 RESTOCK ALERT` notifications.
 - [x] **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
 - [x] **Destructive Action Confirmations:** Added stateless edge-routed confirmation gates for Revoke, Demote, Promote, and Clear Target actions to prevent fat-finger accidents.
-- [ ] **The Invisible Flash Deal UI Bug (`worker.js`)**
+- [x] **The Invisible Flash Deal UI Bug (`worker.js`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
