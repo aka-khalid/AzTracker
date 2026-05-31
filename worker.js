@@ -145,8 +145,13 @@ async function handleMessage(message, env, ctx) {
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) {
-    const queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-    if (queue.includes(chatId)) {
+    const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+    const now = Date.now();
+    const queue = rawQueue
+      .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
+      .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
+
+    if (queue.some(entry => entry.id === chatId)) {
       await sendAppMessage(env, chatId, `⏳ <b>Request Pending</b>\n\nYour application is currently under review by an administrator. Please wait.`);
       return;
     }
@@ -436,14 +441,23 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("request_access_", "");
       if (targetId !== chatId) return; 
 
-      let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      const now = Date.now();
+      let queue = rawQueue
+        .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
+        .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
       
-      if (queue.includes(chatId)) {
+      if (queue.some(entry => entry.id === chatId)) {
         await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
         return; // SEVERS THE BROADCAST LOOP FOR DUPLICATE CLICKS
       }
 
-      queue.push(chatId);
+      if (queue.length >= QUEUE_MAX_DEPTH) {
+        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Queue Full</b>\n\nThe access queue is currently full. Please try again in 24 hours.`);
+        return;
+      }
+
+      queue.push({ id: chatId, requested_at: now });
       await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
 
       await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
@@ -465,12 +479,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("queueReject_") && isAdmin) {
       const targetId = data.replace("queueReject_", "");
-      let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-      if (!queue.includes(targetId)) {
-        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Already Handled</b>\nThis application was already processed by another administrator.`);
+      const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      const now = Date.now();
+      let queue = rawQueue
+        .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
+        .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
+
+      if (!queue.some(entry => entry.id === targetId)) {
+        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
         return;
       }
-      queue = queue.filter(id => id !== targetId);
+      queue = queue.filter(entry => entry.id !== targetId);
       await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
@@ -482,12 +501,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("queueApprove_") && isAdmin) {
       const targetId = data.replace("queueApprove_", "");
-      let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-      if (!queue.includes(targetId)) {
-        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Already Handled</b>\nThis application was already processed by another administrator.`);
+      const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      const now = Date.now();
+      let queue = rawQueue
+        .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
+        .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
+
+      if (!queue.some(entry => entry.id === targetId)) {
+        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
         return;
       }
-      queue = queue.filter(id => id !== targetId);
+      queue = queue.filter(entry => entry.id !== targetId);
       await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
       
       if (!approvedUsers.includes(targetId)) {
