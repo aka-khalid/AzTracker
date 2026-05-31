@@ -454,6 +454,17 @@ async def async_main():
             # State 3: Missing, but under 24 hours. DO NOTHING. (0 KV Writes)
 
         # ── DELTA HISTORY LOGGER (OR-Gate Trigger) ──
+        # Precompute active targets for the 1 EGP debounce bypass
+        targets_by_asin = {}
+        for chat_id, products in users_data.items():
+            for p in products:
+                if not p.get("paused", False) and p.get("target_price"):
+                    p_url = p.get("url")
+                    if p_url:
+                        p_asin = get_product_id(p_url)
+                        if p_asin:
+                            targets_by_asin.setdefault(p_asin, []).append(p["target_price"])
+
         for asin, res_tuple in all_fetched_results.items():
             (
                 name,
@@ -529,6 +540,44 @@ async def async_main():
             if c_seen_resale:
                 if not last_seen_resale_at or (unix_now_ms - last_seen_resale_at) > 21600000:
                     seen_resale_at = unix_now_ms
+
+            # --- 1 EGP NOISE DEBOUNCE FILTER ---
+            asin_targets = targets_by_asin.get(asin, [])
+            last_amazon_price = last_entry.get("amazon_price")
+            
+            new_delta = abs(c_new_price - last_new_price) if c_new_price is not None and last_new_price is not None else 0
+            used_delta = abs(c_used_price - last_used_price) if c_used_price is not None and last_used_price is not None else 0
+            amazon_delta = abs(c_amazon_price - last_amazon_price) if c_amazon_price is not None and last_amazon_price is not None else 0
+            
+            new_state_changed = (c_new_price is None) != (last_new_price is None)
+            used_state_changed = (c_used_price is None) != (last_used_price is None)
+            amazon_state_changed = (c_amazon_price is None) != (last_amazon_price is None)
+            
+            target_crossed_new = False
+            if c_new_price is not None and last_new_price is not None:
+                target_crossed_new = any(c_new_price <= t < last_new_price for t in asin_targets)
+                        
+            target_crossed_used = False
+            if c_used_price is not None and last_used_price is not None:
+                target_crossed_used = any(c_used_price <= t < last_used_price for t in asin_targets)
+
+            # Discard changes if they are < 1.0 EGP and no state/target limits were crossed
+            if not (new_state_changed or new_delta >= 1.0 or target_crossed_new):
+                c_new_price = last_new_price
+                c_new_seller = last_entry.get("new_seller")
+                c_new_mid = last_entry.get("new_mid")
+            
+            if not (used_state_changed or used_delta >= 1.0 or target_crossed_used):
+                c_used_price = last_used_price
+                c_used_seller = last_entry.get("used_seller")
+                c_used_mid = last_entry.get("used_mid")
+                c_used_offers = last_entry.get("used_offers", [])
+                
+            if not (amazon_state_changed or amazon_delta >= 1.0):
+                c_amazon_price = last_amazon_price
+                c_amazon_seller = last_entry.get("amazon_seller")
+                c_amazon_mid = last_entry.get("amazon_mid")
+                c_amazon_is_buybox = last_entry.get("amazon_is_buybox", False)
 
             new_changed = c_new_price != last_new_price
             used_changed = c_used_price != last_used_price
