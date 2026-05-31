@@ -1708,19 +1708,33 @@ function renderChartHTML(asin, exp, sig) {
                                 backgroundColor: lineColor + '20',
                                 borderWidth: 2,
                                 pointBackgroundColor: lineColor,
-                                pointRadius: newPrices.filter(x => x !== null).length === 1 ? 4 : 0,
+                                pointRadius: function(ctx) {
+                                    const index = ctx.dataIndex;
+                                    const data = ctx.dataset.data;
+                                    if (data[index] === null) return 0;
+                                    const prev = index > 0 ? data[index - 1] : null;
+                                    const next = index < data.length - 1 ? data[index + 1] : null;
+                                    return (prev === null || next === null) ? 4 : 0;
+                                },
                                 stepped: true,
                                 spanGaps: false,
                                 fill: true
                             },
                             {
-                                label: 'Used (EGP)',
+                                label: 'Lowest Used Offer (EGP)',
                                 data: usedPrices,
                                 borderColor: '#4caf50',
                                 borderDash: [5, 5],
                                 borderWidth: 2,
                                 pointBackgroundColor: '#4caf50',
-                                pointRadius: usedPrices.filter(x => x !== null).length === 1 ? 4 : 0,
+                                pointRadius: function(ctx) {
+                                    const index = ctx.dataIndex;
+                                    const data = ctx.dataset.data;
+                                    if (data[index] === null) return 0;
+                                    const prev = index > 0 ? data[index - 1] : null;
+                                    const next = index < data.length - 1 ? data[index + 1] : null;
+                                    return (prev === null || next === null) ? 4 : 0;
+                                },
                                 stepped: true,
                                 spanGaps: false,
                                 fill: false
