@@ -100,7 +100,19 @@ async function handleMessage(message, env, ctx) {
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) {
-    await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nTo request access, forward this exact message to an Admin:\n\n<i>"Hi, please grant me tracking access. My ID is <code>${chatId}</code>. You can approve me by pasting this ID directly into the AzTracker bot."</i>`);
+    const queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+    if (queue.includes(chatId)) {
+      await sendAppMessage(env, chatId, `⏳ <b>Request Pending</b>\n\nYour application is currently under review by an administrator. Please wait.`);
+      return;
+    }
+    
+    if (text === "/start") {
+      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.`, {
+        inline_keyboard: [[{ text: "✋ Request Access", callback_data: `request_access_${chatId}` }]]
+      });
+    } else {
+      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nSend /start to request access.`);
+    }
     return;
   }
 
@@ -355,12 +367,77 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
-  if (!isApproved) return;
+  if (!isApproved && !data.startsWith("request_access_")) return;
 
   const userDbKey = `user:${chatId}:products`;
 
   try {
-    if (data.startsWith("confRevoke_") && isAdmin) {
+    if (data.startsWith("request_access_")) {
+      const targetId = data.replace("request_access_", "");
+      if (targetId !== chatId) return; 
+
+      let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      if (!queue.includes(chatId)) {
+        queue.push(chatId);
+        await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      }
+
+      await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
+
+      const { label } = await resolveUserProfile(env, chatId, ctx);
+      const adminMsg = `🔔 <b>New Access Request</b>\n\n👤 <b>Name:</b> ${escapeHtml(label)}\n🆔 <b>ID:</b> <code>${chatId}</code>\n\n<i>This user is requesting authorization to access the tracking engine.</i>`;
+      const adminButtons = {
+        inline_keyboard: [
+          [{ text: "✅ Approve", callback_data: `queueApprove_${chatId}` }, { text: "❌ Reject", callback_data: `queueReject_${chatId}` }]
+        ]
+      };
+
+      const allAdmins = [...new Set([...admins, ...rootAdmins])];
+      for (const adminId of allAdmins) {
+        try {
+          await sendTelegram(env, adminId, adminMsg, adminButtons);
+        } catch(e) { console.error("Failed to notify admin", adminId); }
+      }
+    }
+    else if (data.startsWith("queueReject_") && isAdmin) {
+      const targetId = data.replace("queueReject_", "");
+      let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      if (!queue.includes(targetId)) {
+        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Already Handled</b>\nThis application was already processed by another administrator.`);
+        return;
+      }
+      queue = queue.filter(id => id !== targetId);
+      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      
+      const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
+      await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been denied access by ${escapeHtml(adminName)}.`);
+      await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
+    }
+    else if (data.startsWith("queueApprove_") && isAdmin) {
+      const targetId = data.replace("queueApprove_", "");
+      let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+      if (!queue.includes(targetId)) {
+        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Already Handled</b>\nThis application was already processed by another administrator.`);
+        return;
+      }
+      queue = queue.filter(id => id !== targetId);
+      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      
+      if (!approvedUsers.includes(targetId)) {
+        approvedUsers.push(targetId);
+        await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
+      }
+      await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
+      
+      const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
+      await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`);
+      
+      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
+      
+      await sendTelegram(env, targetId, welcomeMessage);
+    }
+    else if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
       const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire tracking profile will be erased. This cannot be undone.</i>`;
       await editTelegramMessage(env, chatId, messageId, text, {
