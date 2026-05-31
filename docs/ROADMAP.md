@@ -273,6 +273,15 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region in Python rather than pooling all ASINs together."*
   </details>
 
+- [ ] **Adaptive Inter-Batch Backoff**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Replace the fixed 3-second sleep between Amazon API batch 
+  requests with a dynamic wait that responds to actual rate-limit signals, reducing idle time under normal load while remaining resilient under quota pressure.<br>
+  **The Strategy:** The current `await asyncio.sleep(3)` between batches is a conservative fixed guard. As Phase 7 grows the active ASIN pool across multiple regions, this compounds: 45 batches at the 450-item ceiling already produce 132 seconds of idle per run. Replace the fixed sleep with an adaptive strategy inside `fetch_batch()`: on a successful response, sleep 1 second; on a 429 response, parse `Retry-After` from the response headers and sleep that duration; on a second consecutive 429, abort the run and notify admins. This preserves rate-limit safety while cutting idle time by ~66% under normal operating conditions.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, replace the fixed `await asyncio.sleep(3)` between batch iterations in `async_main()` with an adaptive wait. Refactor `fetch_batch()` to return a status alongside its results — success, rate_limited with a retry_after value, or error. In the batch loop, sleep 1 second on success; on rate_limited, sleep the returned `retry_after` duration (minimum 5 seconds); on a second consecutive rate_limited response, break the loop, queue an admin notification via `notify_admins_of_error()`, and return whatever partial results were already collected."*
+  </details>
 
 ---
 
