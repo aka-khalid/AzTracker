@@ -224,6 +224,13 @@ async function handleMessage(message, env, ctx) {
     const userLimit = limitRaw !== null ? parseInt(limitRaw) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
     const limitDisplay = isTargetAdmin ? "∞ (Unlimited)" : userLimit;
 
+    const approverId = await env.AZTRACKER_DB.get(`approved_by:${targetId}`);
+    let approverText = "Legacy / Auto-Migrated";
+    if (approverId) {
+      const { label } = await resolveUserProfile(env, approverId, ctx);
+      approverText = escapeHtml(label);
+    }
+
     let buttons = [];
     if (isRootAdmin) {
       if (!isTargetApproved) {
@@ -253,7 +260,7 @@ async function handleMessage(message, env, ctx) {
 
     if (buttons.length > 0) {
       const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
-      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
+      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
       await sendAppMessage(env, chatId, statusMsg, { inline_keyboard: buttons });
     }
     return;
@@ -428,6 +435,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
       }
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
+      await env.AZTRACKER_DB.put(`approved_by:${targetId}`, chatId);
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`);
@@ -490,6 +498,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
+      await env.AZTRACKER_DB.put(`approved_by:${targetId}`, chatId);
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
@@ -508,6 +517,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
       await env.AZTRACKER_DB.delete(`ui:${targetId}`);
       await env.AZTRACKER_DB.delete(`limit:${targetId}`);
+      await env.AZTRACKER_DB.delete(`approved_by:${targetId}`);
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
     }
@@ -619,6 +629,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const userLimit = limitRaw !== null ? parseInt(limitRaw) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
       const limitDisplay = isTargetAdmin ? "∞ (Unlimited)" : userLimit;
 
+      const approverId = await env.AZTRACKER_DB.get(`approved_by:${targetId}`);
+      let approverText = "Legacy / Auto-Migrated";
+      if (approverId) {
+        const { label } = await resolveUserProfile(env, approverId, ctx);
+        approverText = escapeHtml(label);
+      }
+
       let buttons = [];
       if (isRootAdmin) {
         if (!isTargetApproved) {
@@ -648,7 +665,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
 
       const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
-      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
+      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
       await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
     }
     else if (data.startsWith("set_limit_init_") && isAdmin) {
