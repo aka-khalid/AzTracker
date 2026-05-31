@@ -252,14 +252,13 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Goal:** Programmatically wire the Telegram API to the newly deployed Cloudflare Worker and run a full diagnostic probe.<br>
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
   </details>
-
-- [ ] **Automated Public Broadcast Mirror & Attribution Isolation**
+- [ ] **Omnichannel Alert Syndication & Attribution Isolation**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
-  **The Goal:** Segregate performance metrics between private user alerts and public broadcasts while introducing an automated, zero-friction channel for organic audience acquisition.<br>
-  **The Strategy:** Introduce an asynchronous execution hook into the core notification dispatch engine. Define a dedicated secondary tracking tag (`AMZN_ASSOCIATES_TAG_PUBLIC`) to completely isolate public broadcast analytics from private user traffic metrics. When a verified price drop clears the anti-flap validation layer, the engine will dual-route the payload: dispatching the standard personalized alert to targeted users via private DMs, and multi-casting a generalized variation using the public tag directly to a designated open channel. The public message template will seamlessly append a static markdown footer directing viewers back to the main bot username to request private tracking access.<br>
-  **🤖 AI Execution Prompt:** *"In the notification delivery engine, implement a dual-routing mechanism for verified price drops. Introduce a separate configuration variable for `AMZN_ASSOCIATES_TAG_PUBLIC` alongside the existing primary tracking tag. When an alert event is successfully processed, update the delivery workflow to asynchronously dispatch a secondary message payload to a designated public channel Chat ID utilizing the public tracking tag structure. Ensure the public broadcast template strips user-specific references and appends a static markdown footer prompting readers to interact with the primary bot for personalized tracking access."*
+  **The Goal:** Expand the notification engine to support public channel syndication while isolating marketing attribution metrics across different distribution nodes.<br>
+  **The Strategy:** Introduce a multi-cast event routing layer into the core delivery loop. Define a dedicated tracking variable (`AMZN_ASSOCIATES_TAG_PUBLIC`) to segregate public marketing analytics from core subscriber endpoint metrics. When a verified price drop clears the validation layer, the engine will dual-route the payload: broadcasting a public-facing variant to the primary discovery channel using the public tag, and sending synchronized transaction notifications to authorized subscriber endpoints. The public channel will utilize a standardized template featuring a discovery footer that directs users to the main bot interface for personalized endpoint configuration.<br>
+  **🤖 AI Execution Prompt:** *"In the notification delivery engine, implement a multi-cast routing mechanism for verified price drops. Introduce a separate configuration variable for `AMZN_ASSOCIATES_TAG_PUBLIC` to isolate public channel analytics. When an alert event is successfully validated, update the workflow to asynchronously dispatch a secondary message payload to a designated public channel utilizing this public tracking tag structure. Ensure the channel template is optimized for public viewing and includes a static markdown footer directing readers to the primary bot interface for on-demand subscriber endpoint setup."*
   </details>
 
 
@@ -274,14 +273,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region in Python rather than pooling all ASINs together."*
   </details>
 
-- [ ] **Omnichannel Alert Syndication & Attribution Isolation**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
 
-  **The Goal:** Expand the notification engine to support public channel syndication while isolating marketing attribution metrics across different distribution nodes.<br>
-  **The Strategy:** Introduce a multi-cast event routing layer into the core delivery loop. Define a dedicated tracking variable (`AMZN_ASSOCIATES_TAG_PUBLIC`) to segregate public marketing analytics from core subscriber endpoint metrics. When a verified price drop clears the validation layer, the engine will dual-route the payload: broadcasting a public-facing variant to the primary discovery channel using the public tag, and sending synchronized transaction notifications to authorized subscriber endpoints. The public channel will utilize a standardized template featuring a discovery footer that directs users to the main bot interface for personalized endpoint configuration.<br>
-  **🤖 AI Execution Prompt:** *"In the notification delivery engine, implement a multi-cast routing mechanism for verified price drops. Introduce a separate configuration variable for `AMZN_ASSOCIATES_TAG_PUBLIC` to isolate public channel analytics. When an alert event is successfully validated, update the workflow to asynchronously dispatch a secondary message payload to a designated public channel utilizing this public tracking tag structure. Ensure the channel template is optimized for public viewing and includes a static markdown footer directing readers to the primary bot interface for on-demand subscriber endpoint setup."*
-  </details>
 ---
 
 ## 🛑 Intentional Architectural Boundaries
