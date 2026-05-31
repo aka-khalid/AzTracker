@@ -32,6 +32,7 @@ These tests validate the `setup.py` automation suite, ensuring frictionless onbo
 | **TC-603** | Cloudflare KV Provisioning | Feed a mock Cloudflare REST API response containing `{"result": {"id": "mock_id_123"}}`. | The script correctly parses the ID and performs an in-place regex replacement of `id = "..."` inside `wrangler.toml`. |
 | **TC-604** | Worker Secret Injection | Run the Wrangler CLI execution wrapper module. | Verifies the script correctly issues `npx wrangler secret put` commands for all 6 required production variables. |
 | **TC-605** | Telegram Webhook & Gate | Trigger the final health probe sequence in `setup.py`. | Telegram responds with "Webhook was set". The setup script correctly queries `/scheduler/status` to verify worker instantiation. |
+| **TC-606** | Curated Broadcast Queue | Inject a mock array of 3 price drops into `QUEUE:PUBLIC_BROADCAST`. Trigger the 15-minute Cloudflare cron event natively via Wrangler. | The worker dispatches exactly one message (the highest percentage drop) using `AMZN_ASSOCIATES_TAG_PUBLIC`, and successfully flushes the `QUEUE:PUBLIC_BROADCAST` KV array to a length of 0. |
 
 ---
 
