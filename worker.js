@@ -1218,9 +1218,11 @@ async function handleScheduler(request, env, ctx) {
 }
 
 function buildHourlySlots() {
+  // Sliced into 12 buckets (5 minutes each)
   const bounds = [
-    [0, 7], [8, 15], [16, 22], [23, 29],
-    [30, 37], [38, 44], [45, 52], [53, 59]
+    [0, 4], [5, 9], [10, 14], [15, 19],
+    [20, 24], [25, 29], [30, 34], [35, 39],
+    [40, 44], [45, 49], [50, 54], [55, 59]
   ];
   
   const runMinutes = [];
@@ -1231,8 +1233,9 @@ function buildHourlySlots() {
 
     if (i > 0) {
       const prevRun = runMinutes[i - 1];
-      if (min - prevRun < 3) {
-        min = prevRun + 3;
+      // 2-minute safety buffer to prevent GH Actions concurrency collisions
+      if (min - prevRun < 2) {
+        min = prevRun + 2;
       }
     }
 
