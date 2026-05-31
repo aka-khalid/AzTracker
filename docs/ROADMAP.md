@@ -191,28 +191,32 @@ This document tracks the technical debt, security fortifications, feature expans
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Make `triggerWorkflow()` return structured status information so the scheduler can detect GitHub API outages.<br>
-  **The Strategy:** Refactor `triggerWorkflow()` to return the raw `Response` object. Wrap the fetch in a `try/catch` to handle DNS/Timeout failures and return a synthetic `{ ok: false, status: 0 }` object.
+  **The Strategy:** Refactor `triggerWorkflow()` to return the raw `Response` object. Wrap the fetch in a `try/catch` to handle DNS/Timeout failures and return a synthetic `{ ok: false, status: 0 }` object.<br>
+  **🤖 AI Execution Prompt:** *"Refactor the `triggerWorkflow()` function to return the raw `Response` object instead of throwing an error. Wrap the `fetch` call in a `try/catch` block to handle DNS or timeout failures, returning a synthetic `{ ok: false, status: 0 }` object in the catch block."*
   </details>
 - [ ] **Colo-Local Circuit Breaker (Open / Half-Open / Closed)**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Stop hammering a dead GitHub API during outages, naturally throttling via an Edge-based state machine.<br>
-  **The Strategy:** Utilize `caches.default` to create an `/_internal/circuit/open` flag. *Note: Because Cloudflare Cache is local to the specific datacenter, and cron-job.org routes through a consistent regional node, this acts as a perfect, zero-KV-read isolated circuit breaker.* It opens for 15 minutes upon a 5xx failure, probes once at the expiration (Half-Open), and fully closes upon a 2xx success.
+  **The Strategy:** Utilize `caches.default` to create an `/_internal/circuit/open` flag. *Note: Because Cloudflare Cache is local to the specific datacenter, and cron-job.org routes through a consistent regional node, this acts as a perfect, zero-KV-read isolated circuit breaker.* It opens for 15 minutes upon a 5xx failure, probes once at the expiration (Half-Open), and fully closes upon a 2xx success.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js` inside `handleScheduler()`, implement an Edge-based circuit breaker using `caches.default`. If `triggerWorkflow()` returns a 5xx status, write a synthetic cache response to `/_internal/circuit/open` with a 15-minute TTL. While this cache key exists, instantly reject incoming cron pings with HTTP 503. After expiration, allow one single 'Half-Open' probe; if successful (2xx), clear the circuit and resume normal operations."*
   </details>
 - [ ] **Instant Alert & Auto-Recovery Notifications**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Notify the Root Admin instantly when the system degrades, and confirm when it self-heals.<br>
-  **The Strategy:** Introduce an `/_internal/circuit/alerted` cache key with a 2-hour TTL to suppress spam. Fire a Telegram alert on the initial break, and fire a "✅ System Recovered" alert when a successful 2xx response clears the circuit block.
+  **The Strategy:** Introduce an `/_internal/circuit/alerted` cache key with a 2-hour TTL to suppress spam. Fire a Telegram alert on the initial break, and fire a "✅ System Recovered" alert when a successful 2xx response clears the circuit block.<br>
+  **🤖 AI Execution Prompt:** *"Extend the circuit breaker logic in `worker.js` to dispatch Telegram notifications to the Root Admins. When the circuit transitions to OPEN, check for an `/_internal/circuit/alerted` cache key. If absent, send a '🚨 GitHub Actions Outage' alert and set the alerted cache key with a 2-hour TTL. When the circuit successfully transitions from HALF-OPEN back to CLOSED, send a '✅ System Recovered' alert and delete the alerted cache key."*
   </details>
 - [ ] **Scheduler Status Endpoint (`/scheduler/status`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Provide a lightweight authenticated endpoint to query the current circuit state.<br>
-  **The Strategy:** Guarded by `x-scheduler-key`, this endpoint returns a JSON object containing the circuit status, the alerted flag, and the upcoming trigger slots for the hour, requiring absolutely zero KV reads to execute.
+  **The Strategy:** Guarded by `x-scheduler-key`, this endpoint returns a JSON object containing the circuit status, the alerted flag, and the upcoming trigger slots for the hour, requiring absolutely zero KV reads to execute.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js`, create a new route handler for `/scheduler/status` guarded by the `x-scheduler-key` header. It should return a JSON response containing the current circuit state (CLOSED, OPEN, or HALF-OPEN), the status of the `alerted` cache flag, and the array of calculated hourly trigger slots from `buildHourlySlots()`."*
   </details>
 
 ## ⚙️ Phase 6: Operational Tooling (Zero-Friction Deployment)
@@ -222,45 +226,49 @@ This document tracks the technical debt, security fortifications, feature expans
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Reduce the full deployment process to one terminal command that requests standard credentials and auto-generates cryptographic secrets.<br>
-  **The Strategy:** Create `setup.py`. Programmatically generate `.gitignore` first to prevent secret leakage. Auto-generate `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` as 32-character secure strings. Validate all manual inputs via regex and pass them through to the automated provisioning functions.
+  **The Strategy:** Create `setup.py`. Programmatically generate `.gitignore` first to prevent secret leakage. Auto-generate `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` as 32-character secure strings. Validate all manual inputs via regex and pass them through to the automated provisioning functions.<br>
+  **🤖 AI Execution Prompt:** *"Create a new Python script named `setup.py` in the project root. Programmatically generate a `.gitignore` file (including `.env` and `wrangler.toml`) as the absolute first step. Write functions to securely generate 32-character strings for `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` using the `secrets` module. Use regex to validate user inputs for Telegram IDs and Cloudflare strings."*
   </details>
 - [ ] **Cloudflare KV Namespace Auto-Creator**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Automatically provision the `AZTRACKER_DB` KV namespace and inject it into `wrangler.toml`.<br>
-  **The Strategy:** `POST` to the Cloudflare API to create the namespace. Parse the `result.id` from the response and use regex to overwrite the `id = "..."` line inside `wrangler.toml` in place.
+  **The Strategy:** `POST` to the Cloudflare API to create the namespace. Parse the `result.id` from the response and use regex to overwrite the `id = "..."` line inside `wrangler.toml` in place.<br>
+  **🤖 AI Execution Prompt:** *"In `setup.py`, create a function that executes a POST request to the Cloudflare API's KV namespace creation endpoint. Parse the `result.id` from the JSON response. Read the local `wrangler.toml` file and use regex to perform an in-place replacement of the `id = "..."` line within the `[[kv_namespaces]]` block."*
   </details>
 - [ ] **GitHub Repository Secrets Auto-Provisioner**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Push all repository secrets to GitHub programmatically using `PyNaCl` encryption.<br>
-  **The Strategy:** Fetch the repo's public key from the GitHub API. Encrypt each secret locally using `crypto_box_seal` and push them to the Actions Secrets endpoint.
+  **The Strategy:** Fetch the repo's public key from the GitHub API. Encrypt each secret locally using `crypto_box_seal` and push them to the Actions Secrets endpoint.<br>
+  **🤖 AI Execution Prompt:** *"In `setup.py`, implement a GitHub Actions Secrets provisioner using `PyNaCl`. First, fetch the repository's public key from the GitHub API. Then, encrypt each required secret locally using `nacl.public.SealedBox` and `crypto_box_seal`, and push the encrypted payloads to the GitHub repository secrets endpoint."*
   </details>
 - [ ] **Cloudflare Worker Secrets Auto-Injector**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Automate the injection of production secrets into the deployed Cloudflare Worker environment.<br>
-  **The Strategy:** Read the worker name from `wrangler.toml`. Poll the GitHub Actions API to ensure the worker deployment pipeline succeeds, then `PUT` the secrets directly into the Cloudflare Worker via their REST API.
+  **The Strategy:** Read the worker name from `wrangler.toml`. Poll the GitHub Actions API to ensure the worker deployment pipeline succeeds, then `PUT` the secrets directly into the Cloudflare Worker via their REST API.<br>
+  **🤖 AI Execution Prompt:** *"In `setup.py`, write a function that polls the GitHub Actions API to wait for the worker deployment pipeline to complete successfully. Once deployed, execute a sequence of PUT requests to the Cloudflare Workers REST API to inject the production secrets directly into the deployed edge environment."*
   </details>
 - [ ] **Telegram Webhook Auto-Registrar & Health Gate**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
   **The Goal:** Programmatically wire the Telegram API to the newly deployed Cloudflare Worker and run a full diagnostic probe.<br>
-  **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
+  **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).<br>
+  **🤖 AI Execution Prompt:** *"In `setup.py`, write a final diagnostic health gate function. It must dynamically resolve the `.workers.dev` subdomain, register the webhook with the Telegram API using the generated `secret_token`, and sequentially fire 4 HTTP probes: Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status."*
   </details>
-- [ ] **Omnichannel Alert Syndication & Attribution Isolation**
+- [ ] **Omnichannel Alert Syndication & Curated Broadcast Queue**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
-  **The Goal:** Expand the notification engine to support public channel syndication while isolating marketing attribution metrics across different distribution nodes.<br>
-  **The Strategy:** Introduce a multi-cast event routing layer into the core delivery loop. Define a dedicated tracking variable (`AMZN_ASSOCIATES_TAG_PUBLIC`) to segregate public marketing analytics from core subscriber endpoint metrics. When a verified price drop clears the validation layer, the engine will dual-route the payload: broadcasting a public-facing variant to the primary discovery channel using the public tag, and sending synchronized transaction notifications to authorized subscriber endpoints. The public channel will utilize a standardized template featuring a discovery footer that directs users to the main bot interface for personalized endpoint configuration.<br>
-  **🤖 AI Execution Prompt:** *"In the notification delivery engine, implement a multi-cast routing mechanism for verified price drops. Introduce a separate configuration variable for `AMZN_ASSOCIATES_TAG_PUBLIC` to isolate public channel analytics. When an alert event is successfully validated, update the workflow to asynchronously dispatch a secondary message payload to a designated public channel utilizing this public tracking tag structure. Ensure the channel template is optimized for public viewing and includes a static markdown footer directing readers to the primary bot interface for on-demand subscriber endpoint setup."*
+  **The Goal:** Establish an automated, premium public discovery channel while isolating marketing attribution metrics and maintaining zero-friction operations for the core engine.<br>
+  **The Strategy:** Implement a decoupled, asynchronous staging architecture to prevent main-loop blocking. The core Python delivery loop will push all verified price drop events to a centralized Cloudflare KV staging queue (`QUEUE:PUBLIC_BROADCAST`). A dedicated Cloudflare Worker cron trigger, operating on a 15-minute interval, will evaluate the queue, extract the single highest-value deal (based on drop percentage), broadcast it to the public discovery channel using a segregated tracking tag (`AMZN_ASSOCIATES_TAG_PUBLIC`), and flush the remaining queue to ensure a highly curated, non-spammy feed.<br>
+  **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to append verified price drops to a global KV staging queue (`QUEUE:PUBLIC_BROADCAST`). Create a new Cloudflare Worker scheduled event (15-minute cron) that reads this queue, selects the item with the highest price drop percentage, dispatches it to the public channel utilizing the `AMZN_ASSOCIATES_TAG_PUBLIC` tracking configuration, and flushes the queue."*
   </details>
-
 
 ## 🌍 Phase 7: Platform Expansion (Growth)
 
