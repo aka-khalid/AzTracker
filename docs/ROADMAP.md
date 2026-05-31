@@ -118,7 +118,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `price_tracker.py`, when evaluating a `(New)` price drop, check the historical `n` values from the `history_data` array. If the new price is lower than any previously recorded history point, dynamically inject a '🔥 ALL-TIME LOW' banner at the top of the Telegram alert payload."*
   </details>
 
-- [ ] **The "Stale Target" Auto-Pause**
+- [x] **The "Stale Target" Auto-Pause**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
