@@ -127,14 +127,6 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"Update `worker.js` to inject an `added_at` timestamp when `/settarget` is used. Then, in `price_tracker.py`, write a pre-evaluation filter: if an item has a target and is older than 90 days, remove it from the active API fetch pool, set `paused: true` in its KV dictionary, and queue a Telegram alert informing the user their stale target was retired."*
   </details>
 
-- [ ] **Silent Night Mode**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Prevent Telegram from buzzing users' phones at 3:00 AM for non-critical alerts.<br>
-  **The Strategy:** In `price_tracker.py`, check the `cairo_tz` current hour. If it is between 23 (11 PM) and 7 (7 AM), append `"disable_notification": True` to the JSON payload in `async_send_telegram`, *unless* it's a Target Met alert.<br>
-  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, extract the current hour from the `cairo_tz` datetime object. If the hour is >= 23 or <= 7, modify the `async_send_telegram` payload to include `"disable_notification": True`. However, if `is_target` is True, bypass this and always push the notification audibly."*
-  </details>
 
 ## 🔐 Phase 4: Identity Provisioning & Security Governance
 
@@ -264,3 +256,4 @@ This document tracks the technical debt, security fortifications, feature expans
 - **Multi-Button Product Dashboard:** Rejected. Stacking redundant Telegram inline buttons for every hidden merchant on the `/manage` dashboard creates extreme UI fatigue. Kept as clean, embedded HTML text links.
 - **Real-Time Database Garbage Collection:** Rejected. Implementing a paginated `.list()` sweep inside the per-minute Python engine exhausts Cloudflare's 1,000/day REST API free tier limits within hours. Hivemind sizing has been securely offloaded to the 4-hour GitHub Actions backup cron, and real-time GC is indefinitely suspended.
 - **Percentage-Based Target Pricing:** Rejected. Modifying the engine and database schema to calculate dynamic percentage drops (e.g., "Alert me at 20% off") introduces severe UX friction by requiring multi-step inputs, and bloats the Delta-Logger with anchor-price state management. The system strictly maintains a "Zero-Friction" fixed-price input philosophy.
+- **Silent Night Mode:** Rejected. Suppressing Telegram notifications during nighttime hours assumes universal user schedules and creates an unnecessary layer of backend timezone management. Users are responsible for managing their own device-level "Do Not Disturb" settings or muting the bot natively in Telegram.
