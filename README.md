@@ -1,4 +1,6 @@
 <div align="center">
+
+<img src="assets/logo.png" alt="AzTracker Logo" width="150">
   
 # 📉 AzTracker 
 ### The Serverless Amazon.eg Price Engine
@@ -12,7 +14,7 @@
 
 🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
 
-<img src="assets/StatsGraphDemo.jpg" alt="AzTracker Analytics Graph" width="350">
+<img src="assets/StatsGraphDemo.jpg" alt="AzTracker Analytics Graph" width="400">
 </div>
 
 ---
@@ -20,57 +22,34 @@
 ## 🚀 Key Engineering Achievements
 
 ### 🛡️ The Time-Based Hysteresis "Anti-Flap" Engine
-Amazon's PA-API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a static timestamp-driven Hysteresis buffer (2.5 hours for 3rd-party sellers, 1 hour for Amazon). It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam and completely neutralizing Cloudflare KV write-amplification loops.
+Amazon's PA-API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a static timestamp-driven Hysteresis buffer. It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam and completely neutralizing Cloudflare KV write-amplification loops.
 
 ### ⚛️ Atomic Two-Phase Commit (2PC) Synchronization
-To prevent TOCTOU (Time-Of-Check to Time-Of-Use) race conditions across the distributed Cloudflare KV edge network, the Python engine utilizes an atomic Two-Phase Commit. It executes webhooks synchronously, merges Telegram delivery locks with backend tracking resets into a single state array, and pushes the synchronized payload in one parallel execution to guarantee database consensus.
+To prevent TOCTOU (Time-Of-Check to Time-Of-Use) race conditions across the distributed Cloudflare KV edge network, the Python engine utilizes an atomic Two-Phase Commit. It executes webhooks synchronously, merges Telegram delivery locks with backend tracking resets into a single state array, and pushes the synchronized payload in one parallel execution.
 
 ### 📦 Smart Alternatives & Hidden Warehouse Deals
-AzTracker doesn't just track the Buy Box. It parses complex condition sub-schemas to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons (🛒 vs 📦) based on the exact condition of the targeted deal.
+AzTracker doesn't just track the Buy Box. It parses complex condition sub-schemas to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons based on the exact condition of the targeted deal.
 
 ### 📉 Delta-Only Time-Series Logging
-Storing **192** identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts. 
-* Limits array sizes to the last 150 price changes (up to ~3 years of historical fluctuations).
-* Keeps historical payloads under **4.6 KB**, guaranteeing sub-10ms read times at the edge.
+Storing identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts, keeping historical payloads under **4.6 KB** to guarantee sub-10ms read times at the edge.
 
 ### 📊 Edge-Rendered Mini App Analytics
-Instead of rendering static images or text ledgers, AzTracker intercepts Telegram's Native Web App triggers. The Cloudflare Worker acts as a web server, instantly rendering a beautiful, interactive `Chart.js` price graph that matches the user's native Telegram Dark/Light theme, seamlessly handling `null` gaps for officially Out-of-Stock periods.
+AzTracker intercepts Telegram's Native Web App triggers and acts as a web server, instantly rendering a beautiful, interactive `Chart.js` price graph. It native calculates All-Time Highs, All-Time Lows, and Averages on the client side, seamlessly matching the user's native Telegram Dark/Light theme.
 
 ### 🎲 Dynamic Jitter Scheduling
-To prevent fixed-minute execution patterns (and subsequent API rate-limiting), the Cloudflare Worker intercepts a per-minute cron ping and generates randomized execution slots (`randInt`) inside each hour. It uses Cloudflare's in-memory Cache API as a distributed lock to dispatch the GitHub Actions engine unpredictably, mimicking natural human traffic.
-
----
-
-## 🛠️ Architecture Pipeline
-
-```mermaid
-graph TD;
-    User([📱 User Drops Amazon Link]) --> Worker[⚡ Cloudflare Worker Edge Node];
-    Worker --> KV[(☁️ CF KV: User Registry)];
-    Cron[⏱️ cron-job.org Ping] --> Worker;
-    Worker -- Random Jitter Lock --> GH[⚙️ GitHub Actions Engine];
-    GH -- Pulls Active Tracking List --> KV;
-    GH -- Deduplicated Batch Query --> PAAPI[🛒 Amazon Creators API];
-    PAAPI -- Live Prices --> GH;
-    GH -- Dual Hysteresis Verification --> GH;
-    GH -- Delta-Only Logging --> KV_Hist[(☁️ CF KV: Global History)];
-    GH -- Context-Aware Alert Routing --> TG[📲 Telegram Push Notification];
-    GH -- Atomic 2PC Lock Sync --> KV;
-    GH_Backup[⏱️ GitHub Native Cron] -- 4-Hour Schedule --> KV_Backups[(☁️ CF KV: Auto-Backups)];
-```
+To prevent fixed-minute execution patterns (and subsequent API rate-limiting), the Cloudflare Worker intercepts a per-minute cron ping and generates randomized execution slots inside each hour. It uses Cloudflare's in-memory Cache API as a distributed lock to dispatch the GitHub Actions engine unpredictably.
 
 ---
 
 ## ✨ System Features
 
-* 👥 **Multi-Tenant VIP Access:** Isolated tracking databases for approved users.
-* 🛡️ **Role-Based Admin Panel:** Built-in ChatOps approval system to manage guests, revoke access, or promote admins entirely through inline buttons, protected by stateless confirmation gates.
-* 🎯 **Strict Boolean Target Locks:** Users set specific budgets. The engine features zero-spam target locks—alerting exactly once upon matching the target price and remaining silent until the price rebounds or sells out.
-* 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request. Batches of 10 items are sent simultaneously to deeply optimize API limits.
-* 📱 **Mobile Deep-Link Extraction:** Automatically resolves `amzn.to` and `amzn.eu` short links shared directly from the Amazon mobile app.
-* 🚨 **Automated Crash Reporting:** Fatal workflow exceptions push full tracebacks directly to Root Admins via Telegram.
-* ⚡ **Edge-Cached Authorization:** Leverages Cloudflare's in-memory `caches.default` API with synthetic internal routing to heavily minimize KV read quota consumption during ChatOps interactions.
-* 🎛️ **Granular Resource Quotas:** Global environment-driven tracking limits with individual admin overrides. Features a "Grandfather Clause" to safely govern capacity limits without causing destructive data loss.
+* 👥 **Automated Join Queue:** Built-in ChatOps approval pipeline to manage guests safely, protected against "Thundering Herd" race conditions with a strict 25-item depth limit and 7-day TTL.
+* 🕵️ **Web App SIEM Ledger:** A forensic audit log tracking all root administrative actions, secured by cryptographic HMAC-SHA256 URL tokens.
+* 🌍 **Dynamic Geofencing:** Automatically parses incoming links and hard-rejects non-supported regions (locking the database securely to `amazon.eg`).
+* 🎯 **Strict Boolean Target Locks:** Users set specific budgets. The engine features zero-spam target locks—alerting exactly once upon matching the target price.
+* 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request.
+* ⚡ **Edge-Cached Authorization:** Leverages Cloudflare's in-memory `caches.default` API with synthetic internal routing to heavily minimize KV read quota consumption during UI interactions.
+* 🎛️ **Granular Resource Quotas:** Global environment-driven tracking limits with individual admin overrides. 
 
 ---
 
@@ -78,9 +57,9 @@ graph TD;
 
 AzTracker relies on a fully automated GitOps pipeline. 
 
-1. **The Edge Node:** `worker.js` handles all UI rendering, routing, user authorization, Web App serving, and the randomized scheduler logic. It is deployed to Cloudflare via GitHub Actions upon any push to `main`.
-2. **The Processing Engine:** `price_tracker.py` wakes up via a `repository_dispatch`, handles the heavy multi-tenant array processing, performs the Amazon API batch requests, executes the Hysteresis validation, and dispatches Telegram alerts. 
-3. **The Database:** A single Cloudflare KV namespace (`AZTRACKER_DB`) acts as the state manager, execution lock, user registry, and global price history ledger.
+1. **The Edge Node:** `worker.js` handles all UI rendering, routing, user authorization, Web App serving, and the randomized scheduler logic. Deployed via Actions to Cloudflare.
+2. **The Processing Engine:** `price_tracker.py` wakes up via a `repository_dispatch`, handles the heavy multi-tenant array processing, and dispatches Telegram alerts. 
+3. **The Database:** A single Cloudflare KV namespace acts as the state manager, user registry, and global price history ledger.
 
 *(See the [Deployment Guide](docs/DEPLOYMENT.md) for full step-by-step setup and quick-start instructions).*
 
