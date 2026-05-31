@@ -7,6 +7,8 @@ const GITHUB_BRANCH = "main";
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 const ALT_SELLER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const QUEUE_MAX_DEPTH = 25;
 
 
 export default {
