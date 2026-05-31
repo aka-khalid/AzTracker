@@ -100,7 +100,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `worker.js`, locate the `Chart.js` configuration inside `renderChartHTML`. I need to make two updates to the Used dataset. First, change its `label` from 'Used (EGP)' to 'Lowest Used Offer (EGP)'. Second, replace the hardcoded `pointRadius` logic with a dynamic function: `pointRadius: function(ctx) { const index = ctx.dataIndex; const data = ctx.dataset.data; if (data[index] === null) return 0; const prev = index > 0 ? data[index - 1] : null; const next = index < data.length - 1 ? data[index + 1] : null; return (prev === null || next === null) ? 4 : 0; }`. Ensure `spanGaps` remains `false`."*
   </details>
 
-- [ ] **Chart Analytics UI (ATH, ATL, Avg)**
+- [x] **Chart Analytics UI (ATH, ATL, Avg)**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
