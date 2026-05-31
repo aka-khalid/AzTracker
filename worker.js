@@ -194,7 +194,7 @@ async function handleMessage(message, env, ctx) {
   }
 
   const isNumericId = /^\d{6,15}$/.test(text);
-  const isAmazonLink = text.includes("amazon.eg") || text.includes("amzn.to") || text.includes("amzn.eu");
+  const isAmazonLink = text.includes("amazon.") || text.includes("amzn.");
 
   if (isNumericId || isAmazonLink) {
     await deleteTelegramMessage(env, chatId, messageId);
@@ -255,6 +255,18 @@ async function handleMessage(message, env, ctx) {
     const tempMessageId = sentMsg.result.message_id;
 
     const expandedUrl = await expandAmazonUrl(inputUrl);
+    
+    const domainMatch = expandedUrl.match(/https?:\/\/(?:www\.)?(amazon\.[a-z\.]+)/i);
+    const productDomain = domainMatch ? domainMatch[1].toLowerCase() : null;
+    const SUPPORTED_REGIONS = ['amazon.eg'];
+
+    if (!productDomain || !SUPPORTED_REGIONS.includes(productDomain)) {
+      await editTelegramMessage(env, chatId, tempMessageId, `❌ <b>Region Not Supported</b>\n\nCurrently, AzTracker only supports <code>amazon.eg</code>.`, {
+        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      });
+      return;
+    }
+
     const pid = getAsinFromUrl(expandedUrl);
     
     if (!pid) {
@@ -263,7 +275,7 @@ async function handleMessage(message, env, ctx) {
       });
       return;
     }
-
+    
     const userDbKey = `user:${chatId}:products`;
     const limitKey = `limit:${chatId}`;
 
@@ -304,7 +316,7 @@ async function handleMessage(message, env, ctx) {
     }
 
     const extractedName = extractNameFromUrl(expandedUrl);
-    products.push({ url: `https://www.amazon.eg/dp/${pid}`, paused: false, name: extractedName });
+    products.push({ url: `https://www.amazon.eg/dp/${pid}`, paused: false, name: extractedName, region: productDomain });
     await env.AZTRACKER_DB.put(userDbKey, JSON.stringify(products));
 
     const title = extractedName ? extractedName : pid;
