@@ -1634,12 +1634,57 @@ function renderChartHTML(asin, exp, sig) {
         .loading { text-align: center; margin-top: 50px; font-size: 16px; opacity: 0.7; }
         .header-title { margin-bottom: 5px; text-align: center; font-weight: 600; font-size: 20px; }
         .header-sub { font-size: 14px; opacity: 0.7; margin-bottom: 20px; text-align: center; }
+        .metrics-container {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 600px;
+            margin-top: 15px;
+            gap: 10px;
+        }
+        .metric-card {
+            flex: 1;
+            background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            padding: 12px 5px;
+            border-radius: 8px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .metric-title {
+            font-size: 11px;
+            opacity: 0.7;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .metric-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--tg-theme-text-color, #000000);
+        }
     </style>
 </head>
 <body>
     <div class="header-title">Price Trend</div>
     <div class="header-sub">ASIN: ${asin}</div>
     
+    <div id="metrics-container" class="metrics-container" style="display: none;">
+        <div class="metric-card">
+            <div class="metric-title">All-Time High</div>
+            <div id="metric-ath" class="metric-value">--</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-title">Average</div>
+            <div id="metric-avg" class="metric-value">--</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-title">All-Time Low</div>
+            <div id="metric-atl" class="metric-value">--</div>
+        </div>
+    </div>
+
     <div id="chart-container">
         <div id="loading" class="loading">Fetching database...</div>
         <canvas id="priceChart" style="display: none;"></canvas>
@@ -1689,6 +1734,18 @@ function renderChartHTML(asin, exp, sig) {
                 // Normalizes legacy {"p": X} formats into the new structure on the fly
                 const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
                 const usedPrices = data.map(point => point.u !== undefined ? point.u : null);
+
+                const validPrices = newPrices.filter(p => p !== null);
+                if (validPrices.length > 0) {
+                    const ath = Math.max(...validPrices);
+                    const atl = Math.min(...validPrices);
+                    const avg = Math.round(validPrices.reduce((sum, val) => sum + val, 0) / validPrices.length);
+                    
+                    document.getElementById('metric-ath').innerText = ath.toLocaleString() + ' EGP';
+                    document.getElementById('metric-atl').innerText = atl.toLocaleString() + ' EGP';
+                    document.getElementById('metric-avg').innerText = avg.toLocaleString() + ' EGP';
+                    document.getElementById('metrics-container').style.display = 'flex';
+                }
 
                 const ctx = document.getElementById('priceChart').getContext('2d');
                 
