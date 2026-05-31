@@ -177,6 +177,7 @@ async function handleMessage(message, env, ctx) {
     const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
     if (pIndex !== -1) {
       products[pIndex].target_price = num;
+      products[pIndex].added_at = Date.now();
       products[pIndex].alert_sent = false; 
       products[pIndex].alert_sent_new = false; 
       products[pIndex].alert_sent_used = false; 
@@ -690,6 +691,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const pIndex = products.findIndex(p => getAsinFromUrl(p.url) === pid);
       if (pIndex !== -1) {
         delete products[pIndex].target_price;
+        delete products[pIndex].added_at;
         delete products[pIndex].alert_sent; 
         delete products[pIndex].alert_sent_new; 
         delete products[pIndex].alert_sent_used; 
