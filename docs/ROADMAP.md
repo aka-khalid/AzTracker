@@ -253,6 +253,16 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
   </details>
 
+- [ ] **Automated Public Broadcast Mirror & Attribution Isolation**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Segregate performance metrics between private user alerts and public broadcasts while introducing an automated, zero-friction channel for organic audience acquisition.<br>
+  **The Strategy:** Introduce an asynchronous execution hook into the core notification dispatch engine. Define a dedicated secondary tracking tag (`AMZN_ASSOCIATES_TAG_PUBLIC`) to completely isolate public broadcast analytics from private user traffic metrics. When a verified price drop clears the anti-flap validation layer, the engine will dual-route the payload: dispatching the standard personalized alert to targeted users via private DMs, and multi-casting a generalized variation using the public tag directly to a designated open channel. The public message template will seamlessly append a static markdown footer directing viewers back to the main bot username to request private tracking access.<br>
+  **🤖 AI Execution Prompt:** *"In the notification delivery engine, implement a dual-routing mechanism for verified price drops. Introduce a separate configuration variable for `AMZN_ASSOCIATES_TAG_PUBLIC` alongside the existing primary tracking tag. When an alert event is successfully processed, update the delivery workflow to asynchronously dispatch a secondary message payload to a designated public channel Chat ID utilizing the public tracking tag structure. Ensure the public broadcast template strips user-specific references and appends a static markdown footer prompting readers to interact with the primary bot for personalized tracking access."*
+  </details>
+
+
 ## 🌍 Phase 7: Platform Expansion (Growth)
 
 - [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
