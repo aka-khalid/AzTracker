@@ -41,6 +41,25 @@ To prevent fixed-minute execution patterns (and subsequent API rate-limiting), t
 
 ---
 
+## 🛠️ Architecture Pipeline
+
+```mermaid
+graph TD;
+    User([📱 User Drops Amazon Link]) --> Worker[⚡ Cloudflare Worker Edge Node];
+    Worker --> KV[(☁️ CF KV: User Registry)];
+    Cron[⏱️ cron-job.org Ping] --> Worker;
+    Worker -- Random Jitter Lock --> GH[⚙️ GitHub Actions Engine];
+    GH -- Pulls Active Tracking List --> KV;
+    GH -- Deduplicated Batch Query --> PAAPI[🛒 Amazon Creators API];
+    PAAPI -- Live Prices --> GH;
+    GH -- Dual Hysteresis Verification --> GH;
+    GH -- Delta-Only Logging --> KV_Hist[(☁️ CF KV: Global History)];
+    GH -- Context-Aware Alert Routing --> TG[📲 Telegram Push Notification];
+    GH -- Atomic 2PC Lock Sync --> KV;
+    GH_Backup[⏱️ GitHub Native Cron] -- 4-Hour Schedule --> KV_Backups[(☁️ CF KV: Auto-Backups)];
+```
+
+---
 ## ✨ System Features
 
 * 👥 **Automated Join Queue:** Built-in ChatOps approval pipeline to manage guests safely, protected against "Thundering Herd" race conditions with a strict 25-item depth limit and 7-day TTL.
