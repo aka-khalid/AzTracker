@@ -166,19 +166,8 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `worker.js`, create a helper `logAudit(env, adminId, action, target)`. It must write an atomic key `audit:{Date.now()}:{adminId}` with the JSON payload and a 7-day TTL. Then, create a new Web App route `/audit` and an API route `/api/audit` secured by HMAC signature. The API route executes `env.AZTRACKER_DB.list({ prefix: 'audit:' })`, fetches the keys, and returns the sorted JSON to the Web App to render a color-coded HTML table."*
   </details>
 
-## 🌍 Phase 5: Platform Expansion (Growth)
-
-- [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Scale the bot beyond Egypt using the foundation built in Phase 4.<br>
-  **The Strategy:** Leverage the `productDomain` extraction implemented in the Phase 4 Geofence update. Inject `region: productDomain` into the `user:{chat_id}:products` KV array when a product is added. Move the `AMZN_ASSOCIATES_TAG` and `Country` hardcodes out of the global scope in Python. Dynamically group `fetch_batch` execution queues by region in `price_tracker.py` rather than pooling all ASINs universally together to prevent endpoint collisions.<br>
-  **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region in Python rather than pooling all ASINs together."*
-  </details>
-
-  
-## ⚙️ Phase 6: Operational Tooling (Zero-Friction Deployment)
+ 
+## ⚙️ Phase 5: Operational Tooling (Zero-Friction Deployment)
 
 - [ ] **Interactive One-Command Setup Script (`setup.py`)**
   <details>
@@ -216,7 +205,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
   </details>
 
-## 🔁 Phase 7: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
+## 🔁 Phase 6: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
 
 - [ ] **GitHub Actions Health Detection in `triggerWorkflow()`**
   <details>
@@ -247,6 +236,17 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Guarded by `x-scheduler-key`, this endpoint returns a JSON object containing the circuit status, the alerted flag, and the upcoming trigger slots for the hour, requiring absolutely zero KV reads to execute.
   </details>
 
+## 🌍 Phase 7: Platform Expansion (Growth)
+
+- [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Scale the bot beyond Egypt using the foundation built in Phase 4.<br>
+  **The Strategy:** Leverage the `productDomain` extraction implemented in the Phase 4 Geofence update. Inject `region: productDomain` into the `user:{chat_id}:products` KV array when a product is added. Move the `AMZN_ASSOCIATES_TAG` and `Country` hardcodes out of the global scope in Python. Dynamically group `fetch_batch` execution queues by region in `price_tracker.py` rather than pooling all ASINs universally together to prevent endpoint collisions.<br>
+  **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region in Python rather than pooling all ASINs together."*
+  </details>
+  
 ---
 
 ## 🛑 Intentional Architectural Boundaries
