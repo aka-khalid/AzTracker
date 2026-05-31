@@ -148,6 +148,15 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"Update `worker.js` to handle unauthorized `/start` commands with an inline 'Request Access' button. When clicked, append their ID to a `queue:pending` KV array and send a notification to all Admin IDs. Modify the approval callback so that when an Admin clicks 'Approve', it verifies the ID in the queue, removes it, executes the approval, and edits the original Admin notification message to say '✅ Approved by [Admin Name]'."*
   </details>
 
+- [ ] **Pending Request TTL & Queue Depth Gate**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Prevent `queue:pending` from accumulating stale, abandoned join requests indefinitely when admins miss or ignore a notification.<br>
+  **The Strategy:** Store join requests as objects `{ id, requested_at }` instead of raw ID strings. When rendering the admin pending list, filter out any entry where `Date.now() - requested_at` exceeds 7 days — no  companion keys, no extra KV reads, zero quota cost. Simultaneously, enforce a max-depth of 25: before appending a new request, check the array length and return a user-facing "Access queue is currently full, please try again in 24 hours" message if the limit is reached, preventing unbounded growth under any load condition.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js`, update the Join Queue logic. When a user clicks 'Request Access', instead of pushing their raw `chat_id` to `queue:pending`, push the object `{ id: chatId, requested_at: Date.now() }`. Before appending, read the current array and (1) filter out entries older than 7 days, (2) check if the filtered length is 25 or more and return a friendly Telegram error if so. Update the admin pending-list renderer to read from `entry.id` instead of the raw string, and display a human-readable relative timestamp (e.g. 'Requested 3 days ago') next to each entry using the `requested_at` field."*
+  </details>
+  
 - [x] **Object-Level IAM Metadata (Creator Tags)**
   <details>
   <summary><b>View Execution Brief</b></summary>
@@ -166,6 +175,14 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `worker.js`, create a helper `logAudit(env, adminId, action, target)`. It must write an atomic key `audit:{Date.now()}:{adminId}` with the JSON payload and a 7-day TTL. Then, create a new Web App route `/audit` and an API route `/api/audit` secured by HMAC signature. The API route executes `env.AZTRACKER_DB.list({ prefix: 'audit:' })`, fetches the keys, and returns the sorted JSON to the Web App to render a color-coded HTML table."*
   </details>
 
+- [ ] **Force Price Check Audit Logging**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Capture manual GitHub Actions dispatches in the audit trail to enable correlation between on-demand price checks and unexpected Amazon API quota spikes.<br>
+  **The Strategy:** Each manual "Force Price Check" button press dispatches a GitHub Actions run and consumes API quota ahead of the normal schedule. Call the existing `logAudit(env, adminId, action, target)` helper immediately after a successful `triggerWorkflow()` response, with `action: 'FORCE_CHECK'` and `target: 'price_tracker.yml'`. No schema changes required — the existing audit key format and SIEM renderer handle it automatically.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js`, locate the callback handler that calls `triggerWorkflow()` for a manual force price check. Immediately after confirming a successful dispatch response, add a call to `logAudit(env, adminId, 'FORCE_CHECK', 'price_tracker.yml')`. Ensure this only fires on success so failed dispatch attempts are not logged as completed actions."*
+  </details>
 
 ## 🔁 Phase 5: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
 
@@ -246,7 +263,16 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Leverage the `productDomain` extraction implemented in the Phase 4 Geofence update. Inject `region: productDomain` into the `user:{chat_id}:products` KV array when a product is added. Move the `AMZN_ASSOCIATES_TAG` and `Country` hardcodes out of the global scope in Python. Dynamically group `fetch_batch` execution queues by region in `price_tracker.py` rather than pooling all ASINs universally together to prevent endpoint collisions.<br>
   **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region in Python rather than pooling all ASINs together."*
   </details>
-  
+
+- [ ] **Adaptive Inter-Batch Backoff**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Replace the fixed 3-second sleep between Amazon API batch 
+  requests with a dynamic wait that responds to actual rate-limit signals, reducing idle time under normal load while remaining resilient under quota pressure.<br>
+  **The Strategy:** The current `await asyncio.sleep(3)` between batches is a conservative fixed guard. As Phase 7 grows the active ASIN pool across multiple regions, this compounds: 45 batches at the 450-item ceiling already produce 132 seconds of idle per run. Replace the fixed sleep with an adaptive strategy inside `fetch_batch()`: on a successful response, sleep 1 second; on a 429 response, parse `Retry-After` from the response headers and sleep that duration; on a second consecutive 429, abort the run and notify admins. This preserves rate-limit safety while cutting idle time by ~66% under normal operating conditions.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py`, replace the fixed `await asyncio.sleep(3)` between batch iterations in `async_main()` with an adaptive wait. Refactor `fetch_batch()` to return a status alongside its results — success, rate_limited with a retry_after value, or error. In the batch loop, sleep 1 second on success; on rate_limited, sleep the returned `retry_after` duration (minimum 5 seconds); on a second consecutive rate_limited response, break the loop, queue an admin notification via `notify_admins_of_error()`, and return whatever partial results were already collected."*
+  </details>
 ---
 
 ## 🛑 Intentional Architectural Boundaries
