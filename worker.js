@@ -595,21 +595,31 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       await sendTelegram(env, targetId, welcomeMessage);
       
+      // ... existing code in worker.js (line 415) ...
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Manually approved"));
     }
     else if (data.startsWith("revoke_") && isAdmin) {
       const targetId = data.replace("revoke_", "");
-      if (rootAdmins.includes(targetId) || admins.includes(targetId)) return;
+      
+      // Security Boundary 1: Prevent revoking immutable Root Admins
+      if (rootAdmins.includes(targetId)) return;
+      
+      // Security Boundary 2: Standard Admins cannot revoke other Admins
+      if (admins.includes(targetId) && !isRootAdmin) return;
+
+      // If a Root Admin is revoking an Admin directly, clean the admin array
+      if (admins.includes(targetId)) {
+        const updatedAdmins = admins.filter(id => id !== targetId);
+        await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
+      }
       
       const updatedUsers = approvedUsers.filter(id => id !== targetId);
       await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
       await env.AZTRACKER_DB.delete(`auth:${targetId}`);
       
       await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
-      await env.AZTRACKER_DB.delete(`ui:${targetId}`);
-      await env.AZTRACKER_DB.delete(`limit:${targetId}`);
-      await env.AZTRACKER_DB.delete(`approved_by:${targetId}`);
+// ... existing code in worker.js (line 432) ...
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
       
