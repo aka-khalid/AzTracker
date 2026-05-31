@@ -1,8 +1,7 @@
 <div align="center">
 
 <img src="assets/logo.png" alt="AzTracker Logo" width="150">
-  
-# 📉 AzTracker 
+
 ### The Serverless Amazon.eg Price Engine
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
