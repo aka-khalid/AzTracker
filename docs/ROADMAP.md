@@ -166,8 +166,39 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `worker.js`, create a helper `logAudit(env, adminId, action, target)`. It must write an atomic key `audit:{Date.now()}:{adminId}` with the JSON payload and a 7-day TTL. Then, create a new Web App route `/audit` and an API route `/api/audit` secured by HMAC signature. The API route executes `env.AZTRACKER_DB.list({ prefix: 'audit:' })`, fetches the keys, and returns the sorted JSON to the Web App to render a color-coded HTML table."*
   </details>
 
- 
-## ⚙️ Phase 5: Operational Tooling (Zero-Friction Deployment)
+
+## 🔁 Phase 5: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
+
+- [ ] **GitHub Actions Health Detection in `triggerWorkflow()`**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Make `triggerWorkflow()` return structured status information so the scheduler can detect GitHub API outages.<br>
+  **The Strategy:** Refactor `triggerWorkflow()` to return the raw `Response` object. Wrap the fetch in a `try/catch` to handle DNS/Timeout failures and return a synthetic `{ ok: false, status: 0 }` object.
+  </details>
+- [ ] **Colo-Local Circuit Breaker (Open / Half-Open / Closed)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Stop hammering a dead GitHub API during outages, naturally throttling via an Edge-based state machine.<br>
+  **The Strategy:** Utilize `caches.default` to create an `/_internal/circuit/open` flag. *Note: Because Cloudflare Cache is local to the specific datacenter, and cron-job.org routes through a consistent regional node, this acts as a perfect, zero-KV-read isolated circuit breaker.* It opens for 15 minutes upon a 5xx failure, probes once at the expiration (Half-Open), and fully closes upon a 2xx success.
+  </details>
+- [ ] **Instant Alert & Auto-Recovery Notifications**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Notify the Root Admin instantly when the system degrades, and confirm when it self-heals.<br>
+  **The Strategy:** Introduce an `/_internal/circuit/alerted` cache key with a 2-hour TTL to suppress spam. Fire a Telegram alert on the initial break, and fire a "✅ System Recovered" alert when a successful 2xx response clears the circuit block.
+  </details>
+- [ ] **Scheduler Status Endpoint (`/scheduler/status`)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Provide a lightweight authenticated endpoint to query the current circuit state.<br>
+  **The Strategy:** Guarded by `x-scheduler-key`, this endpoint returns a JSON object containing the circuit status, the alerted flag, and the upcoming trigger slots for the hour, requiring absolutely zero KV reads to execute.
+  </details>
+
+## ⚙️ Phase 6: Operational Tooling (Zero-Friction Deployment)
 
 - [ ] **Interactive One-Command Setup Script (`setup.py`)**
   <details>
@@ -203,37 +234,6 @@ This document tracks the technical debt, security fortifications, feature expans
 
   **The Goal:** Programmatically wire the Telegram API to the newly deployed Cloudflare Worker and run a full diagnostic probe.<br>
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
-  </details>
-
-## 🔁 Phase 6: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
-
-- [ ] **GitHub Actions Health Detection in `triggerWorkflow()`**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-
-  **The Goal:** Make `triggerWorkflow()` return structured status information so the scheduler can detect GitHub API outages.<br>
-  **The Strategy:** Refactor `triggerWorkflow()` to return the raw `Response` object. Wrap the fetch in a `try/catch` to handle DNS/Timeout failures and return a synthetic `{ ok: false, status: 0 }` object.
-  </details>
-- [ ] **Colo-Local Circuit Breaker (Open / Half-Open / Closed)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-
-  **The Goal:** Stop hammering a dead GitHub API during outages, naturally throttling via an Edge-based state machine.<br>
-  **The Strategy:** Utilize `caches.default` to create an `/_internal/circuit/open` flag. *Note: Because Cloudflare Cache is local to the specific datacenter, and cron-job.org routes through a consistent regional node, this acts as a perfect, zero-KV-read isolated circuit breaker.* It opens for 15 minutes upon a 5xx failure, probes once at the expiration (Half-Open), and fully closes upon a 2xx success.
-  </details>
-- [ ] **Instant Alert & Auto-Recovery Notifications**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-
-  **The Goal:** Notify the Root Admin instantly when the system degrades, and confirm when it self-heals.<br>
-  **The Strategy:** Introduce an `/_internal/circuit/alerted` cache key with a 2-hour TTL to suppress spam. Fire a Telegram alert on the initial break, and fire a "✅ System Recovered" alert when a successful 2xx response clears the circuit block.
-  </details>
-- [ ] **Scheduler Status Endpoint (`/scheduler/status`)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-
-  **The Goal:** Provide a lightweight authenticated endpoint to query the current circuit state.<br>
-  **The Strategy:** Guarded by `x-scheduler-key`, this endpoint returns a JSON object containing the circuit status, the alerted flag, and the upcoming trigger slots for the hour, requiring absolutely zero KV reads to execute.
   </details>
 
 ## 🌍 Phase 7: Platform Expansion (Growth)
