@@ -148,7 +148,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"Update `worker.js` to handle unauthorized `/start` commands with an inline 'Request Access' button. When clicked, append their ID to a `queue:pending` KV array and send a notification to all Admin IDs. Modify the approval callback so that when an Admin clicks 'Approve', it verifies the ID in the queue, removes it, executes the approval, and edits the original Admin notification message to say '✅ Approved by [Admin Name]'."*
   </details>
 
-- [ ] **Pending Request TTL & Queue Depth Gate**
+- [x] **Pending Request TTL & Queue Depth Gate**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
