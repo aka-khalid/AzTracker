@@ -87,15 +87,17 @@ The Cloudflare Worker needs permission to trigger your Python script on GitHub A
 
 ---
 
-## Phase 5: Cloudflare Worker Deployment
+## Phase 5: Cloudflare Worker Deployment & Quota Limits
 
 1. Open `wrangler.toml` in your repository.
 2. Update the `kv_namespaces` section with your actual ID from Phase 2.
-3. Update the `[vars]` block with your exact GitHub Username and Repository name:
-   ```toml
+3. **Configure Quotas:** Update the `[vars]` block with your exact GitHub Username, Repository name, and your desired tracking limits:
+```toml
    [vars]
    GITHUB_OWNER = "aka-khalid"
    GITHUB_REPO = "aztracker"
+   DEFAULT_USER_PRODUCT_LIMIT = "5" # How many items standard users can track
+   GLOBAL_POOL_LIMIT = "450"        # The absolute maximum ASINs the system will query
    ```
 4. Push these changes to your `main` branch on GitHub.
 5. **The Deployment:** Your GitHub Action (`deploy_worker.yml`) should automatically run and deploy the `worker.js` to Cloudflare. 
@@ -132,7 +134,7 @@ We use an external cron job to ping the Worker, which then decides if it's time 
 1. Go to [cron-job.org](https://cron-job.org) and create a free account.
 2. Click **Create Cronjob**.
 3. **Title:** `AzTracker Engine Ping`
-4. **URL:** `<YOUR_WORKER_URL>/scheduler` (e.g., `https://aztracker-bot...workers.dev/scheduler`)
+4. **URL:** `<YOUR_WORKER_URL>/scheduler`
 5. **Execution schedule:** `Every 1 minute`
 6. Click the **Advanced** tab:
    * Request Method: `GET`
@@ -143,9 +145,10 @@ We use an external cron job to ping the Worker, which then decides if it's time 
 
 ---
 
-## 🎉 Phase 8: System Boot
+## 🎉 Phase 8: System Boot & Administration
 
 1. Open Telegram and navigate to your bot.
 2. Send `/start`. 
 3. Because your Telegram ID matches the `TELEGRAM_ROOT_ADMIN_IDS` in GitHub, the Worker will recognize you as the owner and grant you the **👑 Admin Panel** dashboard. 
-4. Paste an Amazon.eg link in the chat to begin tracking!
+4. **The Security Ledger:** Click on the `Admin Panel`, then click `🕵️ Security Audit Log`. This opens an HMAC-secured Telegram Mini App that acts as a forensic ledger for all critical state changes within the system.
+5. Paste an Amazon.eg link in the chat to begin tracking!
