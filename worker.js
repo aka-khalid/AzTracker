@@ -881,6 +881,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           await editTelegramMessage(env, chatId, messageId, "✅ <b>Workflow successfully triggered!</b>\nChecks are running in the background.", {
             inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
           });
+          
+          // AUDIT LOG
+          ctx.waitUntil(logAudit(env, chatId, "FORCE_CHECK", "price_tracker.yml", "Initiated manual GitHub Actions workflow dispatch"));
         }
       } catch (error) {
         await editTelegramMessage(env, chatId, messageId, `❌ <b>GitHub API Error:</b>\n<code>${error.message}</code>`, {
