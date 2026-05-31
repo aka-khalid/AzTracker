@@ -357,6 +357,8 @@ async def async_main():
             
         users_data = {}
         unique_asins = set()
+        dirty_users = set()
+        outbox = []
 
         fetch_tasks = [bounded_get_kv(f"{cf_base_url}/values/{k['name']}") for k in user_keys]
         fetched_results = await asyncio.gather(*fetch_tasks)
@@ -370,7 +372,34 @@ async def async_main():
                         url = p.get("url")
                         if url:
                             asin = get_product_id(url)
-                            if asin: unique_asins.add(asin)
+                            if asin: 
+                                target_price = p.get("target_price")
+                                if target_price is not None:
+                                    added_at = p.get("added_at")
+                                    if not added_at:
+                                        p["added_at"] = unix_now_ms
+                                        dirty_users.add(chat_id)
+                                    elif (unix_now_ms - added_at) > 7776000000:
+                                        p["paused"] = True
+                                        dirty_users.add(chat_id)
+                                        safe_name = html.escape(truncate_name(p.get("name", "Unknown Product")))
+                                        msg = (
+                                            f"⏳ <b>STALE TARGET RETIRED</b>\n\n"
+                                            f"📦 <b>{safe_name}</b>\n"
+                                            f"└ 🆔 <code>{asin}</code>\n\n"
+                                            f"Your target price of <b>{target_price:,.2f} EGP</b> has been active for over 90 days without being met.\n\n"
+                                            f"<i>To conserve system resources, tracking for this item has been automatically paused. You can resume it from your dashboard anytime.</i>"
+                                        )
+                                        outbox.append({
+                                            "chat_id": chat_id,
+                                            "product_id": asin,
+                                            "target_price": None,
+                                            "lock_keys": [],
+                                            "text": msg,
+                                            "markup": None
+                                        })
+                                        continue
+                                unique_asins.add(asin)
 
         if not unique_asins: return
         active_products = [{"asin": a} for a in unique_asins]
@@ -646,9 +675,6 @@ async def async_main():
                 }
 
         # 4. Evaluate prices & route personalized notifications
-        dirty_users = set()
-        outbox = []
-
         for chat_id, products in users_data.items():
             for p in products:
                 if p.get("paused", False): continue
