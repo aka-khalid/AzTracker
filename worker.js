@@ -437,10 +437,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (targetId !== chatId) return; 
 
       let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-      if (!queue.includes(chatId)) {
-        queue.push(chatId);
-        await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      
+      if (queue.includes(chatId)) {
+        await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
+        return; // SEVERS THE BROADCAST LOOP FOR DUPLICATE CLICKS
       }
+
+      queue.push(chatId);
+      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
 
       await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
 
