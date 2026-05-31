@@ -109,7 +109,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"I am modifying the `/chart` Web App HTML template inside `worker.js`. Write client-side JavaScript to iterate through the injected `historyData` array. Calculate the All-Time High, All-Time Low, and Average for the `n` (New) prices. Provide the CSS and HTML to display these as three clean, modern metric cards above the canvas."*
   </details>
 
-- [ ] **All-Time Low (ATL) Intelligence**
+- [x] **All-Time Low (ATL) Intelligence**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
