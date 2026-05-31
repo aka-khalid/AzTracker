@@ -31,7 +31,7 @@ To prevent TOCTOU (Time-Of-Check to Time-Of-Use) race conditions across the dist
 AzTracker doesn't just track the Buy Box. It parses complex condition sub-schemas to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons based on the exact condition of the targeted deal.
 
 ### 📉 Delta-Only Time-Series Logging
-Storing identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts, keeping historical payloads under **4.6 KB** to guarantee sub-10ms read times at the edge.
+Storing identical price checks a day per product would destroy KV performance. AzTracker implements a "Delta-Logger" that strictly writes to the database *only* when a price shifts. Furthermore, the engine enforces a strict 150-point rolling cap on historical arrays, keeping historical payloads under **4.6 KB** to guarantee sub-10ms read times at the edge.
 
 ### 📊 Edge-Rendered Mini App Analytics
 AzTracker intercepts Telegram's Native Web App triggers and acts as a web server, instantly rendering a beautiful, interactive `Chart.js` price graph. It native calculates All-Time Highs, All-Time Lows, and Averages on the client side, seamlessly matching the user's native Telegram Dark/Light theme.
