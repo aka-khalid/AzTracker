@@ -87,8 +87,8 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## 📊 Phase 3: The User Experience (Resilience & Analytics)
 
-- [x] **Anti-Flap Hysteresis Engine:** Built a 16-run holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
-- [x] **Restock & Out-of-Stock Tracking:** Modified engine to declare OOS only after 16 misses, triggering highly accurate `🚨 RESTOCK ALERT` notifications.
+- [x] **Anti-Flap Hysteresis Engine:** Built a 2.5-hour static timestamp holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
+- [x] **Restock & Out-of-Stock Tracking:** Modified engine to declare OOS only after a strict 2.5-hour continuous absence, triggering highly accurate `🚨 RESTOCK ALERT` notifications.
 - [x] **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
 - [x] **Destructive Action Confirmations:** Added stateless edge-routed confirmation gates for Revoke, Demote, Promote, and Clear Target actions to prevent fat-finger accidents.
 - [x] **The Invisible Flash Deal UI Bug (`worker.js`)**
@@ -144,7 +144,7 @@ This document tracks the technical debt, security fortifications, feature expans
   <summary><b>View Execution Brief</b></summary>
   
   **The Goal:** Eliminate manual ID hand-offs and build a scalable join-request pipeline.<br>
-  **The Strategy:** Introduce a `queue:pending` KV array. Unapproved users hitting `/start` receive a "Request Access" button which pushes their ID to the array. This fires a push notification to Admins. To prevent the "Thundering Herd" race condition, the Admin approval callback must verify the ID is still in the queue, execute the approval, and instantly edit the notification message text to "Request Handled" so other Admins cannot click a stale button.<br>
+  **The Strategy:** Introduce a `global:join_queue` KV array. Unapproved users hitting `/start` receive a "Request Access" button which pushes their ID to the array. This fires a push notification to Admins. To prevent the "Thundering Herd" race condition, the Admin approval callback must verify the ID is still in the queue, execute the approval, and instantly edit the notification message text to "Request Handled" so other Admins cannot click a stale button.<br>
   **🤖 AI Execution Prompt:** *"Update `worker.js` to handle unauthorized `/start` commands with an inline 'Request Access' button. When clicked, append their ID to a `queue:pending` KV array and send a notification to all Admin IDs. Modify the approval callback so that when an Admin clicks 'Approve', it verifies the ID in the queue, removes it, executes the approval, and edits the original Admin notification message to say '✅ Approved by [Admin Name]'."*
   </details>
 
