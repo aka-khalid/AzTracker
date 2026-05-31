@@ -63,6 +63,51 @@ export default {
       });
     }
 
+    // --- SIEM AUDIT ENDPOINTS ---
+    if (url.pathname === "/audit" && request.method === "GET") {
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      
+      if (!exp || !sig || Date.now() > parseInt(exp)) {
+        return new Response("Unauthorized or Expired Token", { status: 401 });
+      }
+      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
+      if (sig !== expectedSig) {
+        return new Response("Invalid Signature", { status: 401 });
+      }
+
+      const html = renderAuditHTML(exp, sig);
+      return new Response(html, {
+        status: 200,
+        headers: { "Content-Type": "text/html;charset=UTF-8" }
+      });
+    }
+
+    if (url.pathname === "/api/audit" && request.method === "GET") {
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      
+      if (!exp || !sig || Date.now() > parseInt(exp)) return new Response("Unauthorized", { status: 401 });
+      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
+      if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
+
+      const listRes = await env.AZTRACKER_DB.list({ prefix: "audit:" });
+      const logs = [];
+      for (const key of listRes.keys) {
+        const parts = key.name.split(":");
+        const ts = parseInt(parts[1]);
+        const adminId = parts[2];
+        const data = await env.AZTRACKER_DB.get(key.name, "json");
+        if(data) logs.push({ ts, adminId, ...data });
+      }
+      logs.sort((a, b) => b.ts - a.ts); 
+      return new Response(JSON.stringify(logs), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    // ---------------------------
+
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
     if (env.TELEGRAM_WEBHOOK_SECRET) {
@@ -147,6 +192,10 @@ async function handleMessage(message, env, ctx) {
     await editTelegramMessage(env, chatId, sentMsg.result.message_id, `✅ <b>Broadcast Complete!</b>\nDelivered to ${successCount} user(s).`, {
       inline_keyboard: [[{ text: "⬅️ Back to Admin Panel", callback_data: "admin_panel" }]]
     });
+    
+    // AUDIT LOG
+    ctx.waitUntil(logAudit(env, chatId, "BROADCAST", "ALL_USERS", `Sent broadcast to ${successCount} users`));
+    
     return;
   }
   
@@ -170,6 +219,10 @@ async function handleMessage(message, env, ctx) {
       await sendAppMessage(env, chatId, `✅ <b>Limit Updated!</b>\n\nUser <code>${targetId}</code> can now track up to <b>${newLimit}</b> items.`, {
         inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]]
       });
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "SET_LIMIT", targetId, `Changed item tracking limit to ${newLimit}`));
+
       return;
     }
 
@@ -419,6 +472,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been denied access by ${escapeHtml(adminName)}.`);
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Rejected via Join Queue"));
     }
     else if (data.startsWith("queueApprove_") && isAdmin) {
       const targetId = data.replace("queueApprove_", "");
@@ -444,6 +500,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
       
       await sendTelegram(env, targetId, welcomeMessage);
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Approved via Join Queue"));
     }
     else if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
@@ -489,6 +548,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("reject_", "");
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been explicitly denied access.`);
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Manually rejected access"));
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
@@ -505,6 +566,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
       
       await sendTelegram(env, targetId, welcomeMessage);
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Manually approved"));
     }
     else if (data.startsWith("revoke_") && isAdmin) {
       const targetId = data.replace("revoke_", "");
@@ -520,6 +584,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await env.AZTRACKER_DB.delete(`approved_by:${targetId}`);
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "REVOKE_USER", targetId, "Revoked access and purged profile"));
     }
     else if (data.startsWith("promote_") && isRootAdmin) {
       const targetId = data.replace("promote_", "");
@@ -539,6 +606,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_users" }]]
       });
       await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "PROMOTE_ADMIN", targetId, "Elevated to full Admin privileges"));
     }
     else if (data.startsWith("demote_") && isRootAdmin) {
       const targetId = data.replace("demote_", "");
@@ -555,6 +625,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard tracking access tier.`, {
         inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_users" }]]
       });
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "DEMOTE_ADMIN", targetId, "Demoted to standard tracking access"));
     }
     else if (data === "main_menu") {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
@@ -598,6 +671,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       if (isRootAdmin) {
         adminButtons.push([{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }]);
+        // AUDIT LOG SIEM INJECTION
+        const exp = Date.now() + (2 * 60 * 60 * 1000);
+        const sig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
+        adminButtons.push([{ text: "🕵️ Security Audit Log", web_app: { url: `${baseUrl}/audit?exp=${exp}&sig=${sig}` } }]);
       }
       
       adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
@@ -708,6 +785,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
       }
       await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins);
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "FORCE_TOGGLE", pid, `Toggled tracking status for user ${targetId}`));
     }
     else if (data.startsWith("confirmDel_")) {
       const pid = data.replace("confirmDel_", "");
@@ -747,6 +827,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
         inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
       });
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "FORCE_DELETE_PRODUCT", pid, `Forcefully removed ASIN from user ${targetId}`));
     }
     else if (data === "global_track" && isAdmin) {
       const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
@@ -1710,6 +1793,18 @@ async function fetchLastWorkflowRun(env) {
   return null;
 }
 
+async function logAudit(env, adminId, action, target, details) {
+  try {
+    const timestamp = Date.now();
+    const key = `audit:${timestamp}:${adminId}`;
+    const payload = { action, target, details };
+    // Exact 7-day TTL ensures automatic GC
+    await env.AZTRACKER_DB.put(key, JSON.stringify(payload), { expirationTtl: 604800 });
+  } catch (e) {
+    console.error("Audit log failed to write:", e);
+  }
+}
+
 // ── Web App HTML Renderer ───────────────────────────────────────────────────
 
 function renderChartHTML(asin, exp, sig) {
@@ -1943,6 +2038,123 @@ function renderChartHTML(asin, exp, sig) {
         }
         
         loadData();
+    </script>
+</body>
+</html>
+  `;
+}
+
+function renderAuditHTML(exp, sig) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Security Audit Log</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            margin: 0;
+            padding: 20px 10px;
+        }
+        .header-title { text-align: center; font-weight: 600; font-size: 20px; margin-bottom: 5px; }
+        .header-sub { text-align: center; font-size: 14px; opacity: 0.7; margin-bottom: 25px; }
+        .loading { text-align: center; margin-top: 50px; font-size: 16px; opacity: 0.7; }
+        
+        .audit-card {
+            background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .audit-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 12px;
+            opacity: 0.8;
+            border-bottom: 1px solid var(--tg-theme-hint-color, #ccc);
+            padding-bottom: 5px;
+        }
+        .audit-action {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--tg-theme-button-color, #2481cc);
+            margin-bottom: 5px;
+        }
+        .audit-row {
+            display: flex;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        .audit-label { font-weight: 600; width: 65px; opacity: 0.8; }
+        .audit-data { flex: 1; word-break: break-all; }
+        .empty-state { text-align: center; padding: 30px; opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <div class="header-title">Security Audit Log</div>
+    <div class="header-sub">7-Day Rolling Retention</div>
+    
+    <div id="loading" class="loading">Compiling forensic ledger...</div>
+    <div id="audit-container"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand(); 
+        tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
+
+        async function loadAudit() {
+            try {
+                const response = await fetch('/api/audit?exp=${exp}&sig=${sig}');
+                if (!response.ok) throw new Error('Auth failed');
+                const logs = await response.json();
+                
+                document.getElementById('loading').style.display = 'none';
+                const container = document.getElementById('audit-container');
+                
+                if (logs.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No administrative actions logged in the past 7 days.</div>';
+                    return;
+                }
+
+                logs.forEach(log => {
+                    const date = new Date(log.ts);
+                    const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' + 
+                                  date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                    
+                    const card = document.createElement('div');
+                    card.className = 'audit-card';
+                    card.innerHTML = \`
+                        <div class="audit-header">
+                            <span>🕒 \${timeStr}</span>
+                            <span>ID: \${log.adminId}</span>
+                        </div>
+                        <div class="audit-action">\${log.action}</div>
+                        <div class="audit-row">
+                            <span class="audit-label">Target:</span>
+                            <span class="audit-data"><code>\${log.target}</code></span>
+                        </div>
+                        <div class="audit-row">
+                            <span class="audit-label">Details:</span>
+                            <span class="audit-data">\${log.details}</span>
+                        </div>
+                    \`;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                document.getElementById('loading').innerText = 'Failed to compile audit logs. Invalid or expired token.';
+            }
+        }
+        
+        loadAudit();
     </script>
 </body>
 </html>
