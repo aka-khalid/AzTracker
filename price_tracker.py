@@ -582,10 +582,20 @@ async def async_main():
             new_changed = c_new_price != last_new_price
             used_changed = c_used_price != last_used_price
 
+            is_atl_new = False
+
             if new_changed or used_changed:
                 hist_url = f"{cf_base_url}/values/history:{asin}"
                 history_data = await bounded_get_kv(hist_url) or []
                 if not isinstance(history_data, list): history_data = []
+
+                if new_changed and c_new_price is not None and len(history_data) > 0:
+                    valid_n = [pt.get("n") for pt in history_data if pt.get("n") is not None]
+                    if valid_n:
+                        hist_min = min(valid_n)
+                        if c_new_price < hist_min:
+                            is_atl_new = True
+
                 history_data.append({"n": c_new_price, "u": c_used_price, "t": unix_now})
                 history_data = history_data[-150:]
                 # Cloudflare Bulk requires the value to be a stringified JSON
@@ -631,7 +641,8 @@ async def async_main():
                     "name": name,
                     "last_updated": unix_now_ms,
                     "mia_since_ms": None,
-                    "delisted": False
+                    "delisted": False,
+                    "is_atl_new": is_atl_new
                 }
 
         # 4. Evaluate prices & route personalized notifications
@@ -697,8 +708,9 @@ async def async_main():
                 last_new_price = last_entry.get("new_price")
                 last_used_price = last_entry.get("used_price")
                 target_price = p.get("target_price")
+                is_atl_new = latest_state.get("is_atl_new", False)
                                     
-                def queue_alert(cond_label, price, last_price, seller, mid, is_target, alert_key):
+                def queue_alert(cond_label, price, last_price, seller, mid, is_target, alert_key, is_atl=False):
                     base_url = f"https://www.amazon.eg/dp/{product_id}"
                     
                     primary_mid = AMAZON_RESALE_MERCHANT_ID if "(Used" in cond_label else mid
@@ -747,12 +759,13 @@ async def async_main():
                         alert_alts.extend(historical_links)
 
                     final_smart_alts = ("\n\n" + "\n".join(alert_alts)) if alert_alts else ""
+                    atl_banner = "🔥 <b>ALL-TIME LOW</b>\n\n" if is_atl else ""
                     
                     if is_target:
                         diff = (last_price - price) if last_price else 0
                         down_text = f" (Down {diff:,.2f} EGP)" if diff > 0 else ""
                         msg = (
-                            f"🎯 <b>TARGET MET! {cond_label}</b>\n\n"
+                            f"{atl_banner}🎯 <b>TARGET MET! {cond_label}</b>\n\n"
                             f"📦 <b>{safe_name}</b>\n"
                             f"└ 🆔 <code>{product_id}</code>\n\n"
                             f"💰 <b>Current Price:</b> {price:,.2f} EGP\n"
@@ -764,7 +777,7 @@ async def async_main():
                     else:
                         if last_price is None:
                             msg = (
-                                f"🚨 <b>RESTOCK ALERT {cond_label}</b>\n\n"
+                                f"{atl_banner}🚨 <b>RESTOCK ALERT {cond_label}</b>\n\n"
                                 f"📦 <b>{safe_name}</b>\n"
                                 f"└ 🆔 <code>{product_id}</code>\n\n"
                                 f"💰 <b>Price:</b> {price:,.2f} EGP\n"
@@ -776,7 +789,7 @@ async def async_main():
                             diff = last_price - price
                             pct = (diff / last_price * 100) if last_price else 0
                             msg = (
-                                f"🚨 <b>PRICE DROP ALERT {cond_label}</b>\n\n"
+                                f"{atl_banner}🚨 <b>PRICE DROP ALERT {cond_label}</b>\n\n"
                                 f"📦 <b>{safe_name}</b>\n"
                                 f"└ 🆔 <code>{product_id}</code>\n\n"
                                 f"💰 <b>New Price:</b> {price:,.2f} EGP\n"
@@ -807,13 +820,13 @@ async def async_main():
                             
                     if target_price:
                         if new_price <= target_price and not p.get("alert_sent_new", False):
-                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new")
+                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, True, "alert_sent_new", is_atl=is_atl_new)
                             
                     else: 
                         if last_new_price is None and not is_initial_scan:
-                            target_alert = queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new")
+                            target_alert = queue_alert("(New - Restocked)", new_price, None, new_seller, new_mid, False, "alert_sent_new", is_atl=False)
                         elif last_new_price is not None and new_price < last_new_price:
-                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new")
+                            target_alert = queue_alert("(New)", new_price, last_new_price, new_seller, new_mid, False, "alert_sent_new", is_atl=is_atl_new)
                             
                 else: 
                     if p.get("alert_sent_new", False):
