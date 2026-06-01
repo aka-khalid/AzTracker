@@ -270,6 +270,35 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to evaluate the single best deal (highest drop percentage >= 15% or ATH drop) synchronously within the main Python execution loop. Broadcast this item directly to the public channel utilizing the `AMZN_ASSOCIATES_TAG_PUBLIC` configuration, entirely bypassing KV staging arrays to preserve edge database quotas."*
   </details>
 
+## 🏗️ Phase 6.5: The Great Migration (Oracle Cloud Architecture Pivot)
+
+**The Goal:** Transition the AzTracker engine from Cloudflare's serverless edge to a persistent Oracle Cloud Always-Free ARM instance. This replaces strict KV quotas with infinite local database writes and establishes a predictable, zero-latency execution environment.
+
+### (a) Infrastructure & Ingress (The Foundation)
+* **Docker Compose:** The entire stack will be containerized via `docker-compose.yml` to guarantee zero-friction deployments and automatic recovery upon VM reboots.
+* **Caddy / Traefik Reverse Proxy:** Replacing Cloudflare's automatic SSL edge. A lightweight reverse proxy container will sit in front of the application, automatically provisioning and renewing Let's Encrypt SSL certificates (a strict requirement for Telegram Webhooks).
+* **Network Security Gate:** The Oracle Virtual Cloud Network (VCN) Security Lists must be explicitly locked down to expose only ports `80` and `443`.
+
+### (b) The Database Layer (Redis)
+* **1:1 Schema Translation:** Transition from Cloudflare KV REST calls to the `redis-py` async client. The namespace schema (`user:{id}:products`, `global:stats`) remains completely unchanged.
+* **AOF Persistence:** The Redis container will be configured with `appendonly yes` and `appendfsync everysec`. This guarantees that the in-memory speed does not compromise data integrity if the Oracle VM halts.
+* **Local Backups:** A local bash script will snapshot the Redis `dump.rdb` file every 4 hours, replacing the GitHub Actions backup pipeline.
+
+### (c) Application Refactoring (FastAPI)
+* **The Unified Container:** `worker.js` is deprecated. The Telegram webhook router, Authorization gates, and Chart.js HTML rendering will be completely rewritten into a Python **FastAPI** application (`api.py`).
+* **The Background Engine:** The `price_tracker.py` engine will no longer run as an isolated script triggered by GitHub Actions. It will be refactored as an `asyncio.create_task()` background loop running alongside the FastAPI worker, utilizing an adaptive `asyncio.sleep()` for pacing.
+* **Profile Cache Continuity:** The FastAPI routing layer must implement a native memory cache (e.g., `cachetools` or standard dictionaries) to mirror Cloudflare's `caches.default`. This guarantees that Telegram profiles and user names remain fully rendered in the administration UI, rather than degrading into raw, unreadable User IDs.
+
+### (d) The Migration Execution (Zero-Downtime Pipeline)
+1. **Provisioning:** Deploy the Oracle ARM VM, install Docker, and spin up the Caddy/Redis/FastAPI containers.
+2. **State Export:** Write a temporary extraction script to paginate through Cloudflare KV and download the entire production database to a single `export.json` file.
+3. **State Import:** Write an ingestion script on the Oracle VM to parse `export.json` and inject all keys/values natively into the Redis container.
+4. **The Cutover:** Update the Telegram Webhook via the `setWebhook` API to point from the `*.workers.dev` URL to the new Oracle domain name.
+5. **The Decommission:** Once execution logs confirm the FastAPI server is intercepting Telegram updates and the async engine is pacing correctly, delete the Cloudflare Worker and KV Namespace.
+
+### (e) The Oracle "Always-Free" Reclaim Shield
+* **The Heartbeat Service:** Oracle routinely terminates inactive VMs. A background task will be added to the FastAPI engine to perform a burst of CPU-intensive matrix calculations (or database vacuuming) for 60 seconds every 12 hours. This artificially elevates the CPU and memory footprint just enough to bypass Oracle's "idle instance" reclamation algorithms.
+
 ## 🌍 Phase 7: Platform Expansion (Growth)
 
 - [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
