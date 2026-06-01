@@ -12,6 +12,7 @@
 > A highly scalable, multi-tenant price tracking architecture built on Cloudflare KV and GitHub Actions. It features an interactive ChatOps UI, dual-hysteresis anti-flap protection, and a crowdsourced "Hivemind" pricing database.
 
 🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
+📢 **Live Demo (Public Deals Channel):** [@AzTrackerr](https://t.me/AzTrackerr)
 
 <img src="assets/StatsGraphDemo.jpg" alt="AzTracker Analytics Graph" width="400">
 </div>
@@ -92,7 +93,6 @@ To enable this for your own deployment:
 1. Ensure your bot is added to your public channel as an Administrator with "Post Messages" permission.
 2. Go to your repository's **Settings > Secrets and variables > Actions**.
 3. Add a new secret named `TELEGRAM_PUBLIC_CHANNEL_ID` and set its value to your channel's handle (e.g., `@AzTrackerr`).
-4. (Recommended) Set `AMZN_ASSOCIATES_TAG` to a unified tag that blends your private and public traffic for compliance.
 
 If the `TELEGRAM_PUBLIC_CHANNEL_ID` secret is absent, the engine simply skips the broadcast logic and functions purely as a private tracker.
 
