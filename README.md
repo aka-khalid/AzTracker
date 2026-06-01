@@ -78,6 +78,7 @@ AzTracker relies on a fully automated GitOps pipeline.
 1. **The Edge Node:** `worker.js` handles all UI rendering, routing, user authorization, Web App serving, and the randomized scheduler logic. Deployed via Actions to Cloudflare.
 2. **The Processing Engine:** `price_tracker.py` wakes up via a `repository_dispatch`, handles the heavy multi-tenant array processing, and dispatches Telegram alerts. 
 3. **The Database:** A single Cloudflare KV namespace acts as the state manager, user registry, and global price history ledger.
+4. **The Provisioner:** `setup.py` acts as a local zero-friction deployment tool. It dynamically parses cloud environments, executes PyNaCl asymmetric cryptography to inject GitHub secrets, provisions the Cloudflare KV REST API, and wires the Telegram webhook automatically.
 
 *(See the [Deployment Guide](docs/DEPLOYMENT.md) for full step-by-step setup and quick-start instructions).*
 
