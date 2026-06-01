@@ -23,6 +23,7 @@ from amazon_creatorsapi.models import GetItemsResource, Condition
 # ── Config (from GitHub Secrets) ─────────────────────────────────────────────
 TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ALLOWED_USERS      = os.environ.get("TELEGRAM_ROOT_ADMIN_IDS", "")
+TELEGRAM_PUBLIC_CHANNEL_ID = os.environ.get("TELEGRAM_PUBLIC_CHANNEL_ID", "")
 AMAZON_ACCESS_KEY  = os.environ.get("AMZN_CREATORS_ACCESS_KEY", "")
 AMAZON_SECRET_KEY  = os.environ.get("AMZN_CREATORS_SECRET_KEY", "")
 AMAZON_PARTNER_TAG = os.environ.get("AMZN_ASSOCIATES_TAG", "")
@@ -879,6 +880,61 @@ async def async_main():
                 if p.get("name") != name:
                     p["name"] = name
                     dirty_users.add(chat_id)
+
+        # 📡 4.5. The Omnichannel Broadcast (Curated Deal Selection)
+        if TELEGRAM_PUBLIC_CHANNEL_ID:
+            best_deal = None
+            max_drop_pct = 0
+            
+            for asin, state in updates.items():
+                if state.get("delisted") or state.get("mia_since_ms"): continue
+                
+                new_price = state.get("new_price")
+                last_entry = global_prices.get(asin, {})
+                last_price = last_entry.get("new_price")
+                
+                if new_price and last_price and new_price < last_price:
+                    drop_pct = ((last_price - new_price) / last_price) * 100
+                    
+                    if drop_pct >= 15.0 or state.get("is_atl_new"):
+                        if drop_pct > max_drop_pct:
+                            max_drop_pct = drop_pct
+                            best_deal = {
+                                "asin": asin,
+                                "name": state.get("name", "Unknown Product"),
+                                "price": new_price,
+                                "last_price": last_price,
+                                "drop_pct": drop_pct,
+                                "is_atl": state.get("is_atl_new", False)
+                            }
+            
+            if best_deal:
+                safe_name = html.escape(truncate_name(best_deal["name"]))
+                drop_pct_str = f"{best_deal['drop_pct']:.0f}%"
+                
+                header = f"🔥 <b>ALL-TIME LOW (-{drop_pct_str})</b>" if best_deal["is_atl"] else f"🚨 <b>PRICE DROP (-{drop_pct_str})</b>"
+                
+                base_url = f"https://www.amazon.eg/dp/{best_deal['asin']}"
+                q_params = {} if not AMAZON_PARTNER_TAG else {"tag": AMAZON_PARTNER_TAG}
+                broadcast_url = f"{base_url}?{urlencode(q_params)}" if q_params else base_url
+                
+                broadcast_msg = (
+                    f"{header}\n\n"
+                    f"<b>{safe_name}</b>\n\n"
+                    f"💵 <b>{best_deal['price']:,.2f} EGP</b> <i>(was {best_deal['last_price']:,.0f})</i>\n\n"
+                    f"👉 <b><a href=\"{broadcast_url}\">Click here to grab the deal</a></b>\n"
+                    f"〰️〰️〰️〰️〰️〰️〰️〰️\n"
+                    f"🤖 <i>Want to track your own Amazon prices? Try our bot: @AzTrackerr_bot</i>"
+                )
+                
+                outbox.append({
+                    "chat_id": TELEGRAM_PUBLIC_CHANNEL_ID,
+                    "product_id": best_deal["asin"],
+                    "target_price": None,
+                    "lock_keys": [], 
+                    "text": broadcast_msg,
+                    "markup": {"inline_keyboard": [[{"text": "🛒 View on Amazon", "url": broadcast_url}]]}
+                })
 
         # 5. Execute Webhooks & Unified Two-Phase Commit (2PC) Sync
         delivered_locks = {}
