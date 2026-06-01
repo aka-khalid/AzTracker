@@ -269,7 +269,6 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Implement a synchronous, in-loop evaluation integrated directly into the primary execution cycle. The engine isolates the highest-value deal within the current jitter batch and broadcasts it directly to the public discovery channel using a segregated tracking tag (`AMZN_ASSOCIATES_TAG_PUBLIC`). Trigger conditions are strictly bound to All-Time High (ATH) drop detection or a `>= 15%` price drop. This approach intentionally bypasses decoupled KV staging arrays to optimize Read/Write quotas and completely eliminate worker cron complexity.<br>
   **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to evaluate the single best deal (highest drop percentage >= 15% or ATH drop) synchronously within the main Python execution loop. Broadcast this item directly to the public channel utilizing the `AMZN_ASSOCIATES_TAG_PUBLIC` configuration, entirely bypassing KV staging arrays to preserve edge database quotas."*
   </details>
-
 ## 🏗️ Phase 6.5: The Great Migration (Oracle Cloud Architecture Pivot)
 
 **The Goal:** Transition the AzTracker engine from Cloudflare's serverless edge to a persistent Oracle Cloud Always-Free ARM instance. This replaces strict KV quotas with infinite local database writes and establishes a predictable, zero-latency execution environment.
