@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - feature/randomized-scheduler
+      - feature/phase-5-circuit-breaker
     paths:
       - 'worker.js'
       - 'wrangler.toml'
