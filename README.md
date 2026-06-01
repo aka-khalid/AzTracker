@@ -105,8 +105,8 @@ Engineered and maintained by **Khalid Ibrahim**, built upon core cloud infrastru
 Special thanks to **[Abdelrahman Elkhayat](https://www.facebook.com/bodaa.elkhayat)** for generously providing the Amazon Creators API credentials that power the core tracking engine.
 
 Built with assistance from:
-* [Claude](https://claude.ai) by Anthropic
 * [Gemini](https://gemini.google.com) by Google
+* [Claude](https://claude.ai) by Anthropic
 * [ChatGPT](https://chatgpt.com) by OpenAI
 
 ---
