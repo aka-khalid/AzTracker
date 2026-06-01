@@ -84,6 +84,20 @@ AzTracker relies on a fully automated GitOps pipeline.
 
 ---
 
+## 📡 Advanced Feature: Omnichannel Broadcast (Optional)
+
+AzTracker includes a hidden, opt-in feature to automatically run a public Deals Channel. The engine can evaluate every tracked item, isolate the absolute highest drops (15%+ or All-Time Lows), and automatically publish them to a public Telegram channel using a separate, blended affiliate tag.
+
+To enable this for your own deployment:
+1. Ensure your bot is added to your public channel as an Administrator with "Post Messages" permission.
+2. Go to your repository's **Settings > Secrets and variables > Actions**.
+3. Add a new secret named `TELEGRAM_PUBLIC_CHANNEL_ID` and set its value to your channel's handle (e.g., `@AzTrackerr`).
+4. (Recommended) Set `AMZN_ASSOCIATES_TAG` to a unified tag that blends your private and public traffic for compliance.
+
+If the `TELEGRAM_PUBLIC_CHANNEL_ID` secret is absent, the engine simply skips the broadcast logic and functions purely as a private tracker.
+
+---
+
 ## 👨‍💻 Architect & Acknowledgements
 
 Engineered and maintained by **Khalid Ibrahim**, built upon core cloud infrastructure and system architecture principles.
