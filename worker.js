@@ -1672,7 +1672,7 @@ async function resolveUserProfile(env, id, ctx) {
   const cached = await cache.match(cacheReq);
   if (cached) {
     const data = await cached.json();
-    return { id, label: data.label };
+    return { id, label: data.label, handle: data.handle };
   }
 
   try {
@@ -1683,22 +1683,23 @@ async function resolveUserProfile(env, id, ctx) {
     if (data.ok && data.result) {
       const profile = data.result;
       const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
-      const formatName = profile.username ? `${fullName} (@${profile.username})` : fullName;
+      const handle = profile.username ? `@${profile.username}` : null;
+      const formatName = handle ? `${fullName} (${handle})` : fullName;
       const label = formatName || id;
 
       // Cache the resolved name for 24 hours (86400 seconds)
       if (ctx && ctx.waitUntil) {
-        ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify({ label }), {
+        ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify({ label, handle }), {
           headers: { "Cache-Control": "s-maxage=86400", "Content-Type": "application/json" }
         })));
       }
 
-      return { id, label };
+      return { id, label, handle };
     }
   } catch (e) {
     console.error(`Failed to fetch chat profile for ID ${id}:`, e);
   }
-  return { id, label: `Unknown User (${id})` };
+  return { id, label: `Unknown User (${id})`, handle: null };
 }
 
 async function deleteTelegramMessage(env, chatId, messageId) {
@@ -1838,9 +1839,18 @@ async function fetchLastWorkflowRun(env) {
 
 async function logAudit(env, adminId, action, target, details) {
   try {
+    const adminProfile = await resolveUserProfile(env, adminId, null);
+    const adminHandle = adminProfile.handle || adminProfile.label;
+
+    let targetHandle = null;
+    if (/^\d{6,15}$/.test(target)) {
+      const targetProfile = await resolveUserProfile(env, target, null);
+      targetHandle = targetProfile.handle || targetProfile.label;
+    }
+
     const timestamp = Date.now();
     const key = `audit:${timestamp}:${adminId}`;
-    const payload = { action, target, details };
+    const payload = { action, target, targetHandle, details, adminHandle };
     // Exact 7-day TTL ensures automatic GC
     await env.AZTRACKER_DB.put(key, JSON.stringify(payload), { expirationTtl: 604800 });
   } catch (e) {
@@ -2173,17 +2183,26 @@ function renderAuditHTML(exp, sig) {
                     const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' + 
                                   date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
                     
+                    const adminDisplay = log.adminHandle 
+                        ? \`\${log.adminHandle} <span style="font-size:10px;opacity:0.6;">(\${log.adminId})</span>\` 
+                        : \`<code>\${log.adminId}</code>\`;
+
+                    let targetDisplay = \`<code>\${log.target}</code>\`;
+                    if (log.targetHandle) {
+                        targetDisplay = \`\${log.targetHandle} <span style="font-size:10px;opacity:0.6;">(\${log.target})</span>\`;
+                    }
+
                     const card = document.createElement('div');
                     card.className = 'audit-card';
                     card.innerHTML = \`
                         <div class="audit-header">
                             <span>🕒 \${timeStr}</span>
-                            <span>ID: \${log.adminId}</span>
+                            <span>\${adminDisplay}</span>
                         </div>
                         <div class="audit-action">\${log.action}</div>
                         <div class="audit-row">
                             <span class="audit-label">Target:</span>
-                            <span class="audit-data"><code>\${log.target}</code></span>
+                            <span class="audit-data">\${targetDisplay}</span>
                         </div>
                         <div class="audit-row">
                             <span class="audit-label">Details:</span>
