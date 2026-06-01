@@ -87,7 +87,7 @@ AzTracker relies on a fully automated GitOps pipeline.
 
 ## 📡 Advanced Feature: Omnichannel Broadcast (Optional)
 
-AzTracker includes a hidden, opt-in feature to automatically run a public Deals Channel. The engine can evaluate every tracked item, isolate the absolute highest drops (15%+ or All-Time Lows), and automatically publish them to a public Telegram channel using a separate, blended affiliate tag.
+AzTracker includes a hidden, opt-in feature to automatically run a public Deals Channel. The engine can evaluate every tracked item, calculate its standard deviation and historical mean, and deploy a statistical Z-Score algorithm ($z \le -1.5$) to isolate statistically significant price anomalies.
 
 To enable this for your own deployment:
 1. Ensure your bot is added to your public channel as an Administrator with "Post Messages" permission.
