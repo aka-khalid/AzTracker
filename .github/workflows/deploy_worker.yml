@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main
-      - feature/phase-5-circuit-breaker
     paths:
       - 'worker.js'
       - 'wrangler.toml'
