@@ -885,6 +885,16 @@ async def async_main():
         if TELEGRAM_PUBLIC_CHANNEL_ID:
             best_deal = None
             max_drop_pct = 0
+
+            # FORCE DUMMY TEST DATA FOR VERIFICATION
+            best_deal = {
+                "asin": "B000QSNYGI",  # Replace with one of your actual product ASINs if desired
+                "name": "Test Product - Optimum Nutrition Gold Standard Whey",
+                "price": 2450.00,
+                "last_price": 3100.00,
+                "drop_pct": 21.0,
+                "is_atl": True
+            }
             
             for asin, state in updates.items():
                 if state.get("delisted") or state.get("mia_since_ms"): continue
