@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="AzTracker Logo" width="150">
+<img src="assets/logo.png" alt="AzTracker Logo" width="200">
 
 ### The Serverless Amazon.eg Price Engine
 
