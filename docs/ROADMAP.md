@@ -221,7 +221,7 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## ⚙️ Phase 6: Operational Tooling (Zero-Friction Deployment)
 
-- [ ] **Interactive One-Command Setup Script (`setup.py`)**
+- [x] **Interactive One-Command Setup Script (`setup.py`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -229,7 +229,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Create `setup.py`. Programmatically generate `.gitignore` first to prevent secret leakage. Auto-generate `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` as 32-character secure strings. Validate all manual inputs via regex and pass them through to the automated provisioning functions.<br>
   **🤖 AI Execution Prompt:** *"Create a new Python script named `setup.py` in the project root. Programmatically generate a `.gitignore` file (including `.env` and `wrangler.toml`) as the absolute first step. Write functions to securely generate 32-character strings for `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` using the `secrets` module. Use regex to validate user inputs for Telegram IDs and Cloudflare strings."*
   </details>
-- [ ] **Cloudflare KV Namespace Auto-Creator**
+- [x] **Cloudflare KV Namespace Auto-Creator**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -237,7 +237,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** `POST` to the Cloudflare API to create the namespace. Parse the `result.id` from the response and use regex to overwrite the `id = "..."` line inside `wrangler.toml` in place.<br>
   **🤖 AI Execution Prompt:** *"In `setup.py`, create a function that executes a POST request to the Cloudflare API's KV namespace creation endpoint. Parse the `result.id` from the JSON response. Read the local `wrangler.toml` file and use regex to perform an in-place replacement of the `id = "..."` line within the `[[kv_namespaces]]` block."*
   </details>
-- [ ] **GitHub Repository Secrets Auto-Provisioner**
+- [x] **GitHub Repository Secrets Auto-Provisioner**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -245,7 +245,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Fetch the repo's public key from the GitHub API. Encrypt each secret locally using `crypto_box_seal` and push them to the Actions Secrets endpoint.<br>
   **🤖 AI Execution Prompt:** *"In `setup.py`, implement a GitHub Actions Secrets provisioner using `PyNaCl`. First, fetch the repository's public key from the GitHub API. Then, encrypt each required secret locally using `nacl.public.SealedBox` and `crypto_box_seal`, and push the encrypted payloads to the GitHub repository secrets endpoint."*
   </details>
-- [ ] **Cloudflare Worker Secrets Auto-Injector**
+- [x] **Cloudflare Worker Secrets Auto-Injector**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -253,7 +253,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Read the worker name from `wrangler.toml`. Poll the GitHub Actions API to ensure the worker deployment pipeline succeeds, then `PUT` the secrets directly into the Cloudflare Worker via their REST API.<br>
   **🤖 AI Execution Prompt:** *"In `setup.py`, write a function that polls the GitHub Actions API to wait for the worker deployment pipeline to complete successfully. Once deployed, execute a sequence of PUT requests to the Cloudflare Workers REST API to inject the production secrets directly into the deployed edge environment."*
   </details>
-- [ ] **Telegram Webhook Auto-Registrar & Health Gate**
+- [x] **Telegram Webhook Auto-Registrar & Health Gate**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
