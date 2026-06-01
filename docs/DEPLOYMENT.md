@@ -6,149 +6,68 @@ Follow these steps exactly in order. Skipping a step or misnaming a secret will 
 
 ---
 
-## Phase 1: Telegram Bootstrapping
+## Phase 1: Acquire Root Credentials
 
-1. **Create the Bot:**
-   * Open Telegram and search for `@BotFather`.
-   * Send `/newbot`, choose a name, and choose a username ending in `_bot`.
-   * Copy the **HTTP API Token**. Save it as `TELEGRAM_BOT_TOKEN`.
-2. **Get Your Root Admin ID:**
-   * Search for `@userinfobot` in Telegram and send `/start`.
-   * Copy your **Id** (a string of numbers like `123456789`). Save it as `TELEGRAM_ROOT_ADMIN_IDS`.
-3. **Configure Bot Menu (Optional but recommended):**
-   * Go back to `@BotFather` and send `/setcommands`.
-   * Select your bot and paste: `start - Open Control Center`
+Before running the automation script, you must gather the root authority tokens from your cloud providers. 
 
----
-
-## Phase 2: Cloudflare Database & Edge Setup
-
-1. **Create the KV Namespace:**
-   * Log in to your Cloudflare Dashboard.
-   * Go to **Storage & Databases** -> **KV**.
-   * Click **Create a namespace**. Name it `AZTRACKER_DB`.
-   * Copy the **Namespace ID** (a long alphanumeric string). Save it as `CLOUDFLARE_KV_NAMESPACE_ID`.
-2. **Get Your Account ID:**
-   * Look at the URL in your browser: `https://dash.cloudflare.com/YOUR_ACCOUNT_ID/workers/kv...`
-   * Copy that 32-character string. Save it as `CLOUDFLARE_ACCOUNT_ID`.
-3. **Generate a Cloudflare API Token:**
-   * Go to **My Profile** (top right) -> **API Tokens** -> **Create Token**.
-   * Select **Create Custom Token**.
-   * Name: `AzTracker KV Access`
-   * Permissions:
-     * `Account` | `Workers KV Storage` | `Edit`
-   * Continue to summary and create. Save the token as `CLOUDFLARE_API_TOKEN`.
+1. **Telegram:**
+   * Talk to `@BotFather`, create a new bot, and copy the **HTTP API Token**. *(No special permissions required).*
+   * Talk to `@userinfobot`, and copy your numeric **User ID** (Root Admin ID).
+2. **Cloudflare:**
+   * Copy your **Account ID** from the dashboard URL (`dash.cloudflare.com/<ACCOUNT_ID>/...`).
+   * Create an **API Token** (*My Profile -> API Tokens -> Custom*). 
+     * **Required Permissions:** Select `Account` | `Workers KV Storage` | `Edit`.
+3. **GitHub:**
+   * Create a **Fine-Grained PAT** (*Settings -> Developer Settings -> Personal access tokens*). 
+   * Restrict access to **"Only select repositories"** and choose your AzTracker repo.
+   * **Required Permissions:**
+     * `Actions`: **Read and write**
+     * `Contents`: **Read and write**
+     * `Secrets`: **Read and write** *(Critical for setup.py injection)*
+4. **Amazon PA-API:**
+   * Copy your **Credential ID**, **Secret**, and **Associates Tag** from your Amazon affiliate dashboard. *(Requires an approved Amazon Associates account).*
 
 ---
 
-## Phase 3: Amazon Creators API
+## Phase 2: The Automated Provisioner (`setup.py`)
 
-1. Log into your Amazon Egypt Affiliate account at `affiliate-program.amazon.eg`.
-2. Go to **Tools** -> **Creators API**.
-3. Generate your credentials. You will need:
-   * **Access Key** (`AMZN_CREATORS_ACCESS_KEY`)
-   * **Secret Key** (`AMZN_CREATORS_SECRET_KEY`)
-   * **Partner Tag** (`AMZN_ASSOCIATES_TAG` - e.g., `yourname-21`)
-   * **API Version** (Usually `3.2`. Save as `AMZN_API_VERSION`).
+AzTracker includes a zero-friction infrastructure script that automatically generates cryptographic keys, provisions your database, and pushes your secrets to the cloud.
 
----
-
-## Phase 4: GitHub Security & Secrets
-
-### Part A: The Fine-Grained PAT
-The Cloudflare Worker needs permission to trigger your Python script on GitHub Actions.
-1. In GitHub, go to **Settings** (Account level) -> **Developer Settings** -> **Personal access tokens** -> **Fine-grained tokens**.
-2. Click **Generate new token**.
-3. Name it `AzTracker Actions Trigger`. Set expiration.
-4. **Repository access:** Select "Only select repositories" and choose your AzTracker repo.
-5. **Permissions:**
-   * `Actions`: **Read and Write**
-   * `Contents`: **Read and Write**
-6. Generate and save the token as `GH_WORKFLOW_TOKEN`.
-
-### Part B: Repository Secrets
-1. Go to your AzTracker repository -> **Settings** -> **Secrets and variables** -> **Actions**.
-2. Click **New repository secret**. You must add **ALL** of the following exact keys:
-
-| Secret Name | Description / Value |
-| :--- | :--- |
-| `TELEGRAM_BOT_TOKEN` | From Phase 1 |
-| `TELEGRAM_ROOT_ADMIN_IDS` | From Phase 1 |
-| `CLOUDFLARE_ACCOUNT_ID` | From Phase 2 |
-| `CLOUDFLARE_KV_NAMESPACE_ID` | From Phase 2 |
-| `CLOUDFLARE_API_TOKEN` | From Phase 2 |
-| `AMZN_CREATORS_ACCESS_KEY` | From Phase 3 |
-| `AMZN_CREATORS_SECRET_KEY` | From Phase 3 |
-| `AMZN_ASSOCIATES_TAG` | From Phase 3 |
-| `AMZN_API_VERSION` | From Phase 3 (e.g., `3.2`) |
-| `GH_WORKFLOW_TOKEN` | The PAT you just created in Part A |
-| `CRON_AUTH_KEY` | Create a random password (e.g., `MySuperSecretCron123`) |
-| `TELEGRAM_WEBHOOK_SECRET` | Create a random password (e.g., `AzTrackerSecureWebhook99`) |
-
----
-
-## Phase 5: Cloudflare Worker Deployment & Quota Limits
-
-1. Open `wrangler.toml` in your repository.
-2. Update the `kv_namespaces` section with your actual ID from Phase 2.
-3. **Configure Quotas:** Update the `[vars]` block with your exact GitHub Username, Repository name, and your desired tracking limits:
-```toml
-   [vars]
-   GITHUB_OWNER = "aka-khalid"
-   GITHUB_REPO = "aztracker"
-   DEFAULT_USER_PRODUCT_LIMIT = "5" # How many items standard users can track
-   GLOBAL_POOL_LIMIT = "450"        # The absolute maximum ASINs the system will query
+1. Ensure you have the required dependencies installed locally:
+   ```bash
+   pip install requests pynacl
    ```
-4. Push these changes to your `main` branch on GitHub.
-5. **The Deployment:** Your GitHub Action (`deploy_worker.yml`) should automatically run and deploy the `worker.js` to Cloudflare. 
-6. **Inject Secrets to Cloudflare:** Once deployed, log into your Cloudflare Dashboard -> **Workers & Pages** -> select your `aztracker-bot` worker -> **Settings** -> **Variables and Secrets**. You must add these **six** encrypted secrets to match the GitHub deployment:
-   * `TELEGRAM_BOT_TOKEN`
-   * `TELEGRAM_WEBHOOK_SECRET` (Must match the one in GitHub)
-   * `GH_WORKFLOW_TOKEN` (Must match the PAT in GitHub)
-   * `CRON_AUTH_KEY` (Must match the one in GitHub)
-   * `TELEGRAM_ROOT_ADMIN_IDS` (Must match the one in GitHub for Admin UI access)
-   * `AMZN_ASSOCIATES_TAG` (Must match the one in GitHub for link generation)
+2. Run the deployment script from the root of the repository:
+   ```bash
+   python setup.py
+   ```
+3. When prompted, paste the Root Credentials you gathered in Phase 1. 
+4. **What it does:** The script will automatically generate your `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET`, create the `AZTRACKER_DB` Cloudflare KV namespace, inject all secrets into GitHub Actions and your Cloudflare Edge Worker, and register your Telegram Webhook.
 
 ---
 
-## Phase 6: Securing the Telegram Webhook
+## Phase 3: The Jitter Scheduler (Cron)
 
-You must tell Telegram to route user messages to your newly deployed Cloudflare Worker, secured by your Webhook Secret.
-
-1. Find your Worker's URL in the Cloudflare Dashboard (e.g., `https://aztracker-bot.your-username.workers.dev`).
-2. Open your computer's terminal (or Git Bash/Command Prompt) and run this exact `curl` command. Replace the bracketed variables with your real data:
-
-```bash
-curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook" \
-     -d "url=<YOUR_WORKER_URL>" \
-     -d "secret_token=<YOUR_TELEGRAM_WEBHOOK_SECRET>"
-```
-*If successful, it will return `{"ok":true,"result":true,"description":"Webhook was set"}`.*
-
----
-
-## Phase 7: The Jitter Scheduler (Cron)
-
-We use an external cron job to ping the Worker, which then decides if it's time to randomly trigger the GitHub Action.
+We use an external cron job to ping the Worker, which randomly triggers the GitHub Action to prevent API rate-limiting.
 
 1. Go to [cron-job.org](https://cron-job.org) and create a free account.
 2. Click **Create Cronjob**.
 3. **Title:** `AzTracker Engine Ping`
-4. **URL:** `<YOUR_WORKER_URL>/scheduler`
+4. **URL:** `https://<YOUR_WORKER_URL>.workers.dev/scheduler`
 5. **Execution schedule:** `Every 1 minute`
 6. Click the **Advanced** tab:
    * Request Method: `GET`
    * Headers -> Add Header:
      * **Header:** `x-scheduler-key`
-     * **Value:** `<YOUR_CRON_AUTH_KEY>` (The password you created in Phase 4).
+     * **Value:** *(Paste the 32-character `CRON_AUTH_KEY` generated by `setup.py`)*
 7. Save. 
 
 ---
 
-## 🎉 Phase 8: System Boot & Administration
+## 🎉 Phase 4: System Boot & Administration
 
 1. Open Telegram and navigate to your bot.
 2. Send `/start`. 
-3. Because your Telegram ID matches the `TELEGRAM_ROOT_ADMIN_IDS` in GitHub, the Worker will recognize you as the owner and grant you the **👑 Admin Panel** dashboard. 
-4. **The Security Ledger:** Click on the `Admin Panel`, then click `🕵️ Security Audit Log`. This opens an HMAC-secured Telegram Mini App that acts as a forensic ledger for all critical state changes within the system.
-5. Paste an Amazon.eg link in the chat to begin tracking!
+3. Because your Telegram ID matches the `TELEGRAM_ROOT_ADMIN_IDS`, the Worker will recognize you as the owner and grant you the **👑 Admin Panel**. 
+4. **The Security Ledger:** Click on the `Admin Panel`, then click `🕵️ Security Audit Log`. This opens an HMAC-secured Telegram Mini App acting as a forensic ledger for all state changes.
+5. Paste an Amazon link in the chat to begin tracking!
