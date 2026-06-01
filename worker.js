@@ -3,9 +3,12 @@
 
 //const GITHUB_BRANCH = "feature/chatops-interactive-bot";
 //const GITHUB_BRANCH = "feature/randomized-scheduler";
+
 const GITHUB_BRANCH = "main";
+
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
+
 const ALT_SELLER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const QUEUE_MAX_DEPTH = 25;
@@ -18,7 +21,35 @@ export default {
     if (url.pathname === "/scheduler") {
       return await handleScheduler(request, env, ctx);
     }
-
+    
+    if (url.pathname === "/scheduler/status" && request.method === "GET") {
+      const providedKey = request.headers.get("x-scheduler-key");
+      if (!env.CRON_AUTH_KEY || providedKey !== env.CRON_AUTH_KEY) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      
+      const now = getCairoParts(new Date());
+      const hourKey = `${now.year}-${now.month}-${now.day}-${now.hour}`;
+      const scheduleReq = new Request(`${url.origin}/schedule/${hourKey}`);
+      const circuitOpenReq = new Request(`${url.origin}/_internal/circuit/open`);
+      const circuitAlertedReq = new Request(`${url.origin}/_internal/circuit/alerted`);
+      
+      const [cachedSchedule, isOpen, isAlerted] = await Promise.all([
+        caches.default.match(scheduleReq),
+        caches.default.match(circuitOpenReq),
+        caches.default.match(circuitAlertedReq)
+      ]);
+      
+      let slots = [];
+      if (cachedSchedule) slots = await cachedSchedule.json();
+      
+      return new Response(JSON.stringify({
+        circuit_state: isOpen ? "OPEN" : "CLOSED",
+        alerted: !!isAlerted,
+        hourly_slots: slots
+      }), { status: 200, headers: { "Content-Type": "application/json" }});
+    }
+    
     if (url.pathname.startsWith("/api/history/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
       if (!asin || asin.length < 10) {
@@ -64,7 +95,7 @@ export default {
         headers: { "Content-Type": "text/html;charset=UTF-8" }
       });
     }
-
+    
     // --- SIEM AUDIT ENDPOINTS ---
     if (url.pathname === "/audit" && request.method === "GET") {
       const exp = url.searchParams.get("exp");
@@ -884,18 +915,21 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           });
           return;
       }
-
       await env.AZTRACKER_DB.put("global:last_trigger", now.toString(), { expirationTtl: 700 });
       await editTelegramMessage(env, chatId, messageId, "🚀 <b>Triggering GitHub Actions pipeline...</b>");
       try {
-        const triggered = await triggerWorkflow(env);
-        if (triggered) { 
+        const triggerRes = await triggerWorkflow(env);
+        if (triggerRes.ok) { 
           await editTelegramMessage(env, chatId, messageId, "✅ <b>Workflow successfully triggered!</b>\nChecks are running in the background.", {
             inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
           });
           
           // AUDIT LOG
           ctx.waitUntil(logAudit(env, chatId, "FORCE_CHECK", "price_tracker.yml", "Initiated manual GitHub Actions workflow dispatch"));
+        } else {
+          await editTelegramMessage(env, chatId, messageId, `❌ <b>GitHub API Error:</b>\n<code>Status: ${triggerRes.status}</code>`, {
+            inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+          });
         }
       } catch (error) {
         await editTelegramMessage(env, chatId, messageId, `❌ <b>GitHub API Error:</b>\n<code>${error.message}</code>`, {
@@ -1419,11 +1453,16 @@ async function handleScheduler(request, env, ctx) {
   const cache = caches.default;
   const scheduleReq = new Request(`${url.origin}/schedule/${hourKey}`);
   const lockReq = new Request(`${url.origin}/lock/${hourKey}/${currentMinute}`); 
+  const circuitOpenReq = new Request(`${url.origin}/_internal/circuit/open`);
+  const circuitAlertedReq = new Request(`${url.origin}/_internal/circuit/alerted`);
+
+  if (await cache.match(circuitOpenReq)) {
+    return new Response("Circuit OPEN: Temporarily rejecting pings.", { status: 503 });
+  }
 
   if (await cache.match(lockReq)) {
     return new Response("Already executed", { status: 200 });
   }
-
   let slots = [];
   const cachedSchedule = await cache.match(scheduleReq);
   
@@ -1439,15 +1478,35 @@ async function handleScheduler(request, env, ctx) {
 
   if (slots.includes(currentMinute)) {
     try {
-      await triggerWorkflow(env);
-      const lockRes = new Response("1", { headers: { "Cache-Control": "s-maxage=3600" } });
-      ctx.waitUntil(cache.put(lockReq, lockRes));
-      return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
+      const runRes = await triggerWorkflow(env);
+      
+      if (runRes.ok) {
+        if (await cache.match(circuitAlertedReq)) {
+           const rootAdmin = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : null;
+           if (rootAdmin) ctx.waitUntil(sendTelegram(env, rootAdmin, "✅ <b>System Recovered</b>\n\nGitHub Actions API is back online. Circuit closed."));
+           ctx.waitUntil(cache.delete(circuitAlertedReq));
+        }
+        const lockRes = new Response("1", { headers: { "Cache-Control": "s-maxage=3600" } });
+        ctx.waitUntil(cache.put(lockReq, lockRes));
+        return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
+      } else {
+        const openRes = new Response("OPEN", { headers: { "Cache-Control": "s-maxage=900" } }); 
+        ctx.waitUntil(cache.put(circuitOpenReq, openRes));
+        
+        if (!(await cache.match(circuitAlertedReq))) {
+           const alertRes = new Response("ALERTED", { headers: { "Cache-Control": "s-maxage=7200" } }); 
+           ctx.waitUntil(cache.put(circuitAlertedReq, alertRes));
+           const rootAdmin = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : null;
+           if (rootAdmin) {
+             ctx.waitUntil(sendTelegram(env, rootAdmin, `🚨 <b>GitHub Actions Outage</b>\n\nAPI returned status ${runRes.status}. Circuit breaker is now OPEN for 15 minutes.`));
+           }
+        }
+        return new Response(`Trigger failed: Status ${runRes.status}`, { status: 502 });
+      }
     } catch (e) {
-      return new Response(`Trigger failed: ${e.message}`, { status: 500 });
+      return new Response(`Execution error: ${e.message}`, { status: 500 });
     }
   }
-
   return new Response(`No run this minute (${currentMinute})`, { status: 200 });
 }
 
@@ -1743,23 +1802,22 @@ function getAsinFromUrl(url) {
 
 async function triggerWorkflow(env) {
   const url = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/price_tracker.yml/dispatches`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
-      "User-Agent": "AzTracker-Bot",
-      "Accept": "application/vnd.github+json",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ ref: GITHUB_BRANCH })
-  });
-  if (!res.ok) {
-    let details = "";
-    try { const json = await res.json(); details = json.message || JSON.stringify(json); } 
-    catch { details = await res.text() || res.statusText; }
-    throw new Error(`Status ${res.status} - ${details}`);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
+        "User-Agent": "AzTracker-Bot",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ ref: GITHUB_BRANCH })
+    });
+    return res;
+  } catch (e) {
+    console.error("GitHub Actions dispatch fetch failed (Timeout/DNS):", e);
+    return { ok: false, status: 0 };
   }
-  return true;
 }
 
 async function sendTelegram(env, chatId, text, replyMarkup = null) {
