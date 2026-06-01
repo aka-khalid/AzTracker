@@ -261,14 +261,14 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).<br>
   **🤖 AI Execution Prompt:** *"In `setup.py`, write a final diagnostic health gate function. It must dynamically resolve the `.workers.dev` subdomain, register the webhook with the Telegram API using the generated `secret_token`, and sequentially fire 4 HTTP probes: Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status."*
   </details>
-- [x] **Omnichannel Alert Syndication & Curated Broadcast Queue**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
+- [x] **Omnichannel Alert Syndication**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
 
-  **The Goal:** Establish an automated, premium public discovery channel while isolating marketing attribution metrics and maintaining zero-friction operations for the core engine.<br>
-  **The Strategy:** Implement a decoupled, asynchronous staging architecture to prevent main-loop blocking. The core Python delivery loop will push all verified price drop events to a centralized Cloudflare KV staging queue (`QUEUE:PUBLIC_BROADCAST`). A dedicated Cloudflare Worker cron trigger, operating on a 15-minute interval, will evaluate the queue, extract the single highest-value deal (based on drop percentage), broadcast it to the public discovery channel using a segregated tracking tag (`AMZN_ASSOCIATES_TAG_PUBLIC`), and flush the remaining queue to ensure a highly curated, non-spammy feed.<br>
-  **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to append verified price drops to a global KV staging queue (`QUEUE:PUBLIC_BROADCAST`). Create a new Cloudflare Worker scheduled event (15-minute cron) that reads this queue, selects the item with the highest price drop percentage, dispatches it to the public channel utilizing the `AMZN_ASSOCIATES_TAG_PUBLIC` tracking configuration, and flushes the queue."*
-  </details>
+  **The Goal:** Establish an automated, premium public discovery channel while isolating marketing attribution metrics and maintaining zero-friction operations for the core engine.<br>
+  **The Strategy:** Implement a synchronous, in-loop evaluation integrated directly into the primary execution cycle. The engine isolates the highest-value deal within the current jitter batch and broadcasts it directly to the public discovery channel using a segregated tracking tag (`AMZN_ASSOCIATES_TAG_PUBLIC`). Trigger conditions are strictly bound to All-Time High (ATH) drop detection or a `>= 15%` price drop. This approach intentionally bypasses decoupled KV staging arrays to optimize Read/Write quotas and completely eliminate worker cron complexity.<br>
+  **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to evaluate the single best deal (highest drop percentage >= 15% or ATH drop) synchronously within the main Python execution loop. Broadcast this item directly to the public channel utilizing the `AMZN_ASSOCIATES_TAG_PUBLIC` configuration, entirely bypassing KV staging arrays to preserve edge database quotas."*
+  </details>
 
 ## 🌍 Phase 7: Platform Expansion (Growth)
 
