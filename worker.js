@@ -95,40 +95,6 @@ export default {
         headers: { "Content-Type": "text/html;charset=UTF-8" }
       });
     }
-
-    // --- DIAGNOSTIC ROUTES (PHASE 5) ---
-    if (url.pathname.startsWith("/test/") && request.method === "GET") {
-      const testKey = request.headers.get("x-test-key");
-      if (testKey !== env.CRON_AUTH_KEY) return new Response("Unauthorized Test", { status: 401 });
-      
-      if (url.pathname === "/test/trigger/fail") {
-        // Mocks a 500 error from GitHub to trip the circuit breaker
-        const cache = caches.default;
-        const circuitOpenReq = new Request(`${url.origin}/_internal/circuit/open`);
-        const circuitAlertedReq = new Request(`${url.origin}/_internal/circuit/alerted`);
-        
-        const openRes = new Response("OPEN", { headers: { "Cache-Control": "s-maxage=900" } }); 
-        ctx.waitUntil(cache.put(circuitOpenReq, openRes));
-        
-        if (!(await cache.match(circuitAlertedReq))) {
-           const alertRes = new Response("ALERTED", { headers: { "Cache-Control": "s-maxage=7200" } }); 
-           ctx.waitUntil(cache.put(circuitAlertedReq, alertRes));
-           const rootAdmin = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : null;
-           if (rootAdmin) {
-             ctx.waitUntil(sendTelegram(env, rootAdmin, `🚨 <b>[TEST] Actions Outage</b>\n\nCircuit breaker is now OPEN.`));
-           }
-        }
-        return new Response(`Diagnostic: Tripped circuit breaker.`, { status: 502 });
-      }
-      
-      if (url.pathname === "/test/circuit/recover") {
-         const cache = caches.default;
-         ctx.waitUntil(cache.delete(new Request(`${url.origin}/_internal/circuit/open`)));
-         ctx.waitUntil(cache.delete(new Request(`${url.origin}/_internal/circuit/alerted`)));
-         return new Response("Diagnostic: Circuit breaker reset to CLOSED.", { status: 200 });
-      }
-    }
-    // -----------------------------------
     
     // --- SIEM AUDIT ENDPOINTS ---
     if (url.pathname === "/audit" && request.method === "GET") {
