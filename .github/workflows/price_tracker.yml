@@ -35,6 +35,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN:         ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ROOT_ADMIN_IDS:    ${{ secrets.TELEGRAM_ROOT_ADMIN_IDS }}
+          TELEGRAM_PUBLIC_CHANNEL_ID: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_ID }}
           AMZN_CREATORS_ACCESS_KEY:   ${{ secrets.AMZN_CREATORS_ACCESS_KEY }}
           AMZN_CREATORS_SECRET_KEY:   ${{ secrets.AMZN_CREATORS_SECRET_KEY }}
           AMZN_ASSOCIATES_TAG:        ${{ secrets.AMZN_ASSOCIATES_TAG }}
