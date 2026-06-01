@@ -186,7 +186,7 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## 🔁 Phase 5: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
 
-- [ ] **GitHub Actions Health Detection in `triggerWorkflow()`**
+- [x] **GitHub Actions Health Detection in `triggerWorkflow()`**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -194,7 +194,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Refactor `triggerWorkflow()` to return the raw `Response` object. Wrap the fetch in a `try/catch` to handle DNS/Timeout failures and return a synthetic `{ ok: false, status: 0 }` object.<br>
   **🤖 AI Execution Prompt:** *"Refactor the `triggerWorkflow()` function to return the raw `Response` object instead of throwing an error. Wrap the `fetch` call in a `try/catch` block to handle DNS or timeout failures, returning a synthetic `{ ok: false, status: 0 }` object in the catch block."*
   </details>
-- [ ] **Colo-Local Circuit Breaker (Open / Half-Open / Closed)**
+- [x] **Colo-Local Circuit Breaker (Open / Half-Open / Closed)**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -202,7 +202,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Utilize `caches.default` to create an `/_internal/circuit/open` flag. *Note: Because Cloudflare Cache is local to the specific datacenter, and cron-job.org routes through a consistent regional node, this acts as a perfect, zero-KV-read isolated circuit breaker.* It opens for 15 minutes upon a 5xx failure, probes once at the expiration (Half-Open), and fully closes upon a 2xx success.<br>
   **🤖 AI Execution Prompt:** *"In `worker.js` inside `handleScheduler()`, implement an Edge-based circuit breaker using `caches.default`. If `triggerWorkflow()` returns a 5xx status, write a synthetic cache response to `/_internal/circuit/open` with a 15-minute TTL. While this cache key exists, instantly reject incoming cron pings with HTTP 503. After expiration, allow one single 'Half-Open' probe; if successful (2xx), clear the circuit and resume normal operations."*
   </details>
-- [ ] **Instant Alert & Auto-Recovery Notifications**
+- [x] **Instant Alert & Auto-Recovery Notifications**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -210,7 +210,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Introduce an `/_internal/circuit/alerted` cache key with a 2-hour TTL to suppress spam. Fire a Telegram alert on the initial break, and fire a "✅ System Recovered" alert when a successful 2xx response clears the circuit block.<br>
   **🤖 AI Execution Prompt:** *"Extend the circuit breaker logic in `worker.js` to dispatch Telegram notifications to the Root Admins. When the circuit transitions to OPEN, check for an `/_internal/circuit/alerted` cache key. If absent, send a '🚨 GitHub Actions Outage' alert and set the alerted cache key with a 2-hour TTL. When the circuit successfully transitions from HALF-OPEN back to CLOSED, send a '✅ System Recovered' alert and delete the alerted cache key."*
   </details>
-- [ ] **Scheduler Status Endpoint (`/scheduler/status`)**
+- [x] **Scheduler Status Endpoint (`/scheduler/status`)**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
