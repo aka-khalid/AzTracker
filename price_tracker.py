@@ -1,3 +1,4 @@
+# price_tracker.py
 """
 AzTracker Amazon.eg Price Tracker Engine
 Uses the Amazon Creators API for real prices — no scraping, no honeypots.
@@ -14,6 +15,7 @@ import asyncio
 import aiohttp
 import html
 import json
+import statistics
 from datetime import datetime
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -613,24 +615,37 @@ async def async_main():
             used_changed = c_used_price != last_used_price
 
             is_atl_new = False
+            hist_mean = None
+            hist_stdev = None
 
             if new_changed or used_changed:
                 hist_url = f"{cf_base_url}/values/history:{asin}"
                 history_data = await bounded_get_kv(hist_url) or []
                 if not isinstance(history_data, list): history_data = []
 
-                if new_changed and c_new_price is not None and len(history_data) > 0:
-                    valid_n = [pt.get("n") for pt in history_data if pt.get("n") is not None]
-                    if valid_n:
-                        hist_min = min(valid_n)
-                        if c_new_price < hist_min:
-                            is_atl_new = True
+                # Z-SCORE STATISTICAL EVALUATION
+                valid_n = [pt.get("n") for pt in history_data if pt.get("n") is not None]
+                if valid_n:
+                    if len(valid_n) >= 2:
+                        hist_mean = round(statistics.mean(valid_n), 2)
+                        hist_stdev = round(statistics.stdev(valid_n), 2)
+                    else:
+                        hist_mean = float(valid_n[0])
+                        hist_stdev = 0.0
+
+                if new_changed and c_new_price is not None and len(valid_n) > 0:
+                    hist_min = min(valid_n)
+                    if c_new_price < hist_min:
+                        is_atl_new = True
 
                 history_data.append({"n": c_new_price, "u": c_used_price, "t": unix_now})
                 history_data = history_data[-150:]
                 # Cloudflare Bulk requires the value to be a stringified JSON
                 bulk_payload.append({"key": f"history:{asin}", "value": json.dumps(history_data)})
                 history_updates += 1
+            else:
+                hist_mean = last_entry.get("hist_mean")
+                hist_stdev = last_entry.get("hist_stdev")
 
             if (new_changed or used_changed or
                 name != last_entry.get("name") or
@@ -672,7 +687,9 @@ async def async_main():
                     "last_updated": unix_now_ms,
                     "mia_since_ms": None,
                     "delisted": False,
-                    "is_atl_new": is_atl_new
+                    "is_atl_new": is_atl_new,
+                    "hist_mean": hist_mean,
+                    "hist_stdev": hist_stdev
                 }
 
         # 4. Evaluate prices & route personalized notifications
@@ -884,7 +901,7 @@ async def async_main():
         # 📡 4.5. The Omnichannel Broadcast (Curated Deal Selection)
         if TELEGRAM_PUBLIC_CHANNEL_ID:
             best_deal = None
-            max_drop_pct = 0
+            max_z_score = 0.0
             
             for asin, state in updates.items():
                 if state.get("delisted") or state.get("mia_since_ms"): continue
@@ -894,25 +911,49 @@ async def async_main():
                 last_price = last_entry.get("new_price")
                 
                 if new_price and last_price and new_price < last_price:
-                    drop_pct = ((last_price - new_price) / last_price) * 100
+                    hist_mean = state.get("hist_mean")
+                    hist_stdev = state.get("hist_stdev")
                     
-                    if drop_pct >= 15.0 or state.get("is_atl_new"):
-                        if drop_pct > max_drop_pct:
-                            max_drop_pct = drop_pct
+                    z_score = 0.0
+                    if hist_mean is not None and hist_stdev and hist_stdev > 0:
+                        z_score = (new_price - hist_mean) / hist_stdev
+                    elif hist_mean is not None and hist_stdev == 0.0 and hist_mean > 0:
+                        # Fallback for low data volume: synthetic Z-Score based on flat 15% drop
+                        if new_price <= hist_mean * 0.85:
+                            z_score = -1.5
+                            
+                    is_atl = state.get("is_atl_new", False)
+                    
+                    # Logic Gate: Z-Score <= -1.5 OR (ATL and Z-Score <= -1.0)
+                    is_deal = False
+                    if z_score <= -1.5:
+                        is_deal = True
+                    elif is_atl and z_score <= -1.0:
+                        is_deal = True
+                        
+                    if is_deal:
+                        abs_z = abs(z_score)
+                        if abs_z > max_z_score:
+                            max_z_score = abs_z
+                            
+                            # Calculate drop from average for human readability
+                            display_drop_pct = ((hist_mean - new_price) / hist_mean) * 100 if hist_mean else ((last_price - new_price) / last_price) * 100
+                            display_last_price = hist_mean if hist_mean else last_price
+
                             best_deal = {
                                 "asin": asin,
                                 "name": state.get("name", "Unknown Product"),
                                 "price": new_price,
-                                "last_price": last_price,
-                                "drop_pct": drop_pct,
-                                "is_atl": state.get("is_atl_new", False)
+                                "last_price": display_last_price,
+                                "drop_pct": display_drop_pct,
+                                "is_atl": is_atl
                             }
             
             if best_deal:
                 safe_name = html.escape(truncate_name(best_deal["name"]))
                 drop_pct_str = f"{best_deal['drop_pct']:.0f}%"
                 
-                header = f"🔥 <b>ALL-TIME LOW (-{drop_pct_str})</b>" if best_deal["is_atl"] else f"🚨 <b>PRICE DROP (-{drop_pct_str})</b>"
+                header = f"🔥 <b>ALL-TIME LOW (-{drop_pct_str} from average)</b>" if best_deal["is_atl"] else f"🚨 <b>EXCEPTIONAL DEAL (-{drop_pct_str} from average)</b>"
                 
                 base_url = f"https://www.amazon.eg/dp/{best_deal['asin']}"
                 q_params = {} if not AMAZON_PARTNER_TAG else {"tag": AMAZON_PARTNER_TAG}
@@ -921,7 +962,7 @@ async def async_main():
                 broadcast_msg = (
                     f"{header}\n\n"
                     f"<b>{safe_name}</b>\n\n"
-                    f"💵 <b>{best_deal['price']:,.2f} EGP</b> <i>(was {best_deal['last_price']:,.0f})</i>\n\n"
+                    f"💵 <b>{best_deal['price']:,.2f} EGP</b> <i>(usually {best_deal['last_price']:,.0f})</i>\n\n"
                     f"👉 <b><a href=\"{broadcast_url}\">Click here to grab the deal</a></b>\n"
                     f"〰️〰️〰️〰️〰️〰️〰️〰️\n"
                     f"🤖 <i>Want to track your own Amazon prices? Try our bot: @AzTrackerr_bot</i>"
