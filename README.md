@@ -70,7 +70,7 @@ graph TD;
 * 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request.
 * ⚡ **Edge-Cached Authorization:** Leverages Cloudflare's in-memory `caches.default` API with synthetic internal routing to heavily minimize KV read quota consumption during UI interactions.
 * 🎛️ **Granular Resource Quotas:** Global environment-driven tracking limits with individual admin overrides.
-* 📈 **Global Price Matrix:** A root-only, HMAC-secured Web App dashboard charting the macro-trajectory of all active ASINs. The engine computationally tags volatile assets (15% drops or All-Time Lows) to dynamically filter visual noise and prevent Y-axis scale compression, maintaining absolute zero read-amplification via bulk-write payload injection.
+* 📈 **Global Price Matrix:** A root-only, HMAC-secured Web App dashboard charting the macro-trajectory of all active ASINs. The engine computationally tracks a 150-point rolling moving average and applies statistical Z-Score gating ($z \le -1.5$ and $\ge 15\%$ drop) to dynamically filter visual noise. This state-driven architecture creates a self-curating dashboard where volatile items persist visibly, naturally fading into a hidden state only when the moving average normalizes to the new low price.
 
 ---
 
