@@ -291,7 +291,7 @@ This document tracks the technical debt, security fortifications, feature expans
 * **Interface Implementation Contracts:**
     * The core tracking routine logic must interact solely with abstract operations, such as `get_user_state(chat_id)` or `commit_bulk_payload(payload_array)`.
     * `deployments/serverless/db_kv.py`: Inherits from the global contract, translating the generic operations into asynchronous `aiohttp` HTTP calls that interface with the Cloudflare KV REST API endpoints.
-    * `deployments/container/db_redis.py`: Inherits from the global contract, translating the same abstract operations into native asynchronous Redis commands using `redis.asyncio` (not the sync client) to prevent blocking the ASGI event loop.
+    * `deployments/container/db_redis.py`: Inherits from the global contract, translating the same abstract operations into native asynchronous Redis commands using `redis.asyncio`. It must utilize native Redis data structures (e.g., Hashes for objects, Sorted Sets for time-series history) rather than string/JSON serialization, preventing event loop blocking.
 * **Requirements for AI Implementation:** *"Create a unified database abstraction layer using `abc.ABCMeta` and `@abstractmethod`. Both the serverless pipeline script and the container tracking daemon must implement this class exactly, mapping their distinct database drivers to identical input/output return values."*
 
 ---
@@ -341,7 +341,7 @@ This document tracks the technical debt, security fortifications, feature expans
 | :--- | :--- | :--- | :--- |
 | **TC-MONO-01** | Core Module Pathing | Execute checking loops from absolute workspace paths. | System resolves python package definitions cleanly without path errors. |
 | **TC-MONO-02** | Rate Governor Safety | Mock tracking pools scaling past 60 units. | The governor adjusts tracking loops dynamically to protect daily limits. |
-| **TC-MONO-03** | Interface Parity | Verify processing payloads across both database adapters. | Calculations evaluate data properties identically across KV and Redis. |
+| **TC-MONO-03** | Interface Parity | Verify processing payloads across both database adapters. | DAL method calls must return identical Python objects to the core regardless of backend. |
 | **TC-MONO-04** | Webhook Speed Check | Request `/manage` panels under high database mock loads. | The cache intercepts traffic, ensuring rapid response times. |
 
 
@@ -366,7 +366,7 @@ This document tracks the technical debt, security fortifications, feature expans
 
   **The Strategy:** Move the historical tracking state from Cloudflare Edge to the local Persistent Volume without dropping data or losing IAM metadata.<br>
   1. Write a temporary extraction script to paginate through the Cloudflare KV REST API and download the *entire* production database (`user:`, `price:`, `history:`, `auth:`, `limit:`, `audit:`, `approved_by:`, and `global:`) into a unified `export.json` payload.<br>
-  2. Write a local ingestion script on the Oracle VM to parse `export.json` and map the keys natively into the Redis container.<br>
+  2. Write a local ingestion schema-transformation script on the Oracle VM. It must parse the `export.json` KV blobs and map them into their Redis-native equivalents (e.g., transforming the `history` arrays into ZSETs scored by timestamp, and `price` dicts into Hashes).<br>
   3. Configure the Redis container with `appendonly yes` and `appendfsync everysec` to minimize the data loss window to 1 second against unexpected Oracle VM halts.
   </details>
 
