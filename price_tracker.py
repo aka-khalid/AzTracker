@@ -1119,14 +1119,33 @@ async def async_main():
         for asin in unique_asins:
             state = updates.get(asin) or global_prices.get(asin, {})
             n_price = state.get("new_price")
+            
             if n_price is not None:
                 hist_mean = state.get("hist_mean")
+                hist_stdev = state.get("hist_stdev")
                 is_atl = state.get("is_atl_new", False)
                 v_flag = 0
+                
                 if hist_mean and hist_mean > 0:
+                    # 1. Calculate absolute drop
                     drop_pct = ((hist_mean - n_price) / hist_mean) * 100
-                    if (drop_pct >= 15.0) or (is_atl and drop_pct >= 10.0):
+                    
+                    # 2. Calculate statistical Z-Score anomaly
+                    z_score = 0.0
+                    if hist_stdev and hist_stdev > 0:
+                        z_score = (n_price - hist_mean) / hist_stdev
+                    elif hist_stdev == 0.0 and hist_mean > 0:
+                        # Fallback for low data volume (matching Omnichannel logic)
+                        if n_price <= hist_mean * 0.85:
+                            z_score = -1.5
+                            
+                    # 3. Omnichannel Parity Evaluation
+                    is_standard_deal = (z_score <= -1.5) and (drop_pct >= 15.0)
+                    is_atl_deal = is_atl and (z_score <= -1.0) and (drop_pct >= 10.0)
+                    
+                    if is_standard_deal or is_atl_deal:
                         v_flag = 1
+                        
                 current_matrix[asin] = [n_price, v_flag]
 
         if current_matrix:
