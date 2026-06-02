@@ -12,6 +12,7 @@
 > A highly scalable, multi-tenant price tracking architecture built on Cloudflare KV and GitHub Actions. It features an interactive ChatOps UI, dual-hysteresis anti-flap protection, and a crowdsourced "Hivemind" pricing database.
 
 🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
+
 📢 **Live Demo (Public Deals Channel):** [@AzTrackerr](https://t.me/AzTrackerr)
 
 <img src="assets/StatsGraphDemo.jpg" alt="AzTracker Analytics Graph" width="400">
