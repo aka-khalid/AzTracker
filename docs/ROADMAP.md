@@ -384,7 +384,8 @@ This document tracks the technical debt, security fortifications, feature expans
   1. Spin up the FastAPI and background daemon containers using the `deployments/container/` environment variables.<br>
   2. **Security Gate:** Verify FastAPI explicitly implements the `X-Telegram-Bot-Api-Secret-Token` validation header before proceeding.<br>
   3. Execute the Telegram `setWebhook` API call, updating the target URL from the `*.workers.dev` endpoint to the new Oracle-bound domain name.<br>
-  4. **Rollback Protocol:** If the container fails, immediately execute `setWebhook` pointing back to the Cloudflare Worker URL.
+  4. **Documentation Sync:** Update `README.md` architecture diagrams and `DEPLOYMENT.md` instructions to explicitly document the VPS container deployment path alongside the Serverless path.<br>
+  5. **Rollback Protocol:** If the container fails, immediately execute `setWebhook` pointing back to the Cloudflare Worker URL.
   </details>
 
 
