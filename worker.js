@@ -358,8 +358,11 @@ async function handleMessage(message, env, ctx) {
   }
 
   if (isAmazonLink) {
-    const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
-    const inputUrl = urlMatch ? urlMatch[1] : text;
+    // Isolate the link from surrounding text and auto-prepend protocol if missing
+    let inputUrl = text.split(/\s+/).find(w => w.includes("amazon.") || w.includes("amzn.")) || text;
+    if (!/^https?:\/\//i.test(inputUrl)) {
+      inputUrl = "https://" + inputUrl;
+    }
 
     const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Processing Amazon link...</b>`);
     const tempMessageId = sentMsg.result.message_id;
