@@ -914,6 +914,14 @@ async def async_main():
                     hist_mean = state.get("hist_mean")
                     hist_stdev = state.get("hist_stdev")
                     
+                    # --- GUARDRAIL 1: The 24-Hour High-Water Mark ---
+                    last_broadcast_time = last_entry.get("last_broadcast_time_ms")
+                    last_broadcast_price = last_entry.get("last_broadcast_price")
+                    
+                    if last_broadcast_time and (unix_now_ms - last_broadcast_time) < 86400000:
+                        if last_broadcast_price and new_price >= last_broadcast_price:
+                            continue
+                    
                     z_score = 0.0
                     if hist_mean is not None and hist_stdev and hist_stdev > 0:
                         z_score = (new_price - hist_mean) / hist_stdev
@@ -924,28 +932,29 @@ async def async_main():
                             
                     is_atl = state.get("is_atl_new", False)
                     
-                    # Logic Gate: Z-Score <= -1.5 OR (ATL and Z-Score <= -1.0)
-                    is_deal = False
-                    if z_score <= -1.5:
-                        is_deal = True
-                    elif is_atl and z_score <= -1.0:
-                        is_deal = True
+                    # Calculate actual drop percentage
+                    display_last_price = hist_mean if hist_mean else last_price
+                    drop_pct = ((display_last_price - new_price) / display_last_price) * 100 if display_last_price else 0
+
+                    # --- GUARDRAIL 2: The Hard Percentage Floor ---
+                    # Standard deals require Z <= -1.5 AND >= 15% drop.
+                    # ATLs require Z <= -1.0 AND >= 10% drop.
+                    is_standard_deal = (z_score <= -1.5) and (drop_pct >= 15.0)
+                    is_atl_deal = is_atl and (z_score <= -1.0) and (drop_pct >= 10.0)
+                    
+                    is_deal = is_standard_deal or is_atl_deal
                         
                     if is_deal:
                         abs_z = abs(z_score)
                         if abs_z > max_z_score:
                             max_z_score = abs_z
-                            
-                            # Calculate drop from average for human readability
-                            display_drop_pct = ((hist_mean - new_price) / hist_mean) * 100 if hist_mean else ((last_price - new_price) / last_price) * 100
-                            display_last_price = hist_mean if hist_mean else last_price
 
                             best_deal = {
                                 "asin": asin,
                                 "name": state.get("name", "Unknown Product"),
                                 "price": new_price,
                                 "last_price": display_last_price,
-                                "drop_pct": display_drop_pct,
+                                "drop_pct": drop_pct,
                                 "is_atl": is_atl
                             }
             
@@ -977,10 +986,15 @@ async def async_main():
                     "markup": {"inline_keyboard": [[{"text": "🛒 View on Amazon", "url": broadcast_url}]]}
                 })
 
+                # --- GUARDRAIL 3: Save the High-Water Mark to KV ---
+                if best_deal["asin"] in updates:
+                    updates[best_deal["asin"]]["last_broadcast_time_ms"] = unix_now_ms
+                    updates[best_deal["asin"]]["last_broadcast_price"] = best_deal["price"]
+
         # 5. Execute Webhooks & Unified Two-Phase Commit (2PC) Sync
         delivered_locks = {}
         failed_deliveries = 0
-        dead_users = set() # <-- NEW
+        dead_users = set() 
         
         if outbox:
             for alert in outbox:
