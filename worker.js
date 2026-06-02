@@ -2289,9 +2289,6 @@ function renderAuditHTML(exp, sig) {
                             <span class="audit-label">Target:</span>
                             <span class="audit-data">\${targetDisplay}</span>
                         </div>
-                        // worker.js
-// Context: The absolute bottom of your file.
-
                             <div class="audit-row">
                                 <span class="audit-label">Details:</span>
                                 <span class="audit-data">\${log.details}</span>
