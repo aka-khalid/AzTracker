@@ -32,7 +32,7 @@ These tests validate the `setup.py` automation suite, ensuring frictionless onbo
 | **TC-603** | Cloudflare KV Provisioning | Feed a mock Cloudflare REST API response containing `{"result": {"id": "mock_id_123"}}`. | The script correctly parses the ID and performs an in-place regex replacement of `id = "..."` inside `wrangler.toml`. |
 | **TC-604** | Worker Secret Injection | Run the Wrangler CLI execution wrapper module. | Verifies the script correctly issues `npx wrangler secret put` commands for all 6 required production variables. |
 | **TC-605** | Telegram Webhook & Gate | Trigger the final health probe sequence in `setup.py`. | Telegram responds with "Webhook was set". The setup script correctly queries `/scheduler/status` to verify worker instantiation. |
-| **TC-606** | Curated Broadcast Queue | Inject a mock array of 3 price drops into `QUEUE:PUBLIC_BROADCAST`. Trigger the 15-minute Cloudflare cron event natively via Wrangler. | The worker dispatches exactly one message (the highest percentage drop) using `AMZN_ASSOCIATES_TAG_PUBLIC`, and successfully flushes the `QUEUE:PUBLIC_BROADCAST` KV array to a length of 0. |
+| **TC-606** | Omnichannel Broadcast | Mock a Z-Score qualifying price drop (z <= -1.5 and >= 15% drop) in the PA-API batch results. | The Python engine appends exactly one broadcast payload to the outbox targeting `TELEGRAM_PUBLIC_CHANNEL_ID` and stamps `last_broadcast_time_ms` in the KV database. |
 
 ---
 
@@ -45,7 +45,7 @@ These tests validate the backend array sharding and the dynamic API rate-limit b
 | **TC-701** | Geofence URL Parsing | Send `amazon.ae` and `amazon.sa` links to the Telegram bot UI. | The edge node accepts them, extracts the domains, and correctly writes `"region": "amazon.ae"` into the user's `user:{chat_id}:products` KV array. |
 | **TC-702** | Python Batch Sharding | Run `price_tracker.py` locally using a mocked KV payload containing both EG and AE items. | The `fetch_batch()` queues strictly separate ASINs by region. The EG batch fires with the EG credentials/endpoints; the AE batch fires with the AE endpoints. |
 | **TC-703** | Adaptive Backoff (Success) | Mock the PA-API response to return 200 OK. | The engine sleeps for exactly 1.0 seconds between batch iterations, minimizing idle time. |
-| **TC-704** | Adaptive Backoff (429) | Mock the PA-API response to return HTTP 429 Too Many Requests with a header `Retry-After: 7`. | The engine catches the rate limit, parses the header, and forces an `asyncio.sleep(7)` before retrying the exact same batch. |
+| **TC-704** | Adaptive Backoff (429) | Mock the specific rate-limit exception class raised by the `amazon_creatorsapi` library. | The engine catches the exception, sleeps for a fixed 5-second backoff penalty, and flags the loop to retry or abort. |
 | **TC-705** | Double 429 Failsafe | Mock consecutive 429 responses. | The engine breaks the batch loop entirely, queues a Telegram alert to the Admins detailing the endpoint exhaustion, and safely commits partial data. |
 
 ---
