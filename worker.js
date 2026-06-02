@@ -631,7 +631,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       await sendTelegram(env, targetId, welcomeMessage);
       
-      // ... existing code in worker.js (line 415) ...
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Manually approved"));
     }
@@ -655,7 +654,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await env.AZTRACKER_DB.delete(`auth:${targetId}`);
       
       await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
-// ... existing code in worker.js (line 432) ...
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire tracking profile have been permanently erased.`);
       
