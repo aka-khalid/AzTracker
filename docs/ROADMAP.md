@@ -261,13 +261,13 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).<br>
   **🤖 AI Execution Prompt:** *"In `setup.py`, write a final diagnostic health gate function. It must dynamically resolve the `.workers.dev` subdomain, register the webhook with the Telegram API using the generated `secret_token`, and sequentially fire 4 HTTP probes: Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status."*
   </details>
-- [x] **Omnichannel Alert Syndication (Z-Score)**
+- [x] **Omnichannel Bounce-Back & Volatility Filter**
   <details>
   <summary><b>View Execution Brief</b></summary>
-
-  **The Goal:** Establish an automated, premium public discovery channel while maintaining zero-friction operations and a unified analytics pipeline for the core engine.<br>
-  **The Strategy:** Implement a synchronous, in-loop evaluation integrated directly into the primary execution cycle. The engine isolates the highest-value deal within the current jitter batch and broadcasts it directly to the public channel using the primary `AMZN_ASSOCIATES_TAG`. By consolidating tracking into a single storefront tag, we maintain a simplified analytics pipeline and ensure all deal traffic is cleanly attributed to the primary community channel. Trigger conditions require a statistical Z-Score anomaly of **z <= -1.5**, which is dynamically lowered to **z <= -1.0** if the item concurrently hits an All-Time Low (ATL). This approach intentionally bypasses decoupled KV staging arrays to optimize Read/Write quotas and completely eliminate worker cron complexity.<br>
-  **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to evaluate the single best deal synchronously within the main Python execution loop. Broadcast this item directly to the public channel utilizing the primary Amazon affiliate tag for unified analytics. Trigger conditions must require a statistical Z-Score anomaly of z <= -1.5 (or z <= -1.0 for ATLs), entirely bypassing KV staging arrays to preserve edge database quotas."*
+  
+  **The Goal:** Prevent the Omnichannel syndication engine from broadcasting mathematically rare (Z-Score) but practically insignificant (e.g., 6%) price drops, and completely eliminate intra-day bounce-back spam.<br>
+  **The Strategy:** In `price_tracker.py`, evaluate Z-Scores alongside a hard percentage floor (15% drop for standard deals, 10% for ATLs). Furthermore, inject a `last_broadcast_time_ms` and `last_broadcast_price` stamp into the 2PC update payload when a deal is broadcast. For the next 24 hours, the engine is mathematically locked from broadcasting that ASIN again unless the new price is strictly lower than the stamped `last_broadcast_price`.<br>
+  **🤖 AI Execution Prompt:** *"In `price_tracker.py` within the Omnichannel Broadcast block, implement a 24-hour high-water mark that checks `last_broadcast_time_ms`. If active, require the new price to be strictly lower than `last_broadcast_price`. Calculate the actual drop percentage, and enforce a combined requirement: (z_score <= -1.5 AND drop_pct >= 15.0) OR (is_atl AND z_score <= -1.0 AND drop_pct >= 10.0). Finally, append the broadcast timestamp and price to the `updates` dictionary for that ASIN to persist its memory in the KV database."*
   </details>
   
 ## 🏗️ Phase 6.5: The Monorepo Unification Architecture
