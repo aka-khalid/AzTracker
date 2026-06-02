@@ -88,7 +88,9 @@ AzTracker relies on a fully automated GitOps pipeline.
 
 ## 📡 Advanced Feature: Omnichannel Broadcast (Optional)
 
-AzTracker includes a hidden, opt-in feature to automatically run a public Deals Channel. The engine can evaluate every tracked item, calculate its standard deviation and historical mean, and deploy a statistical Z-Score algorithm. Trigger conditions require an anomaly of **$z \le -1.5$**, which is dynamically lowered to **$z \le -1.0$** if the item concurrently hits an All-Time Low (ATL).
+AzTracker includes a hidden, opt-in feature to automatically run a public Deals Channel. The engine can evaluate every tracked item, calculate its standard deviation and historical mean, and deploy a statistical Z-Score algorithm. Trigger conditions require a statistical Z-Score anomaly of **$z \le -1.5$** paired with a strict **$\ge 15\%$** absolute price drop. This is dynamically lowered to **$z \le -1.0$** and a **$\ge 10\%$** drop if the item concurrently hits an All-Time Low (ATL). 
+
+Furthermore, the engine enforces a **24-Hour High-Water Mark**: once an item is broadcast, it is mathematically locked from being re-broadcast for 24 hours unless the new price drops strictly lower than the previously alerted price, permanently eliminating intra-day bounce-back spam.
 
 To enable this for your own deployment:
 1. Ensure your bot is added to your public channel as an Administrator with "Post Messages" permission.
