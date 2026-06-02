@@ -2277,7 +2277,7 @@ function renderAuditHTML(exp, sig) {
 
                             <div class="audit-row">
                                 <span class="audit-label">Details:</span>
-                                <span class="audit-data">${log.details}</span>
+                                <span class="audit-data">\${log.details}</span>
                             </div>
                         \`;
                         container.appendChild(card);
