@@ -737,6 +737,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
              `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
              `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
       
+
       let adminButtons = [
         [{ text: "👥 View Approved Users", callback_data: "list_users" }]
       ];
@@ -747,6 +748,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         const exp = Date.now() + (2 * 60 * 60 * 1000);
         const sig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
         adminButtons.push([{ text: "🕵️ Security Audit Log", web_app: { url: `${baseUrl}/audit?exp=${exp}&sig=${sig}` } }]);
+        
+        const sigAll = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "all_products", exp);
+        adminButtons.push([{ text: "📈 Global Price Matrix", web_app: { url: `${baseUrl}/chart-all?exp=${exp}&sig=${sigAll}` } }]);
       }
       
       adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
@@ -2263,19 +2267,167 @@ function renderAuditHTML(exp, sig) {
                             <span class="audit-label">Target:</span>
                             <span class="audit-data">\${targetDisplay}</span>
                         </div>
-                        <div class="audit-row">
-                            <span class="audit-label">Details:</span>
-                            <span class="audit-data">\${log.details}</span>
-                        </div>
-                    \`;
-                    container.appendChild(card);
+                        // worker.js
+// Context: The absolute bottom of your file.
+
+                            <div class="audit-row">
+                                <span class="audit-label">Details:</span>
+                                <span class="audit-data">${log.details}</span>
+                            </div>
+                        \`;
+                        container.appendChild(card);
+                    });
+                } catch (err) {
+                    document.getElementById('loading').innerText = 'Failed to compile audit logs. Invalid or expired token.';
+                }
+            }
+            
+            loadAudit();
+        </script>
+    </body>
+    </html>
+  `;
+}
+
+function renderGlobalChartHTML(exp, sig) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Global Price Matrix</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #chart-container {
+            width: 100%;
+            max-width: 800px;
+            position: relative;
+            margin-top: 20px;
+        }
+        .loading { text-align: center; margin-top: 50px; font-size: 16px; opacity: 0.7; }
+        .header-title { margin-bottom: 5px; text-align: center; font-weight: 600; font-size: 20px; }
+        .header-sub { font-size: 14px; opacity: 0.7; margin-bottom: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="header-title">Global Price Matrix</div>
+    <div class="header-sub">Root Admin View • Top Movers</div>
+    
+    <div id="chart-container">
+        <div id="loading" class="loading">Compiling global index...</div>
+        <canvas id="priceChart" style="display: none;"></canvas>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand(); 
+        tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
+
+        async function loadData() {
+            try {
+                const response = await fetch('/api/admin/history-all?exp=${exp}&sig=${sig}');
+                if (!response.ok) throw new Error('Auth failed');
+                
+                const data = await response.json();
+                document.getElementById('loading').style.display = 'none';
+                
+                if (!data || data.length === 0) {
+                    document.getElementById('chart-container').innerHTML = '<div class="loading">No global history available yet.<br><br>Awaiting the next engine run!</div>';
+                    return;
+                }
+
+                document.getElementById('priceChart').style.display = 'block';
+
+                const allAsins = new Set();
+                data.forEach(pt => {
+                    if (pt.p) Object.keys(pt.p).forEach(a => allAsins.add(a));
+                });
+
+                const labels = data.map(pt => {
+                    const date = new Date(pt.t * 1000);
+                    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + 
+                           date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                });
+
+                function getColor(index) {
+                    const hue = index * 137.508; 
+                    return \`hsl(\${hue % 360}, 70%, 50%)\`;
+                }
+
+                const datasets = Array.from(allAsins).map((asin, i) => {
+                    const color = getColor(i);
+                    let isTopMover = false;
+                    for (let j = data.length - 1; j >= 0; j--) {
+                        if (data[j].p && data[j].p[asin]) {
+                            isTopMover = data[j].p[asin][1] === 1;
+                            break;
+                        }
+                    }
+                    
+                    return {
+                        label: asin,
+                        data: data.map(pt => (pt.p && pt.p[asin]) ? pt.p[asin][0] : null),
+                        borderColor: color,
+                        backgroundColor: color,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        stepped: true,
+                        spanGaps: true,
+                        hidden: !isTopMover
+                    };
+                });
+
+                const ctx = document.getElementById('priceChart').getContext('2d');
+                const textColor = tg.themeParams.text_color || '#000000';
+                const gridColor = tg.themeParams.hint_color ? tg.themeParams.hint_color + '40' : '#cccccc40';
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { 
+                                position: 'top', 
+                                labels: { color: textColor, usePointStyle: true, boxWidth: 8 } 
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.parsed.y === null) return context.dataset.label + ': Out of Stock';
+                                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' EGP';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { ticks: { color: textColor }, grid: { color: gridColor } },
+                            x: { ticks: { color: textColor, maxRotation: 45, minRotation: 45, maxTicksLimit: 8 }, grid: { display: false } }
+                        }
+                    }
                 });
             } catch (err) {
-                document.getElementById('loading').innerText = 'Failed to compile audit logs. Invalid or expired token.';
+                document.getElementById('loading').innerText = 'Failed to load chart data.';
             }
         }
         
-        loadAudit();
+        loadData();
     </script>
 </body>
 </html>
