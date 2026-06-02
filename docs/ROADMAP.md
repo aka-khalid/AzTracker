@@ -270,34 +270,114 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"Refactor the notification delivery engine to evaluate the single best deal synchronously within the main Python execution loop. Broadcast this item directly to the public channel utilizing the primary Amazon affiliate tag for unified analytics. Trigger conditions must require a statistical Z-Score anomaly of z <= -1.5 (or z <= -1.0 for ATLs), entirely bypassing KV staging arrays to preserve edge database quotas."*
   </details>
   
-## 🏗️ Phase 6.5: The Great Migration (Oracle Cloud Architecture Pivot)
+## 🏗️ Phase 6.5: The Monorepo Unification Architecture
 
-**The Goal:** Transition the AzTracker engine from Cloudflare's serverless edge to a persistent Oracle Cloud Always-Free ARM instance. This replaces strict KV quotas with infinite local database writes and establishes a predictable, zero-latency execution environment.
+**The Architectural Goal:** Transition the repository into an infrastructure-agnostic Monorepo that allows the concurrent deployment of the legacy Serverless platform (Cloudflare Workers + GitHub Actions) and the persistent Containerized platform (Oracle Cloud Always-Free VPS + Docker + Redis). This design decouples pure business workflows from platform-specific APIs, eliminating duplicate implementations while maintaining 100% data schema compatibility.
 
-### (a) Infrastructure & Ingress (The Foundation)
-* **Docker Compose:** The entire stack will be containerized via `docker-compose.yml` to guarantee zero-friction deployments and automatic recovery upon VM reboots.
-* **Caddy / Traefik Reverse Proxy:** Replacing Cloudflare's automatic SSL edge. A lightweight reverse proxy container will sit in front of the application, automatically provisioning and renewing Let's Encrypt SSL certificates (a strict requirement for Telegram Webhooks).
-* **Network Security Gate:** The Oracle Virtual Cloud Network (VCN) Security Lists must be explicitly locked down to expose only ports `80` and `443`.
+---
 
-### (b) The Database Layer (Redis)
-* **1:1 Schema Translation:** Transition from Cloudflare KV REST calls to the `redis-py` async client. The namespace schema (`user:{id}:products`, `global:stats`) remains completely unchanged.
-* **AOF Persistence:** The Redis container will be configured with `appendonly yes` and `appendfsync everysec`. This guarantees that the in-memory speed does not compromise data integrity if the Oracle VM halts.
-* **Local Backups:** A local bash script will snapshot the Redis `dump.rdb` file every 4 hours, replacing the GitHub Actions backup pipeline.
+### 📋 Stage 1: The Pure Stateless Core Decomposition
+* **The Strategy:** Dismantle the single monolithic processing loop into independent execution domains inside a root-level `core/` package before changing repository paths. This isolates the computational code from spatial tracking refactors.
+* **Core Execution Specifications:**
+    * `core/amazon_parser.py`: Handles PA-API credentials, network requests, batch slicing (max 10 ASINs per request), and responses parsing. This module must be asynchronous and return structured, platform-agnostic tuples. It must not contain database code or orchestrator tracking states.
+    * `core/evaluator.py`: Encapsulates the application's processing algorithms. This includes the 2.5-hour Anti-Flap block, the 1 EGP noise filter, the MIA tracking clock, and the statistical Z-Score evaluator. It accepts pure Python data types and returns data structures indicating exactly *what* needs to be mutated. It is prohibited from performing network calls, importing database packages, or reading environment variables.
+    * `core/telegram_builder.py`: Manages HTML string rendering, inline keyboard button compiling, and affiliate parameter injection. It maps raw calculations into final payloads and outputs a strict dictionary of message strings, markups, and necessary data lock keys.
+* **Requirements for AI Implementation:** *"Refactor the core logic out of the tracking script. Ensure no network clients, database engines, or environment trackers cross into the `core/` territory. The modules must accept arguments as inputs and return data objects as outputs with zero side effects."*
 
-### (c) Application Refactoring (FastAPI)
-* **The Unified Container:** `worker.js` is deprecated. The Telegram webhook router, Authorization gates, and Chart.js HTML rendering will be completely rewritten into a Python **FastAPI** application (`api.py`).
-* **The Background Engine:** The `price_tracker.py` engine will no longer run as an isolated script triggered by GitHub Actions. It will be refactored as an `asyncio.create_task()` background loop running alongside the FastAPI worker, utilizing an adaptive `asyncio.sleep()` for pacing.
-* **Profile Cache Continuity:** The FastAPI routing layer must implement a native memory cache (e.g., `cachetools` or standard dictionaries) to mirror Cloudflare's `caches.default`. This guarantees that Telegram profiles and user names remain fully rendered in the administration UI, rather than degrading into raw, unreadable User IDs.
+---
 
-### (d) The Migration Execution (Zero-Downtime Pipeline)
-1. **Provisioning:** Deploy the Oracle ARM VM, install Docker, and spin up the Caddy/Redis/FastAPI containers.
-2. **State Export:** Write a temporary extraction script to paginate through Cloudflare KV and download the entire production database to a single `export.json` file.
-3. **State Import:** Write an ingestion script on the Oracle VM to parse `export.json` and inject all keys/values natively into the Redis container.
-4. **The Cutover:** Update the Telegram Webhook via the `setWebhook` API to point from the `*.workers.dev` URL to the new Oracle domain name.
-5. **The Decommission:** Once execution logs confirm the FastAPI server is intercepting Telegram updates and the async engine is pacing correctly, delete the Cloudflare Worker and KV Namespace.
+### 🗄️ Stage 2: The Data Access Layer (DAL) Contract
+* **The Strategy:** Standardize database reads and writes via an abstract interface class (`core/db_interface.py`), eliminating structural dependencies between the tracking state and the storage backend.
+* **Interface Implementation Contracts:**
+    * The core tracking routine logic must interact solely with abstract operations, such as `get_user_state(chat_id)` or `commit_bulk_payload(payload_array)`.
+    * `deployments/serverless/db_kv.py`: Inherits from the global contract, translating the generic operations into asynchronous `aiohttp` HTTP calls that interface with the Cloudflare KV REST API endpoints.
+    * `deployments/container/db_redis.py`: Inherits from the global contract, translating the same abstract operations into native asynchronous Redis commands via `redis-py`.
+* **Requirements for AI Implementation:** *"Create a unified database abstraction layer. Both the serverless pipeline script and the container tracking daemon must implement this class exactly, mapping their distinct database drivers to identical input/output return values."*
 
-### (e) The Oracle "Always-Free" Reclaim Shield
-* **The Heartbeat Service:** Oracle routinely terminates inactive VMs. A background task will be added to the FastAPI engine to perform a burst of CPU-intensive matrix calculations (or database vacuuming) for 60 seconds every 12 hours. This artificially elevates the CPU and memory footprint just enough to bypass Oracle's "idle instance" reclamation algorithms.
+---
+
+### 🛡️ Stage 3: Runtime Environment Sandboxing
+* **The Strategy:** Isolate runtime-specific files into localized project folders while leaving global configurations (`requirements.txt`, `setup.py`) at the workspace root.
+* **Directory Reorganization Mapping:**
+    * Move `worker.js`, `wrangler.toml`, and the legacy cron tracking file into `deployments/serverless/`.
+    * Create `deployments/container/` to house the long-running tracking scripts and web server configurations.
+* **CI/CD & Routing Adaptations:**
+    * Update `.github/workflows/deploy_worker.yml` to trigger on changes to paths matching `deployments/serverless/*`. Configure wrangler actions to run from that working directory.
+    * Update `.github/workflows/price_tracker.yml` to call `python deployments/serverless/price_tracker.py`. The pipeline execution step must run from the workspace root to preserve Python module path resolution tracks for the `core/` package.
+* **Requirements for AI Implementation:** *"Physically move runtime infrastructure into its target sandbox. Update GitOps pipelines and script paths so that automated deployments run correctly without looking for files at the repository root."*
+
+---
+
+### 🎛️ Stage 4: Persistent Container Layer Engineering
+* **The Strategy:** Develop the stateful containerized execution architecture to run on the Always-Free Oracle VPS profile, maintaining operational parity with the serverless logic.
+* **The Infrastructure Stack:**
+    * `deployments/container/api.py`: A FastAPI webhook server replacing `worker.js`. It intercepts Telegram requests and manages admin permissions. It must implement an internal LRU cache to mimic Cloudflare's profile caching, preventing excessive, slow calls to Telegram during dashboard requests.
+    * `deployments/container/engine_loop.py`: A persistent background tracking daemon linked to the FastAPI life cycle.
+* **The Dynamic PA-API Governor Engine:**
+    * The container daemon must include a rate-limiting governor. It must calculate the request balance dynamically using the pool size: `(Tracked ASINs / 10) * 1440`.
+    * If the required volume is less than or equal to the daily credential allowance (8,640 requests per credential pool per day), the loop executes every 60 seconds.
+    * If the tracking pool scales past this threshold, the governor must dynamically calculate and adjust the loop delay (or cycle across distinct credential slots) to distribute polling frequencies evenly over 24 hours, preventing Amazon HTTP 429 rejections.
+* **The Oracle "Always-Free" Reclaim Shield:**
+    * Oracle routinely terminates inactive VMs. A background task must be added to the FastAPI engine to perform a burst of CPU-intensive matrix calculations (or database vacuuming) for 60 seconds every 12 hours. This artificially elevates the CPU and memory footprint just enough to bypass Oracle's "idle instance" reclamation algorithms.
+* **Requirements for AI Implementation:** *"Build the stateful VPS tracking stack. Ensure the daemon includes the mathematical PA-API rate governor to protect credentials from daily limits, utilize an LRU memory cache on webhooks to keep dashboard responses instant, and implement the CPU heartbeat to prevent Oracle VM reclamation."*
+
+---
+
+### 🔀 Stage 5: The Universal Provisioning Router
+* **The Strategy:** Upgrade the automated deployment assistant to configure either execution architecture based on interactive user selections.
+* **Provisioning Routing Matrix:**
+    * Modify `setup.py` to prompt the operator for their target ecosystem (`[1] Cloudflare Edge` or `[2] Docker VPS`).
+    * **Selection 1 Configuration:** Sets up Cloudflare namespaces via API, configures wrangler schemas, and uploads keys to GitHub Secrets.
+    * **Selection 2 Configuration:** Generates local environment scripts (`.env`) and a multi-service configuration (`docker-compose.yml`) that instantly provisions FastAPI, Redis persistence volumes, and a reverse proxy handler with automated SSL generation.
+* **Requirements for AI Implementation:** *"Refactor the setup logic to act as a cross-platform setup assistant. It must generate appropriate compose structures, protect confidential files, and configure environments cleanly based on input prompts."*
+
+---
+
+### 🛑 Strict Verification & Guardrails Matrix
+* **The Schema Contract:** Data structures across Cloudflare KV and Redis must be identical. Shifting files or storage backends must not alter the layout of `user:{id}:products`, `price:{asin}`, or `history:{asin}`.
+* **The Fallback Path:** If a monorepo refactor induces an integration fault, the rollback procedure requires a git revert to the pre-monorepo commit, followed by a manual workflow deployment to restore the Edge Worker.
+
+| Objective Reference | Testing Target Focus | Verification Test Pattern | Expected Safe Vector |
+| :--- | :--- | :--- | :--- |
+| **TC-MONO-01** | Core Module Pathing | Execute checking loops from absolute workspace paths. | System resolves python package definitions cleanly without path errors. |
+| **TC-MONO-02** | Rate Governor Safety | Mock tracking pools scaling past 60 units. | The governor adjusts tracking loops dynamically to protect daily limits. |
+| **TC-MONO-03** | Interface Parity | Verify processing payloads across both database adapters. | Calculations evaluate data properties identically across KV and Redis. |
+| **TC-MONO-04** | Webhook Speed Check | Request `/manage` panels under high database mock loads. | The LRU profile cache intercepts traffic, ensuring rapid response times. |
+
+
+## 🌍 Phase 6.6: Oracle Container Activation & Dual-Node Capability
+
+**The Goal:** With the Monorepo architecture successfully decoupling the core logic from the infrastructure boundaries, this phase covers the physical provisioning, data ingestion, and network routing required to bring the Oracle Always-Free instance online as a parallel or primary execution node.
+
+- [ ] **Stage 1: Infrastructure Provisioning & Ingress**
+  <details>
+  <summary><b>View Execution Strategy</b></summary>
+  
+  **The Strategy:** Establish the secure networking boundary on the Oracle VM.<br>
+  1. Provision the Oracle ARM VM and install the Docker engine.<br>
+  2. Configure the Virtual Cloud Network (VCN) Security Lists to explicitly expose only ports `80` and `443`.<br>
+  3. Deploy a lightweight reverse proxy container (Caddy or Traefik) via `docker-compose.yml` to automatically provision and renew Let's Encrypt SSL certificates (a strict requirement for the Telegram Webhook).
+  </details>
+
+- [ ] **Stage 2: State Extraction & Redis Ingestion**
+  <details>
+  <summary><b>View Execution Strategy</b></summary>
+
+  **The Strategy:** Move the historical tracking state from Cloudflare Edge to the local Persistent Volume without dropping data.<br>
+  1. Write a temporary extraction script to paginate through the Cloudflare KV REST API and download the entire production database (`user:{id}:products`, `price:{asin}`, `history:{asin}`) into a unified `export.json` payload.<br>
+  2. Write a local ingestion script on the Oracle VM to parse `export.json` and map the keys natively into the Redis container.<br>
+  3. Configure the Redis container with `appendonly yes` and `appendfsync everysec` to guarantee data integrity against unexpected Oracle VM halts.
+  </details>
+
+- [ ] **Stage 3: The Webhook Cutover**
+  <details>
+  <summary><b>View Execution Strategy</b></summary>
+
+  **The Strategy:** Reroute live Telegram traffic to the new Container sandbox with zero downtime.<br>
+  1. Spin up the FastAPI and background daemon containers using the `deployments/container/` environment variables.<br>
+  2. Execute the Telegram `setWebhook` API call, updating the target URL from the `*.workers.dev` endpoint to the new Oracle-bound domain name.<br>
+  3. Verify the FastAPI edge is successfully intercepting requests and the LRU profile cache is resolving administrative names correctly.
+  </details>
 
 ## 🌍 Phase 7: Platform Expansion (Growth)
 
