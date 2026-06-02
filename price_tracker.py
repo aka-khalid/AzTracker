@@ -1108,6 +1108,32 @@ async def async_main():
             }
             bulk_payload.append({"key": "global:stats", "value": json.dumps(system_stats)})
 
+        # 6.5 Global Price Matrix (Root Admin Master Chart)
+        try:
+            global_hist = await bounded_get_kv(f"{cf_base_url}/values/global:history_all_new") or []
+        except KVRateLimitedError:
+            global_hist = []
+        if not isinstance(global_hist, list): global_hist = []
+
+        current_matrix = {}
+        for asin in unique_asins:
+            state = updates.get(asin) or global_prices.get(asin, {})
+            n_price = state.get("new_price")
+            if n_price is not None:
+                hist_mean = state.get("hist_mean")
+                is_atl = state.get("is_atl_new", False)
+                v_flag = 0
+                if hist_mean and hist_mean > 0:
+                    drop_pct = ((hist_mean - n_price) / hist_mean) * 100
+                    if (drop_pct >= 15.0) or (is_atl and drop_pct >= 10.0):
+                        v_flag = 1
+                current_matrix[asin] = [n_price, v_flag]
+
+        if current_matrix:
+            global_hist.append({"t": unix_now, "p": current_matrix})
+            global_hist = global_hist[-150:]
+            bulk_payload.append({"key": "global:history_all_new", "value": json.dumps(global_hist)})
+
         # The True Atomic Single-Push Execution
         if bulk_payload:
             success = await async_put_kv_bulk(session, cf_base_url, cf_headers, bulk_payload)
