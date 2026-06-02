@@ -69,7 +69,8 @@ graph TD;
 * 🎯 **Strict Boolean Target Locks:** Users set specific budgets. The engine features zero-spam target locks—alerting exactly once upon matching the target price.
 * 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request.
 * ⚡ **Edge-Cached Authorization:** Leverages Cloudflare's in-memory `caches.default` API with synthetic internal routing to heavily minimize KV read quota consumption during UI interactions.
-* 🎛️ **Granular Resource Quotas:** Global environment-driven tracking limits with individual admin overrides. 
+* 🎛️ **Granular Resource Quotas:** Global environment-driven tracking limits with individual admin overrides.
+* 📈 **Global Price Matrix:** A root-only, HMAC-secured Web App dashboard charting the macro-trajectory of all active ASINs. The engine computationally tags volatile assets (15% drops or All-Time Lows) to dynamically filter visual noise and prevent Y-axis scale compression, maintaining absolute zero read-amplification via bulk-write payload injection.
 
 ---
 
