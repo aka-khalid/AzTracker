@@ -270,7 +270,7 @@ def main():
     }
     
     # Execute Provisioning Sequence
-    provision_github_secrets(gh_token, repo_name, secrets_map, target_safe)
+    provision_github_secrets(gh_token, repo_full, secrets_map, target_safe)
     
     script_name = "aztracker-bot"
     cf_subdomain = get_cloudflare_subdomain(cf_account_id, cf_api_token, target_safe)
