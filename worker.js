@@ -118,29 +118,34 @@ export default {
 
     if (url.pathname === "/api/audit" && request.method === "GET") {
       const exp = url.searchParams.get("exp");
-      const sig = url.searchParams.get("sig");
-      
-      if (!exp || !sig || Date.now() > parseInt(exp)) return new Response("Unauthorized", { status: 401 });
-      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
-      if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
-
-      const listRes = await env.AZTRACKER_DB.list({ prefix: "audit:" });
-      const logs = [];
-      for (const key of listRes.keys) {
-        const parts = key.name.split(":");
-        const ts = parseInt(parts[1]);
-        const adminId = parts[2];
-        const data = await env.AZTRACKER_DB.get(key.name, "json");
-        if(data) logs.push({ ts, adminId, ...data });
-      }
-      logs.sort((a, b) => b.ts - a.ts); 
       return new Response(JSON.stringify(logs), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
     }
-    // ---------------------------
 
+    if (url.pathname === "/chart-all" && request.method === "GET") {
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      if (!exp || !sig || Date.now() > parseInt(exp)) return new Response("Unauthorized", { status: 401 });
+      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "all_products", exp);
+      if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
+      const html = renderGlobalChartHTML(exp, sig);
+      return new Response(html, { status: 200, headers: { "Content-Type": "text/html;charset=UTF-8" } });
+    }
+
+    if (url.pathname === "/api/admin/history-all" && request.method === "GET") {
+      const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      if (!exp || !sig || Date.now() > parseInt(exp)) return new Response("Unauthorized", { status: 401 });
+      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "all_products", exp);
+      if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
+      const data = await env.AZTRACKER_DB.get("global:history_all_new", "json") || [];
+      return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    }
+    // ---------------------------
+    
+    // 🛑 THE BOUNCER (Everything below this point is strictly for Telegram POST Webhooks)
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
     if (env.TELEGRAM_WEBHOOK_SECRET) {
