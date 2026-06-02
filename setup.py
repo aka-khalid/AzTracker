@@ -90,14 +90,16 @@ def provision_kv_namespace(account_id, api_token, target_safe):
         print(f"  [❌] Cloudflare API Error: {e}")
         sys.exit(1)
 
-def update_wrangler_toml(kv_id):
-    print("📝 Injecting KV ID into wrangler.toml...")
+def update_wrangler_toml(kv_id, repo_owner, repo_name):
+    print("📝 Injecting configs into wrangler.toml...")
     if not os.path.exists("wrangler.toml"):
         print("  [❌] wrangler.toml not found. Skipping TOML injection.")
         return
         
     with open("wrangler.toml", "r") as f: content = f.read()
     updated_content = re.sub(r'(id\s*=\s*")[^"]+(")', r'\g<1>' + kv_id + r'\g<2>', content)
+    updated_content = re.sub(r'(GITHUB_OWNER\s*=\s*")[^"]+(")', r'\g<1>' + repo_owner + r'\g<2>', updated_content)
+    updated_content = re.sub(r'(GITHUB_REPO\s*=\s*")[^"]+(")', r'\g<1>' + repo_name + r'\g<2>', updated_content)
     
     if updated_content != content or kv_id in content:
         with open("wrangler.toml", "w") as f: f.write(updated_content)
@@ -245,10 +247,11 @@ def main():
     
     cf_account_id, cf_api_token = get_cloudflare_credentials(env_vars)
     kv_id = provision_kv_namespace(cf_account_id, cf_api_token, target_safe)
-    update_wrangler_toml(kv_id)
     
     gh_token = env_vars.get("GH_WORKFLOW_TOKEN") or input("  [>] Enter your GitHub Fine-Grained PAT (GH_WORKFLOW_TOKEN): ").strip()
-    repo_name = get_github_repo_name()
+    repo_full = get_github_repo_name()
+    repo_owner, repo_name = repo_full.split("/") if "/" in repo_full else ("aka-khalid", repo_full)
+    update_wrangler_toml(kv_id, repo_owner, repo_name)
     
     # Unified Context Map
     secrets_map = {
@@ -276,7 +279,7 @@ def main():
          print("  [⚠️] Cloudflare API failed to return your workers.dev subdomain.")
          cf_subdomain = input("  [>] Please manually enter your subdomain (e.g., 'my-username'): ").strip()
  
-     worker_url = f"https://{script_name}.{cf_subdomain}.workers.dev"
+    worker_url = f"https://{script_name}.{cf_subdomain}.workers.dev"
     
     provision_worker_secrets(cf_account_id, cf_api_token, script_name, secrets_map, target_safe)
     register_webhook(secrets_map["TELEGRAM_BOT_TOKEN"], webhook_secret, worker_url, target_safe)
