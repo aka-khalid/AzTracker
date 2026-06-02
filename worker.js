@@ -118,12 +118,30 @@ export default {
 
     if (url.pathname === "/api/audit" && request.method === "GET") {
       const exp = url.searchParams.get("exp");
+      const sig = url.searchParams.get("sig");
+      
+      if (!exp || !sig || Date.now() > parseInt(exp)) return new Response("Unauthorized", { status: 401 });
+      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
+      if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
+
+      const listRes = await env.AZTRACKER_DB.list({ prefix: "audit:" });
+      const logs = [];
+      for (const key of listRes.keys) {
+        const parts = key.name.split(":");
+        const ts = parseInt(parts[1]);
+        const adminId = parts[2];
+        const data = await env.AZTRACKER_DB.get(key.name, "json");
+        if(data) logs.push({ ts, adminId, ...data });
+      }
+      logs.sort((a, b) => b.ts - a.ts); 
       return new Response(JSON.stringify(logs), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
     }
+    // ---------------------------
 
+    // --- GLOBAL PRICE MATRIX ENDPOINTS ---
     if (url.pathname === "/chart-all" && request.method === "GET") {
       const exp = url.searchParams.get("exp");
       const sig = url.searchParams.get("sig");
@@ -144,8 +162,7 @@ export default {
       return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
     }
     // ---------------------------
-    
-    // 🛑 THE BOUNCER (Everything below this point is strictly for Telegram POST Webhooks)
+
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
     if (env.TELEGRAM_WEBHOOK_SECRET) {
