@@ -271,7 +271,12 @@ def main():
     
     script_name = "aztracker-bot"
     cf_subdomain = get_cloudflare_subdomain(cf_account_id, cf_api_token, target_safe)
-    worker_url = f"https://{script_name}.{cf_subdomain}.workers.dev" if cf_subdomain else "https://[YOUR_WORKER_URL]"
+    
+    if not cf_subdomain:
+         print("  [⚠️] Cloudflare API failed to return your workers.dev subdomain.")
+         cf_subdomain = input("  [>] Please manually enter your subdomain (e.g., 'my-username'): ").strip()
+ 
+     worker_url = f"https://{script_name}.{cf_subdomain}.workers.dev"
     
     provision_worker_secrets(cf_account_id, cf_api_token, script_name, secrets_map, target_safe)
     register_webhook(secrets_map["TELEGRAM_BOT_TOKEN"], webhook_secret, worker_url, target_safe)
