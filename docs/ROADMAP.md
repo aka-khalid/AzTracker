@@ -131,7 +131,7 @@ This document tracks the technical debt, security fortifications, feature expans
   <summary><b>View Execution Brief</b></summary>
   
   **The Goal:** Provide root admins with a macro-view of all active price trends without triggering KV read-amplification penalties or frontend Y-axis compression.<br>
-  **The Strategy:** The Python engine evaluates active ASINs during its main loop, flagging volatile items (15% drops or ATLs). It compiles these into a `global:history_all_new` payload appended seamlessly during the final 2PC bulk write. The Cloudflare Worker exposes this strictly to Root Admins via an HMAC-secured Web App route, utilizing Chart.js to render the matrix and dynamically toggle non-volatile items to a hidden state by default.
+  **The Strategy:** The Python engine evaluates active ASINs during its main loop, applying the Omnichannel Z-Score logic ($z \le -1.5$) decoupled from event-based drop triggers. It compiles the resulting visibility flags into a `global:history_all_new` payload appended seamlessly during the final 2PC bulk write. The Cloudflare Worker exposes this strictly to Root Admins via an HMAC-secured Web App route, utilizing Chart.js to render the matrix. The state-driven Z-score creates a natural UI decay, where items organically fade from the default view as their 150-point rolling moving average stabilizes at the new baseline.
   </details>
 
 ## 🔐 Phase 4: Identity Provisioning & Security Governance
