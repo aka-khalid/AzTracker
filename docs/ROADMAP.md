@@ -126,7 +126,13 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Update `worker.js` to stamp an `added_at` epoch timestamp when a user sets a target. In `price_tracker.py`, check if `unix_now_ms - added_at` exceeds 90 days. If so, toggle `paused: true` and send an informational Telegram message.<br>
   **🤖 AI Execution Prompt:** *"Update `worker.js` to inject an `added_at` timestamp when `/settarget` is used. Then, in `price_tracker.py`, write a pre-evaluation filter: if an item has a target and is older than 90 days, remove it from the active API fetch pool, set `paused: true` in its KV dictionary, and queue a Telegram alert informing the user their stale target was retired."*
   </details>
-
+- [x] **Global Price Matrix (Root Admin Dashboard)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Provide root admins with a macro-view of all active price trends without triggering KV read-amplification penalties or frontend Y-axis compression.<br>
+  **The Strategy:** The Python engine evaluates active ASINs during its main loop, flagging volatile items (15% drops or ATLs). It compiles these into a `global:history_all_new` payload appended seamlessly during the final 2PC bulk write. The Cloudflare Worker exposes this strictly to Root Admins via an HMAC-secured Web App route, utilizing Chart.js to render the matrix and dynamically toggle non-volatile items to a hidden state by default.
+  </details>
 
 ## 🔐 Phase 4: Identity Provisioning & Security Governance
 
