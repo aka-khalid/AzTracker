@@ -197,9 +197,13 @@ async function handleMessage(message, env, ctx) {
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
+  const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
   if (!isApproved) {
+    if (isRejected) {
+      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nYour request to join this server has been explicitly rejected by an administrator.`);
+      return;
+    }
     const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
     const now = Date.now();
     const queue = rawQueue
@@ -568,6 +572,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
               }
           }
       }
+      
+      let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+      if (!bannedUsers.includes(targetId)) {
+        bannedUsers.push(targetId);
+        await env.AZTRACKER_DB.put("global:banned_users", JSON.stringify(bannedUsers));
+      }
+      await env.AZTRACKER_DB.put(`auth:${targetId}`, "rejected");
+
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
       
       // AUDIT LOG
@@ -598,6 +610,12 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
       await env.AZTRACKER_DB.put(`approved_by:${targetId}`, chatId);
+      
+      let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+      if (bannedUsers.includes(targetId)) {
+        bannedUsers = bannedUsers.filter(id => id !== targetId);
+        await env.AZTRACKER_DB.put("global:banned_users", JSON.stringify(bannedUsers));
+      }
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`);
@@ -660,6 +678,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("reject_") && isAdmin) {
       const targetId = data.replace("reject_", "");
+      
+      let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+      if (!bannedUsers.includes(targetId)) {
+        bannedUsers.push(targetId);
+        await env.AZTRACKER_DB.put("global:banned_users", JSON.stringify(bannedUsers));
+      }
+      await env.AZTRACKER_DB.put(`auth:${targetId}`, "rejected");
+      
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been explicitly denied access.`);
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
       // AUDIT LOG
@@ -674,6 +700,12 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
       await env.AZTRACKER_DB.put(`approved_by:${targetId}`, chatId);
+      
+      let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+      if (bannedUsers.includes(targetId)) {
+        bannedUsers = bannedUsers.filter(id => id !== targetId);
+        await env.AZTRACKER_DB.put("global:banned_users", JSON.stringify(bannedUsers));
+      }
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
@@ -789,7 +821,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
 
       let adminButtons = [
-        [{ text: "👥 View Approved Users", callback_data: "list_users" }]
+        [{ text: "👥 Manage Users Directory", callback_data: "admin_users_menu" }]
       ];
       
       if (isRootAdmin) {
@@ -807,6 +839,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
     }
+    else if (data === "admin_users_menu" && isAdmin) {
+      await env.AZTRACKER_DB.delete(`state:${chatId}`);
+      let text = `👥 <b>User Management Directory</b>\n\nSelect a category below to browse users.`;
+      let buttons = [
+        [{ text: "⏳ View Pending Requests", callback_data: "list_pending_0" }],
+        [{ text: "✅ View Approved Users", callback_data: "list_users_0" }],
+        [{ text: "🚫 View Banned Users", callback_data: "list_banned_0" }],
+        [{ text: "⬅️ Back to Admin Panel", callback_data: "admin_panel" }]
+      ];
+      await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: buttons });
+    }
     else if (data === "broadcast_init" && isRootAdmin) {
       await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
       const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
@@ -818,6 +861,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const parts = data.split("_");
       const page = parts[2] ? parseInt(parts[2]) : 0; 
       await renderUserList(env, chatId, messageId, page, ctx);
+    }
+    else if (data.startsWith("list_pending_") && isAdmin) {
+      const page = parseInt(data.replace("list_pending_", "")) || 0;
+      await renderPendingList(env, chatId, messageId, page, ctx);
+    }
+    else if (data.startsWith("list_banned_") && isAdmin) {
+      const page = parseInt(data.replace("list_banned_", "")) || 0;
+      await renderBannedList(env, chatId, messageId, page, ctx);
     }
     else if (data.startsWith("manage_user_") && isAdmin) {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
@@ -1240,7 +1291,7 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
 
   if (visibleUsers.length === 0) {
     const text = `👥 <b>Approved Users Directory</b>\n\nNo other profile records exist in the database right now.`;
-    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]] };
+    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
     return;
   }
@@ -1277,9 +1328,85 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
     keyboard.inline_keyboard.push(navRow);
   }
 
-  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Dashboard", callback_data: "admin_panel" }]);
+  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]);
 
   const text = `👥 <b>Approved Users Register</b> (Page ${page + 1} of ${totalPages})\n\nSelect an active profile record below to open its structural permissions card inline:`;
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
+
+async function renderPendingList(env, chatId, messageId, page = 0, ctx) {
+  const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+  const now = Date.now();
+  const queue = rawQueue
+    .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
+    .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
+
+  if (queue.length === 0) {
+    const text = `⏳ <b>Pending Requests</b>\n\nThere are no pending join requests right now.`;
+    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]] };
+    await editTelegramMessage(env, chatId, messageId, text, keyboard);
+    return;
+  }
+
+  const ITEMS_PER_PAGE = 5;
+  const totalPages = Math.ceil(queue.length / ITEMS_PER_PAGE);
+  if (page >= totalPages) page = Math.max(0, totalPages - 1);
+
+  const pagedUsers = queue.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const resolvedUsers = await Promise.all(pagedUsers.map(entry => resolveUserProfile(env, entry.id, ctx)));
+
+  const keyboard = { inline_keyboard: [] };
+  resolvedUsers.forEach((user) => {
+    keyboard.inline_keyboard.push([{ text: `⏳ ${user.label} (${user.id})`, callback_data: `manage_user_${user.id}` }]);
+  });
+
+  if (totalPages > 1) {
+    let navRow = [];
+    if (page > 0) navRow.push({ text: "⬅️ Prev", callback_data: `list_pending_${page - 1}` });
+    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
+    if (page < totalPages - 1) navRow.push({ text: "Next ➡️", callback_data: `list_pending_${page + 1}` });
+    keyboard.inline_keyboard.push(navRow);
+  }
+
+  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]);
+
+  const text = `⏳ <b>Pending Requests</b> (Page ${page + 1} of ${totalPages})\n\nSelect a user below to open their structural permissions card inline:`;
+  await editTelegramMessage(env, chatId, messageId, text, keyboard);
+}
+
+async function renderBannedList(env, chatId, messageId, page = 0, ctx) {
+  const bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+
+  if (bannedUsers.length === 0) {
+    const text = `🚫 <b>Banned Users Directory</b>\n\nThere are no banned users right now.`;
+    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]] };
+    await editTelegramMessage(env, chatId, messageId, text, keyboard);
+    return;
+  }
+
+  const ITEMS_PER_PAGE = 5;
+  const totalPages = Math.ceil(bannedUsers.length / ITEMS_PER_PAGE);
+  if (page >= totalPages) page = Math.max(0, totalPages - 1);
+
+  const pagedUsers = bannedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
+  const resolvedUsers = await Promise.all(pagedUsers.map(id => resolveUserProfile(env, id, ctx)));
+
+  const keyboard = { inline_keyboard: [] };
+  resolvedUsers.forEach((user) => {
+    keyboard.inline_keyboard.push([{ text: `🚫 ${user.label} (${user.id})`, callback_data: `manage_user_${user.id}` }]);
+  });
+
+  if (totalPages > 1) {
+    let navRow = [];
+    if (page > 0) navRow.push({ text: "⬅️ Prev", callback_data: `list_banned_${page - 1}` });
+    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
+    if (page < totalPages - 1) navRow.push({ text: "Next ➡️", callback_data: `list_banned_${page + 1}` });
+    keyboard.inline_keyboard.push(navRow);
+  }
+
+  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]);
+
+  const text = `🚫 <b>Banned Users Directory</b> (Page ${page + 1} of ${totalPages})\n\nSelect a user below to open their structural permissions card inline:`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
@@ -1728,12 +1855,14 @@ async function getUserRoles(chatId, env, ctx) {
       if (freshRole === "admin" || freshRole === "approved") {
         roles.isApproved = true;
         if (freshRole === "admin") roles.isAdmin = true;
-        
-        if (ctx && ctx.waitUntil) {
-          ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
-            headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
-          })));
-        }
+      } else if (freshRole === "rejected") {
+        roles.isRejected = true;
+      }
+      
+      if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
+          headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+        })));
       }
     }
   } else {
@@ -1764,9 +1893,10 @@ async function getUserRoles(chatId, env, ctx) {
 
     const isAdmin = isRootAdmin || role === "admin" || admins.includes(chatId);
     const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
+    const isRejected = role === "rejected";
 
     // Provide exactly the object shape the UI needs, preventing Promise.all array crashes.
-    roles = { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers };
+    roles = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers };
     
     if (ctx && ctx.waitUntil) {
       ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
