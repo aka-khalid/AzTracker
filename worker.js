@@ -1301,6 +1301,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // 1. Merge legacy arrays and new atomic keys dynamically
   const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
+  const bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
   const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
   const authUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
 
@@ -1310,8 +1311,8 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // CRITICAL FIX: Combine arrays and inject rootAdmins to make them visible
   const allApproved = [...new Set([...legacyApproved, ...authUsers, ...rootAdmins])];
 
-  // CRITICAL FIX: Strip only the caller's own card from visibility
-  const visibleUsers = allApproved.filter(id => id !== chatId);
+  // CRITICAL FIX: Strip the caller's own card AND explicitly banned users
+  const visibleUsers = allApproved.filter(id => id !== chatId && !bannedUsers.includes(id));
 
   if (visibleUsers.length === 0) {
     const text = `👥 <b>Approved Users Directory</b>\n\nNo other profile records exist in the database right now.`;
