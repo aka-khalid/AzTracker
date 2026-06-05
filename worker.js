@@ -691,6 +691,23 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Manually rejected access"));
     }
+    else if (data.startsWith("unban_") && isAdmin) {
+      const targetId = data.replace("unban_", "");
+      
+      let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+      if (bannedUsers.includes(targetId)) {
+        bannedUsers = bannedUsers.filter(id => id !== targetId);
+        await env.AZTRACKER_DB.put("global:banned_users", JSON.stringify(bannedUsers));
+      }
+      await env.AZTRACKER_DB.delete(`auth:${targetId}`);
+      
+      await editTelegramMessage(env, chatId, messageId, `🔄 <b>User Unbanned</b>\nUser <code>${targetId}</code> has been removed from the Banned Directory. They can now send /start to request access again if they wish.`, {
+        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_banned_0" }]]
+      });
+      
+      // AUDIT LOG
+      ctx.waitUntil(logAudit(env, chatId, "UNBAN_USER", targetId, "Removed from banned directory"));
+    }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
       if (!approvedUsers.includes(targetId)) {
@@ -894,7 +911,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (isRootAdmin) {
         if (!isTargetApproved) {
           buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-          buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
+          if (targetRole === "rejected") buttons.push([{ text: "🔄 Unban User", callback_data: `unban_${targetId}` }]);
+          else buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
         }
         if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
         if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
@@ -902,7 +920,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       } else if (isAdmin) {
         if (!isTargetApproved) {
           buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-          buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
+          if (targetRole === "rejected") buttons.push([{ text: "🔄 Unban User", callback_data: `unban_${targetId}` }]);
+          else buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
         }
         if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
       }
