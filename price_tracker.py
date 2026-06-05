@@ -19,6 +19,10 @@ import statistics
 from datetime import datetime
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
+# -- Amazon Compliance Patch --
+import requests
+requests.utils.default_user_agent = lambda: "Agent/AzTrackerBot"
+
 from amazon_creatorsapi import AmazonCreatorsApi, Country
 from amazon_creatorsapi.models import GetItemsResource, Condition
 
@@ -391,7 +395,7 @@ async def async_main():
                                             f"📦 <b>{safe_name}</b>\n"
                                             f"└ 🆔 <code>{asin}</code>\n\n"
                                             f"Your target price of <b>{target_price:,.2f} EGP</b> has been active for over 90 days without being met.\n\n"
-                                            f"<i>To conserve system resources, tracking for this item has been automatically paused. You can resume it from your dashboard anytime.</i>"
+                                            f"<i>To conserve system resources, checking for this item has been automatically paused. You can resume it from your dashboard anytime.</i>"
                                         )
                                         outbox.append({
                                             "chat_id": chat_id,
@@ -713,7 +717,7 @@ async def async_main():
                         f"📦 <b>{safe_name}</b>\n"
                         f"└ 🆔 <code>{product_id}</code>\n\n"
                         f"Amazon has completely removed this product page (404 Not Found) for 24+ consecutive hours.\n\n"
-                        f"<i>Your tracking for this item has been automatically paused.</i>"
+                        f"<i>Checking for this item has been automatically paused.</i>"
                     )
                     outbox.append({
                         "chat_id": chat_id,
@@ -766,7 +770,10 @@ async def async_main():
                     alert_url = f"{base_url}?{urlencode(q_params)}" if q_params else base_url
                     btn_text = "📦 Open Amazon Resale" if "(Used" in cond_label else "🛒 Open in Amazon.eg"
                     
-                    btn_markup = {"inline_keyboard": [[{"text": btn_text, "url": alert_url}]]}
+                    btn_markup = {"inline_keyboard": [
+                        [{"text": btn_text, "url": alert_url}],
+                        [{"text": "⚖️ Price Disclaimer", "callback_data": "show_disclaimer"}]
+                    ]}
                     
                     safe_name = html.escape(display_name)
                     safe_seller = html.escape(seller) if seller else "Unknown"
@@ -974,7 +981,8 @@ async def async_main():
                     f"💵 <b>{best_deal['price']:,.2f} EGP</b> <i>(usually {best_deal['last_price']:,.0f})</i>\n\n"
                     f"👉 <b><a href=\"{broadcast_url}\">Click here to grab the deal</a></b>\n"
                     f"〰️〰️〰️〰️〰️〰️〰️〰️\n"
-                    f"🤖 <i>Want to track your own Amazon prices? Try our bot: @AzTrackerr_bot</i>"
+                    f"🤖 <i>Find more exceptional deals on our bot: @AzTrackerr_bot</i>\n"
+                    f"🕐 <i>Price as of {now}</i>"
                 )
                 
                 outbox.append({
@@ -983,7 +991,10 @@ async def async_main():
                     "target_price": None,
                     "lock_keys": [], 
                     "text": broadcast_msg,
-                    "markup": {"inline_keyboard": [[{"text": "🛒 View on Amazon", "url": broadcast_url}]]}
+                    "markup": {"inline_keyboard": [
+                        [{"text": "🛒 Open in Amazon.eg", "url": broadcast_url}],
+                        [{"text": "⚖️ Price Disclaimer", "url": "https://telegra.ph/Pricing-Disclaimer-06-05"}]
+                    ]}
                 })
 
                 # --- GUARDRAIL 3: Save the High-Water Mark to KV ---

@@ -371,7 +371,7 @@ async function handleMessage(message, env, ctx) {
          buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
       }
       if (!isTargetAdmin) {
-         buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
+         buttons.push([{ text: "⚙️ Change Item Limit", callback_data: `set_limit_init_${targetId}` }]);
       }
     }
 
@@ -493,6 +493,20 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const chatId = callback.message.chat.id.toString();
   
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
+
+  if (data === "show_disclaimer") {
+    const disclaimerText = "Product prices and availability are accurate as of the date/time indicated and are subject to change. Any price and availability information displayed on Amazon.eg at the time of purchase will apply to the purchase of this product.";
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callback.id,
+        text: disclaimerText,
+        show_alert: true
+      })
+    });
+    return;
+  }
 
   if (!isApproved && !data.startsWith("request_access_")) return;
 
@@ -629,7 +643,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
       
       await sendTelegram(env, targetId, welcomeMessage);
       
@@ -726,7 +740,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
       
       await sendTelegram(env, targetId, welcomeMessage);
       
@@ -932,7 +946,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
            buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
         }
         if (!isTargetAdmin) {
-           buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
+           buttons.push([{ text: "⚙️ Change Item Limit", callback_data: `set_limit_init_${targetId}` }]);
         }
       }
       let backCb = "admin_users_menu";
@@ -1141,7 +1155,7 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
   const products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
 
   if (products.length === 0) {
-    const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\n\nThis user currently has no active or paused products in their database.`;
+    const text = `📦 <b>User Items List (ID: <code>${targetId}</code>)</b>\n\nThis user currently has no active or paused products in their database.`;
     const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
     return;
@@ -1179,7 +1193,7 @@ async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 
 
   keyboard.inline_keyboard.push([{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]);
 
-  const text = `📦 <b>User Tracking List (ID: <code>${targetId}</code>)</b>\nPage ${page + 1} of ${totalPages}\n\n<i>Select an item below to manage it on behalf of the user:</i>`;
+  const text = `📦 <b>User Items List (ID: <code>${targetId}</code>)</b>\nPage ${page + 1} of ${totalPages}\n\n<i>Select an item below to manage it on behalf of the user:</i>`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
@@ -1460,7 +1474,7 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   const active = products.filter(p => !p.paused).length;
   const paused = total - active;
 
-  const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Tracked Items:</b> ${total} / ${limitText}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
+  const text = `🏠 <b>AzTracker Dashboard</b>\n\n📦 <b>Your Saved Items:</b> ${total} / ${limitText}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
 
   const keyboard = {
     inline_keyboard: [
@@ -1486,7 +1500,7 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   const products = await env.AZTRACKER_DB.get(userDbKey, "json") || [];
   
   if (products.length === 0) {
-    const text = `❌ <b>Your tracking list is empty.</b>\n\nPaste an Amazon.eg link in the chat box to begin tracking!`;
+    const text = `❌ <b>Your tracking list is empty.</b>\n\nPaste an Amazon.eg link in the chat box to add it to your list.`;
     const keyboard = { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
     return;
@@ -1524,7 +1538,7 @@ async function renderProductList(env, chatId, messageId, page = 0) {
 
   keyboard.inline_keyboard.push([{ text: "🏠 Main Menu", callback_data: "main_menu" }]);
 
-  const text = `📦 <b>My Tracked Products</b> (Page ${page + 1} of ${totalPages})\n\n<i>Select an item below to modify its tracking parameters:</i>`;
+  const text = `📦 <b>My Saved Products</b> (Page ${page + 1} of ${totalPages})\n\n<i>Select an item below to modify its tracking parameters:</i>`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
@@ -1624,7 +1638,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
     const keyboard = {
     inline_keyboard: [
       [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
-      [{ text: product.paused ? "▶️ Resume Tracking" : "⏸️ Pause Tracking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
+      [{ text: product.paused ? "▶️ Resume Checking" : "⏸️ Pause Checking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
         targetBtn,
         { text: "📊 Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }
@@ -1985,7 +1999,7 @@ async function expandAmazonUrl(url) {
   let hops = 0;
   try {
     while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
-      const res = await fetch(currentUrl, { method: "GET", redirect: "manual" });
+      const res = await fetch(currentUrl, { method: "GET", redirect: "manual", headers: { "User-Agent": "Agent/AzTrackerBot" } });
       const location = res.headers.get("location");
       
       if (location) {
@@ -2017,7 +2031,7 @@ async function triggerWorkflow(env) {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
-        "User-Agent": "AzTracker-Bot",
+        "User-Agent": "Agent/AzTrackerBot",
         "Accept": "application/vnd.github+json",
         "Content-Type": "application/json"
       },
@@ -2090,7 +2104,7 @@ async function fetchLastWorkflowRun(env) {
     const res = await fetch(url, {
       headers: {
         "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
-        "User-Agent": "AzTracker-Bot",
+        "User-Agent": "Agent/AzTrackerBot",
         "Accept": "application/vnd.github+json"
       }
     });
