@@ -216,11 +216,11 @@ async function handleMessage(message, env, ctx) {
     }
     
     if (text === "/start") {
-      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.`, {
+      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private Amazon deals server. You are not authorized to use it.`, {
         inline_keyboard: [[{ text: "✋ Request Access", callback_data: `request_access_${chatId}` }]]
       });
     } else {
-      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private tracking server. You are not authorized to use it.\n\nSend /start to request access.`);
+      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private Amazon deals server. You are not authorized to use it.\n\nSend /start to request access.`);
     }
     return;
   }
@@ -280,7 +280,7 @@ async function handleMessage(message, env, ctx) {
       await env.AZTRACKER_DB.delete(stateKey);
       await deleteTelegramMessage(env, chatId, messageId);
 
-      await sendAppMessage(env, chatId, `✅ <b>Limit Updated!</b>\n\nUser <code>${targetId}</code> can now track up to <b>${newLimit}</b> items.`, {
+      await sendAppMessage(env, chatId, `✅ <b>Limit Updated!</b>\n\nUser <code>${targetId}</code> can now save up to <b>${newLimit}</b> items.`, {
         inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]]
       });
       
@@ -428,7 +428,7 @@ async function handleMessage(message, env, ctx) {
     if (!isAdmin) {
       const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
       if (isNaN(defaultLimit)) {
-        await editTelegramMessage(env, chatId, tempMessageId, `⚠️ <b>System Error:</b> Global tracking limit is unconfigured. Please contact an admin.`, {
+        await editTelegramMessage(env, chatId, tempMessageId, `⚠️ <b>System Error:</b> Global item limit is unconfigured. Please contact an admin.`, {
           inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
         });
         return;
@@ -437,7 +437,7 @@ async function handleMessage(message, env, ctx) {
       const userLimit = limitRaw !== null ? parseInt(limitRaw) : defaultLimit;
 
       if (products.length >= userLimit) {
-        await editTelegramMessage(env, chatId, tempMessageId, `⛔ <b>Limit Reached</b>\n\nYou are tracking ${products.length} items, but your current limit is ${userLimit}.\n\nPlease delete some products to free up space before adding new ones.`, {
+        await editTelegramMessage(env, chatId, tempMessageId, `⛔ <b>Limit Reached</b>\n\nYou have saved ${products.length} items, but your current limit is ${userLimit}.\n\nPlease delete some products to free up space before adding new ones.`, {
           inline_keyboard: [
             [{ text: "📦 Manage My Products", callback_data: "list_products_0" }],
             [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
@@ -448,7 +448,7 @@ async function handleMessage(message, env, ctx) {
     }
     
     if (products.some(p => getAsinFromUrl(p.url) === pid)) {
-      await editTelegramMessage(env, chatId, tempMessageId, "⚠️ <b>You are already tracking this product!</b>", {
+      await editTelegramMessage(env, chatId, tempMessageId, "⚠️ <b>You have already saved this product!</b>", {
         inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
       });
       return;
@@ -464,7 +464,7 @@ async function handleMessage(message, env, ctx) {
     const successText = `✅ <b>Product Registered!</b>\n\n` +
                     `📌 <b>${cleanTitle}</b>\n` +
                     `🆔 ASIN: <code>${pid}</code>\n\n` +
-                    `<i>The tracker is now aware of this item. It will pull the live price during the next automated check.</i>\n\n` +
+                    `<i>This item is now saved. It will pull the live price during the next automated check.</i>\n\n` +
                     `🕐 <b>Status:</b> ⏳ Pending initial scan...`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
@@ -536,7 +536,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
 
       const { label } = await resolveUserProfile(env, chatId, ctx);
-      const adminMsg = `🔔 <b>New Access Request</b>\n\n👤 <b>Name:</b> ${escapeHtml(label)}\n🆔 <b>ID:</b> <code>${chatId}</code>\n\n<i>This user is requesting authorization to access the tracking engine.</i>`;
+      const adminMsg = `🔔 <b>New Access Request</b>\n\n👤 <b>Name:</b> ${escapeHtml(label)}\n🆔 <b>ID:</b> <code>${chatId}</code>\n\n<i>This user is requesting authorization to access the server.</i>`;
       const adminButtons = {
         inline_keyboard: [
           [{ text: "✅ Approve", callback_data: `queueApprove_${chatId}` }, { text: "❌ Reject", callback_data: `queueReject_${chatId}` }]
@@ -643,7 +643,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>\n\nHappy shopping! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
       
       await sendTelegram(env, targetId, welcomeMessage);
       
@@ -652,7 +652,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
-      const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire tracking profile will be erased. This cannot be undone.</i>`;
+      const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>`;
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
           [{ text: "✅ Yes, Revoke", callback_data: `revoke_${targetId}` }],
@@ -740,7 +740,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the tracking application.`);
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
+      const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>\n\nHappy shopping! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
       
       await sendTelegram(env, targetId, welcomeMessage);
       
