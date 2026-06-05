@@ -772,7 +772,7 @@ async def async_main():
                     
                     btn_markup = {"inline_keyboard": [
                         [{"text": btn_text, "url": alert_url}],
-                        [{"text": "⚖️ Price Disclaimer", "callback_data": "show_disclaimer"}]
+                        [{"text": "⚖️ Price Disclaimer", "url": "https://telegra.ph/Pricing-Disclaimer-06-05"}]
                     ]}
                     
                     safe_name = html.escape(display_name)

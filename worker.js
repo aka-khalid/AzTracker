@@ -494,19 +494,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
 
-  if (data === "show_disclaimer") {
-    const disclaimerText = "Prices and availability are accurate as of the date/time indicated and subject to change. Any price/availability info displayed on Amazon.eg at the time of purchase will apply.";
-    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        callback_query_id: callback.id,
-        text: disclaimerText,
-        show_alert: true
-      })
-    });
-    return;
-  }
+
 
   if (!isApproved && !data.startsWith("request_access_")) return;
 
