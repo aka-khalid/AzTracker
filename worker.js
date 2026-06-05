@@ -515,9 +515,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         return;
       }
 
-      queue.push({ id: chatId, requested_at: now });
-      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
-
       await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
 
       const { label } = await resolveUserProfile(env, chatId, ctx);
@@ -529,11 +526,18 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       };
 
       const allAdmins = [...new Set([...admins, ...rootAdmins])];
+      let admin_messages = {};
       for (const adminId of allAdmins) {
         try {
-          await sendTelegram(env, adminId, adminMsg, adminButtons);
+          const sent = await sendTelegram(env, adminId, adminMsg, adminButtons);
+          if (sent && sent.ok && sent.result) {
+              admin_messages[adminId] = sent.result.message_id;
+          }
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
+      
+      queue.push({ id: chatId, requested_at: now, admin_messages: admin_messages });
+      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
     }
     else if (data.startsWith("queueReject_") && isAdmin) {
       const targetId = data.replace("queueReject_", "");
@@ -543,7 +547,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
         .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
 
-      if (!queue.some(entry => entry.id === targetId)) {
+      let queueObj = null;
+      if (!queue.some(entry => {
+          if (entry.id === targetId) { queueObj = entry; return true; }
+          return false;
+      })) {
         await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
         return;
       }
@@ -552,6 +560,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been denied access by ${escapeHtml(adminName)}.`);
+      
+      if (queueObj && queueObj.admin_messages) {
+          for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
+              if (admId !== chatId) {
+                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `🚫 <b>Request Handled</b>\nUser <code>${targetId}</code> was rejected by ${escapeHtml(adminName)}.`));
+              }
+          }
+      }
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the AzTracker server has been declined by an administrator.`);
       
       // AUDIT LOG
@@ -565,7 +581,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
         .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
 
-      if (!queue.some(entry => entry.id === targetId)) {
+      let queueObj = null;
+      if (!queue.some(entry => {
+          if (entry.id === targetId) { queueObj = entry; return true; }
+          return false;
+      })) {
         await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
         return;
       }
@@ -581,6 +601,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`);
+
+      if (queueObj && queueObj.admin_messages) {
+          for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
+              if (admId !== chatId) {
+                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `✅ <b>Request Handled</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`));
+              }
+          }
+      }
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
       const welcomeMessage = `🎉 <b>You have been approved! Welcome to AzTracker.</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe tracker will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Tracking Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> tracked items. If you desperately need to track more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause tracking on things you've already bought.</i>\n\nHappy tracking! 🛒`;
