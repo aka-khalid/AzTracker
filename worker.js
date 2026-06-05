@@ -465,7 +465,7 @@ async function handleMessage(message, env, ctx) {
                     `📌 <b>${cleanTitle}</b>\n` +
                     `🆔 ASIN: <code>${pid}</code>\n\n` +
                     `<i>This item is now saved. It will pull the live price during the next automated check.</i>\n\n` +
-                    `🕐 <b>Status:</b> ⏳ Pending initial scan...`;
+                    `🕐 <b>Status:</b> ⏳ Pending initial scan...\n\n#ad`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
         [{ text: "📦 View My Products", callback_data: "list_products_0" }],
@@ -1273,7 +1273,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
                `${targetText}` +
                `${sellerInfo}` +
                `${smartAlts}\n\n` +
-               `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
+               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n#ad`;
 
   // HORIZONTAL READ-ONLY AUDITING: Strip write buttons if caller shouldn't have access
   const isTargetAdmin = admins.includes(targetId) || rootAdmins.includes(targetId);
@@ -1617,7 +1617,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
                `${targetText}` +
                `${sellerInfo}` +
                `${smartAlts}\n\n` +
-               `📡 <b>Status:</b> ${statusStr}${lastUpdated}`;
+               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n#ad`;
 
   const targetBtn = product.target_price 
     ? { text: "❌ Clear Target", callback_data: `confClearTgt_${pid}` }

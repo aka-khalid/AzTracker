@@ -823,7 +823,8 @@ async def async_main():
                             f"📉 <b>Target:</b> {target_price:,.2f} EGP{down_text}\n"
                             f"🏬 <b>Seller:</b> <i>{safe_seller}</i>"
                             f"{final_smart_alts}\n\n"
-                            f"🕐 <i>{now}</i>"
+                            f"🕐 <i>{now}</i>\n\n"
+                            f"#ad"
                         )
                     else:
                         if last_price is None:
@@ -834,7 +835,8 @@ async def async_main():
                                 f"💰 <b>Price:</b> {price:,.2f} EGP\n"
                                 f"🏬 <b>Seller:</b> <i>{safe_seller}</i>"
                                 f"{final_smart_alts}\n\n"
-                                f"🕐 <i>{now}</i>"
+                                f"🕐 <i>{now}</i>\n\n"
+                            f"#ad"
                             )
                         else:
                             diff = last_price - price
@@ -848,7 +850,8 @@ async def async_main():
                                 f"🏷️ <b>Was:</b> {last_price:,.2f} EGP\n"
                                 f"🏬 <b>Seller:</b> <i>{safe_seller}</i>"
                                 f"{final_smart_alts}\n\n"
-                                f"🕐 <i>{now}</i>"
+                                f"🕐 <i>{now}</i>\n\n"
+                            f"#ad"
                             )
                     outbox_item = {
                         "chat_id": chat_id,
@@ -982,7 +985,8 @@ async def async_main():
                     f"👉 <b><a href=\"{broadcast_url}\">Click here to grab the deal</a></b>\n"
                     f"〰️〰️〰️〰️〰️〰️〰️〰️\n"
                     f"🤖 <i>Find more exceptional deals on our bot: @AzTrackerr_bot</i>\n"
-                    f"🕐 <i>Price as of {now}</i>"
+                    f"🕐 <i>Price as of {now}</i>\n\n"
+                    f"#ad"
                 )
                 
                 outbox.append({
