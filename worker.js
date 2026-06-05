@@ -346,6 +346,8 @@ async function handleMessage(message, env, ctx) {
     if (approverId) {
       const { label } = await resolveUserProfile(env, approverId, ctx);
       approverText = escapeHtml(label);
+    } else if (!isTargetApproved) {
+      approverText = "N/A (Not Approved)";
     }
 
     let buttons = [];
@@ -376,7 +378,7 @@ async function handleMessage(message, env, ctx) {
     }
 
     if (buttons.length > 0) {
-      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
+      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : (targetRole === "rejected" ? "⛔ Banned User" : "🚫 Unapproved Guest");
       const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
       await sendAppMessage(env, chatId, statusMsg, { inline_keyboard: buttons });
     }
@@ -907,6 +909,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (approverId) {
         const { label } = await resolveUserProfile(env, approverId, ctx);
         approverText = escapeHtml(label);
+      } else if (!isTargetApproved) {
+        approverText = "N/A (Not Approved)";
       }
 
       let buttons = [];
@@ -944,7 +948,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       
       buttons.push([{ text: "⬅️ Back to Directory", callback_data: backCb }]);
 
-      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
+      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : (targetRole === "rejected" ? "⛔ Banned User" : "🚫 Unapproved Guest");
       const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
       await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
     }
