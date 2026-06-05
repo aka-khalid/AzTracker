@@ -916,7 +916,12 @@ async function handleCallback(callback, env, baseUrl, ctx) {
            buttons.push([{ text: "⚙️ Change Tracking Limit", callback_data: `set_limit_init_${targetId}` }]);
         }
       }
-      buttons.push([{ text: "⬅️ Back to Directory", callback_data: "list_users" }]);
+      let backCb = "admin_users_menu";
+      if (targetRole === "rejected") backCb = "list_banned_0";
+      else if (isTargetApproved) backCb = "list_users_0";
+      else backCb = "list_pending_0";
+      
+      buttons.push([{ text: "⬅️ Back to Directory", callback_data: backCb }]);
 
       const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : "🚫 Unapproved Guest";
       const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
