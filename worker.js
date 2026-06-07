@@ -2002,11 +2002,15 @@ async function resolveUserProfile(env, id, ctx) {
 
 async function deleteTelegramMessage(env, chatId, messageId) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteMessage`;
-  await fetch(url, {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+    body: JSON.stringify({ chat_id: chatId, message_id: parseInt(messageId) })
   });
+  
+  if (!res.ok) {
+    console.error(`Telegram API Error [deleteMessage]: ${res.status} - ${await res.text()}`);
+  }
 }
 
 async function expandAmazonUrl(url) {
