@@ -14,7 +14,89 @@ const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const QUEUE_MAX_DEPTH = 25;
 
 
+import { AmazonEdgeParser } from './src/api/amazon';
+
 export default {
+  async scheduled(event, env, ctx) {
+    console.log("Cron tick:", event.cron);
+    
+    // 1. Fetch products needing updates from D1 (e.g. older than 5 mins)
+    const { results: staleProducts } = await env.DB.prepare(
+      "SELECT asin, amazon_price, used_price, new_price FROM Global_Products WHERE last_updated < ?"
+    ).bind(Date.now() - 300000).all();
+
+    if (!staleProducts || staleProducts.length === 0) return;
+
+    // 2. Fetch live data using aws4fetch (AmazonEdgeParser)
+    const parser = new AmazonEdgeParser(env.AWS_ACCESS_KEY, env.AWS_SECRET_KEY, env.PARTNER_TAG);
+    const asins = staleProducts.map(p => p.asin);
+    const liveItems = await parser.getItems(asins);
+
+    // 3. Write-on-Delta Logic: Only queue DB writes if data actually changed
+    const dbBatch = [];
+    const queueBatch = [];
+    
+    for (const liveItem of liveItems) {
+      const oldItem = staleProducts.find(p => p.asin === liveItem.asin);
+      
+      const priceDelta = oldItem.amazon_price !== liveItem.amazonPrice || 
+                         oldItem.used_price !== liveItem.usedPrice || 
+                         oldItem.new_price !== liveItem.newPrice;
+
+      if (priceDelta) {
+        // Queue D1 Update
+        dbBatch.push(
+          env.DB.prepare(`
+            UPDATE Global_Products 
+            SET amazon_price = ?, used_price = ?, new_price = ?, last_updated = ?
+            WHERE asin = ?
+          `).bind(liveItem.amazonPrice, liveItem.usedPrice, liveItem.newPrice, Date.now(), liveItem.asin)
+        );
+        
+        // Find subscribed users and queue alerts via Cloudflare Queue
+        const { results: subs } = await env.DB.prepare(
+          "SELECT chat_id, target_price FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
+        ).bind(liveItem.asin).all();
+        
+        for (const sub of subs) {
+          if (sub.target_price >= liveItem.amazonPrice) {
+            queueBatch.push({
+              type: 'telegram_alert',
+              chatId: sub.chat_id,
+              text: `🚨 <b>Price Drop!</b>\nASIN ${liveItem.asin} dropped to ${liveItem.amazonPrice} EGP!`
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Execute atomic batch Write-on-Delta (Saves 100k D1 daily limit)
+    if (dbBatch.length > 0) {
+      await env.DB.batch(dbBatch);
+    }
+    
+    // 5. Safely dispatch alerts to Queue
+    for (const alert of queueBatch) {
+      await env.MESSAGE_QUEUE.send(alert);
+    }
+  },
+
+  async queue(batch, env, ctx) {
+    // Native Cloudflare Queue consumer for Telegram Alerts & Broadcasts
+    for (const msg of batch.messages) {
+      try {
+        const payload = msg.body;
+        if (payload.type === 'telegram_alert') {
+          await sendTelegram(env, payload.chatId, payload.text);
+        }
+        msg.ack();
+      } catch (e) {
+        console.error("Queue error:", e);
+        msg.retry();
+      }
+    }
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
@@ -241,24 +323,29 @@ async function handleMessage(message, env, ctx) {
     await env.AZTRACKER_DB.delete(stateKey);
     await deleteTelegramMessage(env, chatId, messageId);
     
-    const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Broadcasting...</b>`);
+    const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Broadcasting...</b>\nDispatching to queue...`);
     
-    let successCount = 0;
+    let queuedCount = 0;
+    // Push the broadcast ops to the Cloudflare Queue to avoid 30s timeout
     for (const userId of approvedUsers) {
       try {
-        await sendTelegram(env, userId, `📢 <b>System Update</b>\n\n${text}`);
-        successCount++;
+        await env.MESSAGE_QUEUE.send({
+          type: 'telegram_alert',
+          chatId: userId,
+          text: `📢 <b>System Update</b>\n\n${text}`
+        });
+        queuedCount++;
       } catch (e) {
-        console.error(`Broadcast failed for ${userId}`);
+        console.error(`Queue send failed for ${userId}`);
       }
     }
     
-    await editTelegramMessage(env, chatId, sentMsg.result.message_id, `✅ <b>Broadcast Complete!</b>\nDelivered to ${successCount} user(s).`, {
+    await editTelegramMessage(env, chatId, sentMsg.result.message_id, `✅ <b>Broadcast Queued!</b>\nSafely dispatched ${queuedCount} messages to the Edge Queue.`, {
       inline_keyboard: [[{ text: "⬅️ Back to Admin Panel", callback_data: "admin_panel" }]]
     });
     
     // AUDIT LOG
-    ctx.waitUntil(logAudit(env, chatId, "BROADCAST", "ALL_USERS", `Sent broadcast to ${successCount} users`));
+    ctx.waitUntil(logAudit(env, chatId, "BROADCAST", "ALL_USERS", `Queued broadcast to ${queuedCount} users`));
     
     return;
   }

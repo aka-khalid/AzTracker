@@ -6,6 +6,21 @@ compatibility_date = "2026-05-23"
 binding = "AZTRACKER_DB"
 id = "90fcfcb742fe4d7299087c076bd1ba4d"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "aztracker-test-db"
+database_id = "5ba01682-b844-447d-8498-bc0cac846edd"
+
+[[queues.producers]]
+binding = "MESSAGE_QUEUE"
+queue = "telegram-outbox"
+
+[[queues.consumers]]
+queue = "telegram-outbox"
+max_batch_size = 30
+max_batch_timeout = 1
+max_retries = 3
+
 [vars]
 GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"

@@ -1,0 +1,31 @@
+{
+  "name": "aztracker",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">",
+  "main": "worker.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aka-khalid/AzTracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/aka-khalid/AzTracker/issues"
+  },
+  "homepage": "https://github.com/aka-khalid/AzTracker#readme",
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260606.1",
+    "typescript": "^6.0.3"
+  }
+}
