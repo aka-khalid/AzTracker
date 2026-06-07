@@ -2734,7 +2734,7 @@ function renderCrmHTML() {
                     return \`
                     <div class="glass rounded-xl p-3 flex justify-between items-center">
                         <div>
-                            <div class="font-medium text-sm truncate max-w-[250px]">\${u.first_name || 'User'} \${u.username ? '(@' + u.username + ')' : ''} (\${u.id})</div>
+                            <div class="font-medium text-sm truncate max-w-[250px]">\${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.id})</div>
                             <div class="text-xs text-gray-500 mt-0.5">Requested: \${time}</div>
                         </div>
                         <div class="flex gap-2">
@@ -2779,8 +2779,8 @@ function renderCrmHTML() {
                     <div class="flex justify-between items-start mb-3 relative z-10">
                         <div>
                             <div class="font-medium flex items-center gap-2">
-                                <span class="text-sm font-semibold">\${u.first_name || 'User'} \${u.username ? '(@' + u.username + ')' : ''}</span>
-                                <span class="text-xs text-gray-500 ml-1 mr-2">(\${u.chat_id})</span>
+                                <span class="text-sm font-semibold">\${u.first_name || 'User'}</span>
+                                <span class="text-xs text-gray-500 ml-1 mr-2">(\${u.username ? '@' + u.username : u.chat_id})</span>
                                 <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>
                             </div>
                             <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
