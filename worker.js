@@ -338,10 +338,12 @@ export default {
         ctx.waitUntil(sendAppMessage(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "reject") {
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "revoke") {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
@@ -352,11 +354,13 @@ export default {
         ctx.waitUntil(sendAppMessage(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and deleted subscriptions"));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
         ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "demote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
@@ -364,6 +368,7 @@ export default {
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "set_limit") {
         const newLimit = parseInt(data.limit);
@@ -481,8 +486,7 @@ async function executeScrapeEngine(env, force = false) {
           queueBatch.push({
             type: 'telegram_alert',
             chatId: sub.chat_id,
-            text: `🚨 <b>Item Missing!</b>
-ASIN <code>${dead.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
+            text: `🚨 <b>Item Missing!</b>\nASIN <code>${dead.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
           });
         }
       } else {
@@ -540,8 +544,7 @@ ASIN <code>${dead.asin}</code> has been Out of Stock for > 24 hours. Tracking pa
         queueBatch.push({
           type: 'telegram_alert',
           chatId: sub.chat_id,
-          text: `🚨 <b>Item Missing!</b>
-ASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
+          text: `🚨 <b>Item Missing!</b>\nASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
         });
       }
       continue;
@@ -692,27 +695,17 @@ ASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Trackin
           alertSentNew = 1;
           const dropPct = oldItem.new_price ? Math.round(((oldItem.new_price - finalNewPrice) / oldItem.new_price) * 100) : 0;
           const pctStr = dropPct > 0 ? ` (🔽 ${dropPct}%)` : '';
-          let text = `🚨 <b>Price Drop!</b>
-📦 <b>${liveItem.name || liveItem.asin}</b>
-
-`;
-          text += `💰 Now: <b>${finalNewPrice} EGP</b>${pctStr}
-`;
-          if (oldItem.new_price) text += `📉 Was: ${oldItem.new_price} EGP
-`;
-          if (finalAmazonPrice !== null) text += `🛡️ Condition: New (Amazon)
-`;
-          else text += `⭐ Condition: New (3rd Party)
-`;
+          let text = `🚨 <b>Price Drop!</b>\n📦 <b>${liveItem.name || liveItem.asin}</b>\n\n`;
+          text += `💰 Now: <b>${finalNewPrice} EGP</b>${pctStr}\n`;
+          if (oldItem.new_price) text += `📉 Was: ${oldItem.new_price} EGP\n`;
+          if (finalAmazonPrice !== null) text += `🛡️ Condition: New (Amazon)\n`;
+          else text += `⭐ Condition: New (3rd Party)\n`;
           
           let otherOptions = [];
           if (finalUsedPrice !== null) otherOptions.push(`└ 📦 Amazon Resale: <b>${finalUsedPrice} EGP</b> (Used)`);
           else if (seenResaleAt && (now - seenResaleAt < 1209600000)) otherOptions.push(`└ 📦 Amazon Resale <i>(Check Stock)</i>`);
           
-          if (otherOptions.length > 0) text += `
-💡 <b>Other Options:</b>
-` + otherOptions.join('
-');
+          if (otherOptions.length > 0) text += `\n💡 <b>Other Options:</b>\n` + otherOptions.join('\n');
 
           queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text });
         }
@@ -725,26 +718,17 @@ ASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Trackin
           alertSentUsed = 1;
           const dropPct = oldItem.used_price ? Math.round(((oldItem.used_price - finalUsedPrice) / oldItem.used_price) * 100) : 0;
           const pctStr = dropPct > 0 ? ` (🔽 ${dropPct}%)` : '';
-          let text = `🚨 <b>Used Price Drop!</b>
-📦 <b>${liveItem.name || liveItem.asin}</b>
-
-`;
-          text += `💰 Now: <b>${finalUsedPrice} EGP</b>${pctStr}
-`;
-          if (oldItem.used_price) text += `📉 Was: ${oldItem.used_price} EGP
-`;
-          text += `⭐ Condition: Used
-`;
+          let text = `🚨 <b>Used Price Drop!</b>\n📦 <b>${liveItem.name || liveItem.asin}</b>\n\n`;
+          text += `💰 Now: <b>${finalUsedPrice} EGP</b>${pctStr}\n`;
+          if (oldItem.used_price) text += `📉 Was: ${oldItem.used_price} EGP\n`;
+          text += `⭐ Condition: Used\n`;
           
           let otherOptions = [];
           if (finalAmazonPrice !== null) otherOptions.push(`└ 🛡️ Amazon.eg: <b>${finalAmazonPrice} EGP</b>`);
           else if (seenAmazonEgAt && (now - seenAmazonEgAt < 1209600000)) otherOptions.push(`└ 🛡️ Amazon.eg <i>(Check Stock)</i>`);
           else if (finalNewPrice !== null) otherOptions.push(`└ ⭐ New (3rd Party): <b>${finalNewPrice} EGP</b>`);
           
-          if (otherOptions.length > 0) text += `
-💡 <b>Other Options:</b>
-` + otherOptions.join('
-');
+          if (otherOptions.length > 0) text += `\n💡 <b>Other Options:</b>\n` + otherOptions.join('\n');
 
           queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text });
         }
@@ -783,9 +767,7 @@ ASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Trackin
           consolidatedBatch.push({ type: 'telegram_alert', chatId, text: combinedText });
           combinedText = nextText;
         } else {
-          combinedText += "
-
-" + nextText;
+          combinedText += "\n\n" + nextText;
         }
       }
       if (combinedText) {
@@ -971,6 +953,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       ON CONFLICT(chat_id, asin) DO NOTHING
     `).bind(chatId, pid, Date.now()).run();
     if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "ADD_PRODUCT", chatId, `Added product ${pid}`));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "ADD_PRODUCT", chatId, `Added product ${pid}`));
 
 
     const title = extractedName ? extractedName : pid;
@@ -1074,7 +1057,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (queueObj && queueObj.admin_messages) {
           for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
               if (admId !== chatId) {
-                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `🚫 <b>Request Handled</b>\nUser <code>${targetId}</code> was rejected by ${escapeHtml(adminName)}.`));
+                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `🚫 <b>Request Handled</b>\nUser <code>${targetId}</code> was rejected by ${escapeHtml(adminName)}.`, { inline_keyboard: [] }));
               }
           }
       }
@@ -1130,12 +1113,12 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (queueObj && queueObj.admin_messages) {
           for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
               if (admId !== chatId) {
-                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `✅ <b>Request Handled</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`));
+                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `✅ <b>Request Handled</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`, { inline_keyboard: [] }));
               }
           }
       }
       
-      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
+      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
       const welcomeMessage = `🎉 <b>You have been approved! Welcome!</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>\n\nHappy shopping! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
       
       await sendTelegram(env, targetId, welcomeMessage);
@@ -1218,7 +1201,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the Amazon deals application.`);
       
-      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
+      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
       const welcomeMessage = `🎉 <b>You have been approved! Welcome!</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>\n\nHappy shopping! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
       
       await sendTelegram(env, targetId, welcomeMessage);
@@ -1343,6 +1326,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("confirmDel_")) {
       const pid = data.replace("confirmDel_", "");
       const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\n\n<i>This action cannot be undone.</i>`;
+      
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
+          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+        ]
+      });
+    }
+    else if (data.startsWith("confirmDel_")) {
+      const pid = data.replace("confirmDel_", "");
+      const text = `⚠️ <b>Confirm Deletion</b>\\n\\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\\n\\n<i>This action cannot be undone.</i>`;
       
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
@@ -2743,17 +2737,17 @@ function renderCrmHTML() {
                 
                 list.innerHTML = appData.joinQueue.map(u => {
                     const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    return \`
+                    return `
                     <div class="glass rounded-xl p-3 flex justify-between items-center">
                         <div>
-                            <div class="font-medium text-sm truncate max-w-[150px]">ID: \${u.id}</div>
+                            <div class="font-medium text-sm truncate max-w-[250px]">\${u.first_name || 'User'} \${u.username ? '(@' + u.username + ')' : ''} (\${u.id})</div>
                             <div class="text-xs text-gray-500 mt-0.5">Requested: \${time}</div>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="performAction('reject', '\${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                            <button onclick="performAction('approve', '\${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
+                            <button onclick="performAction('reject', '${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                            <button onclick="performAction('approve', '${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
                         </div>
-                    </div>\`;
+                    </div>`;
                 }).join('');
             } else {
                 filterUsers();
@@ -2791,7 +2785,8 @@ function renderCrmHTML() {
                     <div class="flex justify-between items-start mb-3 relative z-10">
                         <div>
                             <div class="font-medium flex items-center gap-2">
-                                <span class="text-sm">\${u.chat_id}</span>
+                                <span class="text-sm font-semibold">\${u.first_name || 'User'} \${u.username ? '(@' + u.username + ')' : ''}</span>
+                                <span class="text-xs text-gray-500 ml-1 mr-2">(\${u.chat_id})</span>
                                 <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>
                             </div>
                             <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
