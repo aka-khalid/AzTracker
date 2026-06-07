@@ -2783,7 +2783,7 @@ function renderCrmHTML() {
                                 \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>\` : ''}
                             </div>
                             <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
-                                <span>\${u.active_items} / \${u.item_limit} Items</span>
+                                <span>\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
                                 <span>•</span>
                                 <span>Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
                             </div>
@@ -2795,7 +2795,7 @@ function renderCrmHTML() {
                             \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\`
                         :
                             \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
-                            <button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>
+                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\`}
                             \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
                             \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
                             \${u.role !== 'root' ? \`<button onclick="confirmRevoke('\${u.chat_id}')" class="w-8 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition flex items-center justify-center border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
