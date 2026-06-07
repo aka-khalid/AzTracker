@@ -2780,7 +2780,7 @@ function renderCrmHTML() {
                         <div>
                             <div class="font-medium flex items-center gap-2">
                                 <span class="text-sm font-semibold">\${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.chat_id})</span>
-                                <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>
+                                \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>\` : ''}
                             </div>
                             <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
                                 <span>\${u.active_items} / \${u.item_limit} Items</span>
