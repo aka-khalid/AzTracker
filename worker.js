@@ -182,11 +182,13 @@ export default {
       const userData = await verifyInitData(initData, environment.TELEGRAM_BOT_TOKEN);
       if (!userData) return null;
       
-      const rootAdmins = environment.ROOT_ADMIN_IDS ? environment.ROOT_ADMIN_IDS.split(",") : [];
-      if (rootAdmins.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
+      const { admins, rootAdmins } = await getUserRoles(userData.id.toString(), environment);
       
-      const dbUser = await environment.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(userData.id.toString()).first();
-      if (dbUser && dbUser.role === 'admin') return { user: userData, isRootAdmin: false };
+      const rootAdminsStr = rootAdmins.map(String);
+      const adminsStr = admins.map(String);
+      
+      if (rootAdminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
+      if (adminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: false };
       
       return null;
     }
