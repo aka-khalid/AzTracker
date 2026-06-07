@@ -2779,8 +2779,7 @@ function renderCrmHTML() {
                     <div class="flex justify-between items-start mb-3 relative z-10">
                         <div>
                             <div class="font-medium flex items-center gap-2">
-                                <span class="text-sm font-semibold">\${u.first_name || 'User'}</span>
-                                <span class="text-xs text-gray-500 ml-1 mr-2">(\${u.username ? '@' + u.username : u.chat_id})</span>
+                                <span class="text-sm font-semibold">\${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.chat_id})</span>
                                 <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>
                             </div>
                             <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
