@@ -27,4 +27,5 @@ GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
 GLOBAL_POOL_LIMIT = "450"
 
-
+[triggers]
+crons = ["0 * * * *"]

@@ -60,7 +60,7 @@ export class AmazonEdgeParser {
           'Offers.Listings.Price',
           'Offers.Listings.Condition',
           'Offers.Listings.MerchantInfo',
-          'Offers.Listings.DeliveryInfo.IsPrimeEligible'
+          'Offers.Listings.DeliveryInfo.IsBuyBoxWinner'
         ],
         PartnerTag: this.partnerTag,
         PartnerType: 'Associates',
@@ -109,19 +109,34 @@ export class AmazonEdgeParser {
       parsed.name = rawItem.ItemInfo.Title.DisplayValue;
     }
     
+    // Retrieve AMZN_RETAIL_MID from global env if available, else fallback to Amazon.eg default
+    // We'll read it directly from globalThis if injected, otherwise fallback
+    const defaultMid = 'A1ZVRGNO5AYLOV';
+    const amazonMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RETAIL_MID || defaultMid) : defaultMid;
+
     if (rawItem.Offers?.Listings) {
       for (const listing of rawItem.Offers.Listings) {
         const condition = listing.Condition?.Value?.toLowerCase() || '';
-        const price = listing.Price?.Amount || 0;
+        const priceStr = listing.Price?.Amount || 0;
+        const price = Number(priceStr);
         const sellerName = listing.MerchantInfo?.Name || 'Unknown';
         const sellerId = listing.MerchantInfo?.Id || '';
-        const isAmazon = sellerName.toLowerCase().includes('amazon');
+        
+        // Fix: Use strictly boolean evaluation from the payload
+        const rawIsBuyBox = listing.DeliveryInfo?.IsBuyBoxWinner || listing.IsBuyBoxWinner;
+        const isBuyBox = String(rawIsBuyBox).toLowerCase() === 'true';
+
+        // Fix: Check for Amazon or Amazon Resale
+        const isAmazon = sellerId === amazonMid || sellerName.toLowerCase().match(/^amazon(\.eg)?$/);
+        const isAmazonResale = sellerName.toLowerCase().match(/(amazon resale|amazon warehouse)/) || ['A2OAJ7377F756P', 'A8KICS1PHF7ZO'].includes(sellerId);
         
         if (isAmazon) {
-            parsed.amazonPrice = price;
-            parsed.amazonSeller = sellerName;
-            parsed.amazonMid = sellerId;
-            parsed.amazonIsBuybox = listing.DeliveryInfo?.IsPrimeEligible || false;
+            if (!parsed.amazonPrice || price < parsed.amazonPrice) {
+                parsed.amazonPrice = price;
+                parsed.amazonSeller = sellerName;
+                parsed.amazonMid = sellerId;
+                parsed.amazonIsBuybox = isBuyBox;
+            }
         }
 
         if (condition === 'new') {
@@ -130,7 +145,7 @@ export class AmazonEdgeParser {
                 parsed.newSeller = sellerName;
                 parsed.newMid = sellerId;
             }
-        } else if (condition === 'used' || condition.includes('refurbished')) {
+        } else if (condition === 'used' || condition.includes('refurbished') || isAmazonResale) {
             if (!parsed.usedPrice || price < parsed.usedPrice) {
                 parsed.usedPrice = price;
                 parsed.usedSeller = sellerName;

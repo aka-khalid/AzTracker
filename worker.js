@@ -17,7 +17,11 @@ import { AmazonEdgeParser } from './src/api/amazon';
 export default {
   async scheduled(event, env, ctx) {
     console.log("Cron tick:", event.cron);
-    await executeScrapeEngine(env, false);
+    try {
+      await executeScrapeEngine(env, false);
+    } catch (e) {
+      console.error("Scheduled execution failed:", e);
+    }
   },
 
   async queue(batch, env, ctx) {
@@ -330,18 +334,16 @@ export default {
       
       if (action === "approve") {
         await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', 5, ?, ?)").bind(targetId, adminId, Date.now()).run();
-        let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-        queue = queue.filter(u => u.id !== targetId);
-        await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+        await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
-      } else if (action === "reject") {
-        let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-        queue = queue.filter(u => u.id !== targetId);
-        await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        } else if (action === "reject") {
+        await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
-      } else if (action === "revoke") {
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        } else if (action === "revoke") {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
         await env.DB.batch([
           env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ?").bind(targetId),
@@ -349,18 +351,21 @@ export default {
         ]);
         ctx.waitUntil(sendAppMessage(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and deleted subscriptions"));
-      } else if (action === "promote") {
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
         ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
-      } else if (action === "demote") {
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        } else if (action === "demote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendAppMessage(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
-      } else if (action === "set_limit") {
+          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        } else if (action === "set_limit") {
         const newLimit = parseInt(data.limit);
         if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
         await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
@@ -370,20 +375,24 @@ export default {
         const asin = data.asin;
         await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, `Deleted product ${asin}`));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "pause_product") {
         const asin = data.asin;
         await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "resume_product") {
         const asin = data.asin;
         await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "set_target") {
         const asin = data.asin;
         const target = parseFloat(data.target);
         if (isNaN(target)) return new Response("Invalid target", { status: 400 });
         await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ? WHERE chat_id = ? AND asin = ?").bind(target, targetId, asin).run();
         ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, `Set target price for ${asin} to ${target}`));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         ctx.waitUntil(sendAppMessage(env, targetId, `💬 <b>Message from Admin:</b>\n\n${data.message}`));
@@ -412,9 +421,9 @@ export default {
       const baseUrl = url.origin; 
       
       if (payload.callback_query) {
-        await handleCallback(payload.callback_query, env, baseUrl, ctx); 
+        ctx.waitUntil(handleCallback(payload.callback_query, env, baseUrl, ctx)); 
       } else if (payload.message && payload.message.text) {
-        await handleMessage(payload.message, env, baseUrl, ctx);
+        ctx.waitUntil(handleMessage(payload.message, env, baseUrl, ctx));
       }
       return new Response("OK", { status: 200 });
     } catch (err) {
@@ -427,83 +436,324 @@ export default {
 // ── Interceptors ────────────────────────────────────────────────────────────
 
 async function executeScrapeEngine(env, force = false) {
-  // 1. Fetch products needing updates from D1
   const query = force 
-    ? "SELECT DISTINCT g.asin, g.amazon_price, g.used_price, g.new_price FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0"
-    : "SELECT DISTINCT g.asin, g.amazon_price, g.used_price, g.new_price FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE g.last_updated < ? AND u.is_paused = 0";
+    ? "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0"
+    : "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE g.last_updated < ? AND u.is_paused = 0";
   const bindParams = force ? [] : [Date.now() - 300000];
   
   const { results: staleProducts } = await env.DB.prepare(query).bind(...bindParams).all();
   if (!staleProducts || staleProducts.length === 0) return;
 
-  // 2. Fetch live data using aws4fetch
-  const parser = new AmazonEdgeParser(env.AWS_ACCESS_KEY, env.AWS_SECRET_KEY, env.AMZN_ASSOCIATES_TAG);
+  const parser = new AmazonEdgeParser(env.AMZN_CREATORS_ACCESS_KEY, env.AMZN_CREATORS_SECRET_KEY, env.AMZN_ASSOCIATES_TAG);
   const asins = staleProducts.map(p => p.asin);
-  const liveItems = await parser.getItems(asins);
+  
+  let liveItems;
+  try {
+    liveItems = await parser.getItems(asins);
+  } catch (error) {
+    console.error("Creators API error in executeScrapeEngine:", error);
+    if (force) throw error;
+    return;
+  }
 
   const d1Batch = [];
   const kvPromises = [];
   const queueBatch = [];
+  const now = Date.now();
   
+  // Pass 1: Handle Dead ASINs (404 Hole Fix)
+  const liveAsins = new Set(liveItems.map(i => i.asin));
+  const deadAsins = staleProducts.filter(p => !liveAsins.has(p.asin));
+  for (const dead of deadAsins) {
+      if (!dead.new_missing_since) dead.new_missing_since = now;
+      if (!dead.used_missing_since) dead.used_missing_since = now;
+      if (!dead.amazon_missing_since) dead.amazon_missing_since = now;
+      
+      const MS_24_HOURS = 86400000;
+      if ((now - dead.new_missing_since > MS_24_HOURS) && 
+          (now - dead.used_missing_since > MS_24_HOURS) && 
+          (now - dead.amazon_missing_since > MS_24_HOURS)) {
+        
+        d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, dead.asin));
+        const { results: subs } = await env.DB.prepare("SELECT chat_id FROM User_Subscriptions WHERE asin = ? AND is_paused = 0").bind(dead.asin).all();
+        d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE asin = ?").bind(dead.asin));
+        for (const sub of subs) {
+          queueBatch.push({
+            type: 'telegram_alert',
+            chatId: sub.chat_id,
+            text: `🚨 <b>Item Missing!</b>
+ASIN <code>${dead.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
+          });
+        }
+      } else {
+        d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_updated = ?, new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ? WHERE asin = ?")
+          .bind(now, dead.new_missing_since, dead.used_missing_since, dead.amazon_missing_since, dead.asin));
+      }
+  }
+
+  // Pass 2: Handle Live Items
   for (const liveItem of liveItems) {
     const oldItem = staleProducts.find(p => p.asin === liveItem.asin);
+    if (!oldItem) continue;
+
+    let newMissingSince = oldItem.new_missing_since;
+    let usedMissingSince = oldItem.used_missing_since;
+    let amazonMissingSince = oldItem.amazon_missing_since;
     
-    // 1. Strict >= 1 EGP mathematical deltas to protect KV Quotas
-    const amznChanged = oldItem.amazon_price === null || liveItem.amazonPrice === null 
-      ? oldItem.amazon_price !== liveItem.amazonPrice 
-      : Math.abs(oldItem.amazon_price - liveItem.amazonPrice) >= 1;
+    // Anti-Flap Timers (Fix: Only start if previously had a price)
+    if (liveItem.newPrice === undefined || liveItem.newPrice === null) {
+      if (!newMissingSince && oldItem.new_price !== null) newMissingSince = now;
+    } else newMissingSince = null;
+    
+    if (liveItem.usedPrice === undefined || liveItem.usedPrice === null) {
+      if (!usedMissingSince && oldItem.used_price !== null) usedMissingSince = now;
+    } else usedMissingSince = null;
 
-    const usedChanged = oldItem.used_price === null || liveItem.usedPrice === null 
-      ? oldItem.used_price !== liveItem.usedPrice 
-      : Math.abs(oldItem.used_price - liveItem.usedPrice) >= 1;
+    if (liveItem.amazonPrice === undefined || liveItem.amazonPrice === null) {
+      if (!amazonMissingSince && oldItem.amazon_price !== null) amazonMissingSince = now;
+    } else amazonMissingSince = null;
 
-    const newChanged = oldItem.new_price === null || liveItem.newPrice === null 
-      ? oldItem.new_price !== liveItem.newPrice 
-      : Math.abs(oldItem.new_price - liveItem.newPrice) >= 1;
+    const MS_2_5_HOURS = 9000000;
+    const MS_1_HOUR = 3600000;
+    
+    let finalNewPrice = (newMissingSince && (now - newMissingSince < MS_2_5_HOURS)) ? oldItem.new_price : (liveItem.newPrice ?? null);
+    let finalUsedPrice = (usedMissingSince && (now - usedMissingSince < MS_2_5_HOURS)) ? oldItem.used_price : (liveItem.usedPrice ?? null);
+    let finalAmazonPrice = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_price : (liveItem.amazonPrice ?? null);
+    
+    let finalNewSeller = (newMissingSince && (now - newMissingSince < MS_2_5_HOURS)) ? oldItem.new_seller : (liveItem.newSeller ?? null);
+    let finalNewMid = (newMissingSince && (now - newMissingSince < MS_2_5_HOURS)) ? oldItem.new_mid : (liveItem.newMid ?? null);
+    let finalUsedSeller = (usedMissingSince && (now - usedMissingSince < MS_2_5_HOURS)) ? oldItem.used_seller : (liveItem.usedSeller ?? null);
+    let finalUsedMid = (usedMissingSince && (now - usedMissingSince < MS_2_5_HOURS)) ? oldItem.used_mid : (liveItem.usedMid ?? null);
+    let finalAmazonSeller = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_seller : (liveItem.amazonSeller ?? null);
+    let finalAmazonMid = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_mid : (liveItem.amazonMid ?? null);
+    let finalAmazonIsBuybox = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_is_buybox : (liveItem.amazonIsBuybox ? 1 : 0);
+
+    const MS_24_HOURS = 86400000;
+    if (newMissingSince && (now - newMissingSince > MS_24_HOURS) && 
+        usedMissingSince && (now - usedMissingSince > MS_24_HOURS) && 
+        amazonMissingSince && (now - amazonMissingSince > MS_24_HOURS)) {
+      d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, liveItem.asin));
+      
+      const { results: subs } = await env.DB.prepare("SELECT chat_id FROM User_Subscriptions WHERE asin = ? AND is_paused = 0").bind(liveItem.asin).all();
+      d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE asin = ?").bind(liveItem.asin));
+      for (const sub of subs) {
+        queueBatch.push({
+          type: 'telegram_alert',
+          chatId: sub.chat_id,
+          text: `🚨 <b>Item Missing!</b>
+ASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
+        });
+      }
+      continue;
+    }
+
+    const { results: subs } = await env.DB.prepare(
+      "SELECT chat_id, target_price, alert_sent_new, alert_sent_used FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
+    ).bind(liveItem.asin).all();
+
+    let targetBypass = false;
+    for (const sub of subs) {
+      if (sub.target_price) {
+        if (finalNewPrice !== null && oldItem.new_price !== null && oldItem.new_price > sub.target_price && finalNewPrice <= sub.target_price) targetBypass = true;
+        if (finalUsedPrice !== null && oldItem.used_price !== null && oldItem.used_price > sub.target_price && finalUsedPrice <= sub.target_price) targetBypass = true;
+        if (finalAmazonPrice !== null && oldItem.amazon_price !== null && oldItem.amazon_price > sub.target_price && finalAmazonPrice <= sub.target_price) targetBypass = true;
+      }
+    }
+
+    // Debounce & Infinite Alert Loop Fix
+    let amznChanged = oldItem.amazon_price === null || finalAmazonPrice === null 
+      ? oldItem.amazon_price !== finalAmazonPrice 
+      : Math.abs(oldItem.amazon_price - finalAmazonPrice) >= 1;
+
+    let usedChanged = oldItem.used_price === null || finalUsedPrice === null 
+      ? oldItem.used_price !== finalUsedPrice 
+      : Math.abs(oldItem.used_price - finalUsedPrice) >= 1;
+
+    let newChanged = oldItem.new_price === null || finalNewPrice === null 
+      ? oldItem.new_price !== finalNewPrice 
+      : Math.abs(oldItem.new_price - finalNewPrice) >= 1;
+
+    if (!targetBypass) {
+        if (!amznChanged && finalAmazonPrice !== null) finalAmazonPrice = oldItem.amazon_price;
+        if (!usedChanged && finalUsedPrice !== null) finalUsedPrice = oldItem.used_price;
+        if (!newChanged && finalNewPrice !== null) finalNewPrice = oldItem.new_price;
+    } else {
+        amznChanged = oldItem.amazon_price !== finalAmazonPrice;
+        usedChanged = oldItem.used_price !== finalUsedPrice;
+        newChanged = oldItem.new_price !== finalNewPrice;
+    }
 
     const priceDelta = force || amznChanged || usedChanged || newChanged;
 
-    if (priceDelta) {
+    let histMean = oldItem.hist_mean || 0;
+    let histStdev = oldItem.hist_stdev || 0;
+    let isAtlNew = oldItem.is_atl_new || 0;
+
+    let vFlag = 0;
+    if (finalNewPrice && histMean > 0) {
+      // Math Denominator Fix
+      const displayLastPrice = oldItem.new_price || histMean;
+      const dropPct = ((displayLastPrice - finalNewPrice) / displayLastPrice) * 100;
+      let zScore = 0;
+      if (histStdev > 0) zScore = (finalNewPrice - histMean) / histStdev;
+      else if (finalNewPrice <= histMean * 0.85) zScore = -1.5;
+      
+      const isStandardDeal = (zScore <= -1.5) && (dropPct >= 15.0);
+      const isAtlDeal = isAtlNew && (zScore <= -1.0) && (dropPct >= 10.0);
+      if (isStandardDeal || isAtlDeal) vFlag = 1;
+    }
+
+    let seenAmazonEgAt = oldItem.seen_amazon_eg_at;
+    let seenResaleAt = oldItem.seen_resale_at;
+    if (finalAmazonPrice !== null) seenAmazonEgAt = now;
+    if (finalUsedPrice !== null) seenResaleAt = now;
+
+    let dbNeedsUpdate = false;
+
+    if (priceDelta || targetBypass || newMissingSince !== oldItem.new_missing_since || usedMissingSince !== oldItem.used_missing_since || amazonMissingSince !== oldItem.amazon_missing_since) {
       d1Batch.push(
         env.DB.prepare(`
           UPDATE Global_Products 
-          SET amazon_price = ?, used_price = ?, new_price = ?, last_updated = ?
+          SET amazon_price = ?, used_price = ?, new_price = ?, last_updated = ?, 
+              new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ?,
+              seen_amazon_eg_at = ?, seen_resale_at = ?,
+              new_seller = ?, new_mid = ?, used_seller = ?, used_mid = ?,
+              amazon_seller = ?, amazon_mid = ?, amazon_is_buybox = ?,
+              hist_mean = ?, hist_stdev = ?, is_atl_new = ?
           WHERE asin = ?
-        `).bind(liveItem.amazonPrice, liveItem.usedPrice, liveItem.newPrice, Date.now(), liveItem.asin)
+        `).bind(
+          finalAmazonPrice, finalUsedPrice, finalNewPrice, now, 
+          newMissingSince, usedMissingSince, amazonMissingSince,
+          seenAmazonEgAt, seenResaleAt,
+          finalNewSeller, finalNewMid, finalUsedSeller, finalUsedMid,
+          finalAmazonSeller, finalAmazonMid, finalAmazonIsBuybox,
+          histMean, histStdev, isAtlNew,
+          liveItem.asin
+        )
       );
+      dbNeedsUpdate = true;
+    } else {
+      d1Batch.push(
+        env.DB.prepare(`
+          UPDATE Global_Products SET last_updated = ? WHERE asin = ?
+        `).bind(now, liveItem.asin)
+      );
+    }
       
-      // 2. ONLY burn a KV write if the price ACTUALLY moved by 1 EGP
-      if (force || amznChanged || usedChanged) {
-        const historyKey = `history:${liveItem.asin}`;
-        let history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
-        
-        // 3. Restore {"t", "n", "u"} contract for the UI Web App
-        history.push({ 
-           t: Math.floor(Date.now() / 1000), 
-           n: liveItem.amazonPrice !== undefined && liveItem.amazonPrice !== null ? liveItem.amazonPrice : liveItem.newPrice, 
-           u: liveItem.usedPrice 
-        });
-        
-        if (history.length > 500) history = history.slice(-500);
-        kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
+    if (dbNeedsUpdate && (amznChanged || newChanged || usedChanged)) {
+      const historyKey = `history:${liveItem.asin}`;
+      let history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
+      
+      const nPrice = finalAmazonPrice !== null ? finalAmazonPrice : finalNewPrice;
+      history.push({ t: Math.floor(now / 1000), n: nPrice, u: finalUsedPrice });
+      
+      if (history.length > 500) history = history.slice(-500);
+      kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
+
+      const globalKey = "global:history_all_new";
+      let globalHist = await env.AZTRACKER_DB.get(globalKey, "json") || [];
+      const currentMatrix = {};
+      if (finalNewPrice !== null) currentMatrix[liveItem.asin] = [finalNewPrice, vFlag];
+      
+      if (Object.keys(currentMatrix).length > 0) {
+          globalHist.push({t: Math.floor(now / 1000), p: currentMatrix});
+          if (globalHist.length > 150) globalHist = globalHist.slice(-150);
+          kvPromises.push(env.AZTRACKER_DB.put(globalKey, JSON.stringify(globalHist)));
       }
       
-      const didAmazonPriceDrop = liveItem.amazonPrice && (!oldItem.amazon_price || liveItem.amazonPrice < oldItem.amazon_price);
+      // Update Z-Score Math in background loosely 
+      if (history.length >= 10) {
+         const newPrices = history.map(h => h.n).filter(n => n !== null);
+         if (newPrices.length > 0) {
+             const sum = newPrices.reduce((a, b) => a + b, 0);
+             const mean = sum / newPrices.length;
+             const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / newPrices.length;
+             const stdev = Math.sqrt(variance);
+             const atl = Math.min(...newPrices);
+             histMean = mean;
+             histStdev = stdev;
+             isAtlNew = (finalNewPrice && finalNewPrice <= atl) ? 1 : 0;
+             // Push an extra delayed update for the statistics
+             d1Batch.push(env.DB.prepare("UPDATE Global_Products SET hist_mean = ?, hist_stdev = ?, is_atl_new = ? WHERE asin = ?").bind(histMean, histStdev, isAtlNew, liveItem.asin));
+         }
+      }
+    }
       
-      if (didAmazonPriceDrop) {
-        const { results: subs } = await env.DB.prepare(
-          "SELECT chat_id, target_price FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
-        ).bind(liveItem.asin).all();
-        
-        for (const sub of subs) {
-          if (!sub.target_price || (oldItem.amazon_price > sub.target_price && liveItem.amazonPrice <= sub.target_price)) {
-            queueBatch.push({
-              type: 'telegram_alert',
-              chatId: sub.chat_id,
-              text: `🚨 <b>Price Drop!</b>\nASIN ${liveItem.asin} dropped to ${liveItem.amazonPrice} EGP!`
-            });
-          }
+    for (const sub of subs) {
+      let alertSentNew = sub.alert_sent_new;
+      let alertSentUsed = sub.alert_sent_used;
+      
+      const isNewDrop = finalNewPrice !== null && (sub.target_price ? finalNewPrice <= sub.target_price : (oldItem.new_price && finalNewPrice < oldItem.new_price));
+      const isUsedDrop = finalUsedPrice !== null && (sub.target_price ? finalUsedPrice <= sub.target_price : (oldItem.used_price && finalUsedPrice < oldItem.used_price));
+      const isAmznDrop = finalAmazonPrice !== null && (sub.target_price ? finalAmazonPrice <= sub.target_price : (oldItem.amazon_price && finalAmazonPrice < oldItem.amazon_price));
+
+      if (isNewDrop || isAmznDrop) {
+        if (!alertSentNew || (oldItem.new_price && finalNewPrice < oldItem.new_price)) {
+          alertSentNew = 1;
+          const dropPct = oldItem.new_price ? Math.round(((oldItem.new_price - finalNewPrice) / oldItem.new_price) * 100) : 0;
+          const pctStr = dropPct > 0 ? ` (🔽 ${dropPct}%)` : '';
+          let text = `🚨 <b>Price Drop!</b>
+📦 <b>${liveItem.name || liveItem.asin}</b>
+
+`;
+          text += `💰 Now: <b>${finalNewPrice} EGP</b>${pctStr}
+`;
+          if (oldItem.new_price) text += `📉 Was: ${oldItem.new_price} EGP
+`;
+          if (finalAmazonPrice !== null) text += `🛡️ Condition: New (Amazon)
+`;
+          else text += `⭐ Condition: New (3rd Party)
+`;
+          
+          let otherOptions = [];
+          if (finalUsedPrice !== null) otherOptions.push(`└ 📦 Amazon Resale: <b>${finalUsedPrice} EGP</b> (Used)`);
+          else if (seenResaleAt && (now - seenResaleAt < 1209600000)) otherOptions.push(`└ 📦 Amazon Resale <i>(Check Stock)</i>`);
+          
+          if (otherOptions.length > 0) text += `
+💡 <b>Other Options:</b>
+` + otherOptions.join('
+');
+
+          queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text });
         }
+      } else if (finalNewPrice && sub.target_price && finalNewPrice > sub.target_price) {
+        alertSentNew = 0;
+      }
+
+      if (isUsedDrop) {
+        if (!alertSentUsed || (oldItem.used_price && finalUsedPrice < oldItem.used_price)) {
+          alertSentUsed = 1;
+          const dropPct = oldItem.used_price ? Math.round(((oldItem.used_price - finalUsedPrice) / oldItem.used_price) * 100) : 0;
+          const pctStr = dropPct > 0 ? ` (🔽 ${dropPct}%)` : '';
+          let text = `🚨 <b>Used Price Drop!</b>
+📦 <b>${liveItem.name || liveItem.asin}</b>
+
+`;
+          text += `💰 Now: <b>${finalUsedPrice} EGP</b>${pctStr}
+`;
+          if (oldItem.used_price) text += `📉 Was: ${oldItem.used_price} EGP
+`;
+          text += `⭐ Condition: Used
+`;
+          
+          let otherOptions = [];
+          if (finalAmazonPrice !== null) otherOptions.push(`└ 🛡️ Amazon.eg: <b>${finalAmazonPrice} EGP</b>`);
+          else if (seenAmazonEgAt && (now - seenAmazonEgAt < 1209600000)) otherOptions.push(`└ 🛡️ Amazon.eg <i>(Check Stock)</i>`);
+          else if (finalNewPrice !== null) otherOptions.push(`└ ⭐ New (3rd Party): <b>${finalNewPrice} EGP</b>`);
+          
+          if (otherOptions.length > 0) text += `
+💡 <b>Other Options:</b>
+` + otherOptions.join('
+');
+
+          queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text });
+        }
+      } else if (finalUsedPrice && sub.target_price && finalUsedPrice > sub.target_price) {
+        alertSentUsed = 0;
+      }
+
+      if (alertSentNew !== sub.alert_sent_new || alertSentUsed !== sub.alert_sent_used) {
+        d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET alert_sent_new = ?, alert_sent_used = ? WHERE chat_id = ? AND asin = ?").bind(alertSentNew, alertSentUsed, sub.chat_id, liveItem.asin));
       }
     }
   }
@@ -518,14 +768,37 @@ async function executeScrapeEngine(env, force = false) {
   }
   
   if (queueBatch.length > 0) {
-    for (let i = 0; i < queueBatch.length; i += 100) {
-      const batchBody = queueBatch.slice(i, i + 100).map(b => ({ body: b }));
+    const userMessages = {};
+    for (const msg of queueBatch) {
+      if (!userMessages[msg.chatId]) userMessages[msg.chatId] = [];
+      userMessages[msg.chatId].push(msg.text);
+    }
+
+    const consolidatedBatch = [];
+    for (const chatId in userMessages) {
+      let combinedText = userMessages[chatId][0];
+      for (let i = 1; i < userMessages[chatId].length; i++) {
+        const nextText = userMessages[chatId][i];
+        if (combinedText.length + nextText.length + 4 > 4000) {
+          consolidatedBatch.push({ type: 'telegram_alert', chatId, text: combinedText });
+          combinedText = nextText;
+        } else {
+          combinedText += "
+
+" + nextText;
+        }
+      }
+      if (combinedText) {
+        consolidatedBatch.push({ type: 'telegram_alert', chatId, text: combinedText });
+      }
+    }
+
+    for (let i = 0; i < consolidatedBatch.length; i += 100) {
+      const batchBody = consolidatedBatch.slice(i, i + 100).map(b => ({ body: b }));
       await env.MESSAGE_QUEUE.sendBatch(batchBody);
     }
   }
 }
-
-
 
 async function handleMessage(message, env, baseUrl, ctx) {
   const text = convertHindiToArabic(message.text).trim();
@@ -540,13 +813,9 @@ async function handleMessage(message, env, baseUrl, ctx) {
       await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nYour request to join this server has been explicitly rejected by an administrator.`);
       return;
     }
-    const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-    const now = Date.now();
-    const queue = rawQueue
-      .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
-      .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
+    const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
 
-    if (queue.some(entry => entry.id === chatId)) {
+    if (inQueue) {
       await sendAppMessage(env, chatId, `⏳ <b>Request Pending</b>\n\nYour application is currently under review by an administrator. Please wait.`);
       return;
     }
@@ -655,12 +924,13 @@ async function handleMessage(message, env, baseUrl, ctx) {
     }
     
     const user = await env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(chatId).first();
-    const userLimit = user && user.item_limit !== null ? parseInt(user.item_limit) : parseInt(env.DEFAULT_USER_PRODUCT_LIMIT || "3");
+    const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
+    const userLimit = user && user.item_limit !== null ? parseInt(user.item_limit) : defaultLimit;
 
     const { results: existingProducts } = await env.DB.prepare("SELECT asin FROM User_Subscriptions WHERE chat_id = ?").bind(chatId).all();
 
     if (!isAdmin) {
-      if (isNaN(userLimit)) {
+      if (isNaN(defaultLimit)) {
         await editTelegramMessage(env, chatId, tempMessageId, `⚠️ <b>System Error:</b> Global item limit is unconfigured. Please contact an admin.`, {
           inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
         });
@@ -700,6 +970,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       VALUES (?, ?, ?)
       ON CONFLICT(chat_id, asin) DO NOTHING
     `).bind(chatId, pid, Date.now()).run();
+    if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "ADD_PRODUCT", chatId, `Added product ${pid}`));
 
 
     const title = extractedName ? extractedName : pid;
@@ -744,18 +1015,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("request_access_", "");
       if (targetId !== chatId) return; 
 
-      const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-      const now = Date.now();
-      let queue = rawQueue
-        .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
-        .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
-      
-      if (queue.some(entry => entry.id === chatId)) {
+      const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
+      if (inQueue) {
         await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
         return; // SEVERS THE BROADCAST LOOP FOR DUPLICATE CLICKS
       }
 
-      if (queue.length >= QUEUE_MAX_DEPTH) {
+      const countRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Join_Queue").first();
+      if (countRow.count >= QUEUE_MAX_DEPTH) {
         await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Queue Full</b>\n\nThe access queue is currently full. Please try again in 24 hours.`);
         return;
       }
@@ -780,35 +1047,26 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           }
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
-      
-      queue.push({ 
-        id: chatId, 
-        first_name: callback.from ? callback.from.first_name : '', 
-        username: callback.from ? callback.from.username : '', 
-        requested_at: now, 
-        admin_messages: admin_messages 
-      });
-      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+
+      await env.DB.prepare("INSERT INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages) VALUES (?, ?, ?, ?, ?)").bind(
+          chatId, 
+          callback.from ? callback.from.first_name : '', 
+          callback.from ? callback.from.username : '', 
+          Date.now(), 
+          JSON.stringify(admin_messages)
+      ).run();
     }
     else if (data.startsWith("queueReject_") && isAdmin) {
       const targetId = data.replace("queueReject_", "");
-      const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-      const now = Date.now();
-      let queue = rawQueue
-        .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
-        .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
-
-      let queueObj = null;
-      if (!queue.some(entry => {
-          if (entry.id === targetId) { queueObj = entry; return true; }
-          return false;
-      })) {
+      let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+      if (!queueObj) {
         await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
         return;
       }
-      queue = queue.filter(entry => entry.id !== targetId);
-      if (queue.length === 0) await env.AZTRACKER_DB.delete("global:join_queue");
-      else await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      if (typeof queueObj.admin_messages === 'string') {
+        try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
+      }
+      await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been denied access by ${escapeHtml(adminName)}.`);
@@ -842,23 +1100,15 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("queueApprove_") && isAdmin) {
       const targetId = data.replace("queueApprove_", "");
-      const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-      const now = Date.now();
-      let queue = rawQueue
-        .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
-        .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
-
-      let queueObj = null;
-      if (!queue.some(entry => {
-          if (entry.id === targetId) { queueObj = entry; return true; }
-          return false;
-      })) {
+      let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+      if (!queueObj) {
         await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
         return;
       }
-      queue = queue.filter(entry => entry.id !== targetId);
-      if (queue.length === 0) await env.AZTRACKER_DB.delete("global:join_queue");
-      else await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      if (typeof queueObj.admin_messages === 'string') {
+        try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
+      }
+      await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
       
       await env.DB.prepare(`
          INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at)
@@ -956,7 +1206,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       
       await editTelegramMessage(env, chatId, messageId, `🔄 <b>User Unbanned</b>\nUser <code>${targetId}</code> has been removed from the Banned Directory. They can now send /start to request access again if they wish.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_banned_0" }]]
+        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_panel" }]]
       });
       
       // AUDIT LOG
@@ -1007,7 +1257,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_users" }]]
+        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_panel" }]]
       });
       await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
       
@@ -1025,7 +1275,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard access tier.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_users" }]]
+        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_panel" }]]
       });
       
       // AUDIT LOG
@@ -1073,6 +1323,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("cleartarget_")) {
       const pid = data.replace("cleartarget_", "");
       await env.DB.prepare("UPDATE User_Subscriptions SET target_price = NULL WHERE chat_id = ? AND asin = ?").bind(chatId, pid).run();
+      if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "CLEAR_TARGET", chatId, `Cleared target price for ${pid}`));
       await renderProductView(env, chatId, messageId, pid, baseUrl);
     }
     else if (data.startsWith("view_")) {
@@ -1089,10 +1340,22 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       await renderProductView(env, chatId, messageId, pid, baseUrl);
     }
+    else if (data.startsWith("confirmDel_")) {
+      const pid = data.replace("confirmDel_", "");
+      const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\n\n<i>This action cannot be undone.</i>`;
+      
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
+          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+        ]
+      });
+    }
     else if (data.startsWith("remove_")) {
       const pid = data.replace("remove_", "");
       
       await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(chatId, pid).run();
+      if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "DELETE_PRODUCT", chatId, `Deleted product ${pid}`));
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
         inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
@@ -2455,11 +2718,17 @@ function renderCrmHTML() {
 
         function switchTab(tab) {
             activeTab = tab;
-            document.getElementById('tab-queue').className = \`flex-1 pb-3 text-sm font-medium transition relative \${tab === 'queue' ? 'tab-active' : 'tab-inactive'}\`;
-            document.getElementById('tab-users').className = \`flex-1 pb-3 text-sm font-medium transition \${tab === 'users' ? 'tab-active' : 'tab-inactive'}\`;
+            const tabs = ['queue', 'admins', 'users', 'banned'];
+            tabs.forEach(t => {
+                const el = document.getElementById(\`tab-\${t}\`);
+                if (el) {
+                    const isBanned = t === 'banned';
+                    el.className = \`px-4 pb-3 text-sm font-medium transition whitespace-nowrap relative \${t === tab ? 'tab-active' : (isBanned ? 'tab-inactive text-red-400/80' : 'tab-inactive')}\`;
+                }
+            });
             
             document.getElementById('view-queue').style.display = tab === 'queue' ? 'block' : 'none';
-            document.getElementById('view-users').style.display = tab === 'users' ? 'block' : 'none';
+            document.getElementById('view-users').style.display = tab !== 'queue' ? 'block' : 'none';
             
             renderTabs();
         }
@@ -2495,7 +2764,17 @@ function renderCrmHTML() {
             const query = (document.getElementById('search-users').value || '').toLowerCase();
             const list = document.getElementById('users-list');
             
-            const filtered = appData.users.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query));
+            let filtered = appData.users;
+            
+            if (activeTab === 'admins') {
+                filtered = filtered.filter(u => u.role === 'admin' || u.role === 'root');
+            } else if (activeTab === 'banned') {
+                filtered = filtered.filter(u => u.role === 'rejected');
+            } else if (activeTab === 'users') {
+                filtered = filtered.filter(u => u.role === 'approved');
+            }
+            
+            filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)));
             
             if (filtered.length === 0) {
                 list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No users found</div>';
@@ -2503,8 +2782,8 @@ function renderCrmHTML() {
             }
             
             list.innerHTML = filtered.map(u => {
-                const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800' };
-                const roleStyle = roleColors[u.role] || 'text-red-400 border-red-400/20 bg-red-400/10';
+                const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800', 'rejected': 'text-red-400 border-red-400/20 bg-red-400/10' };
+                const roleStyle = roleColors[u.role] || roleColors['rejected'];
                 
                 return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative">
@@ -2651,16 +2930,19 @@ function renderCrmHTML() {
         function showLoader(text = "Processing...") {
             const overlay = document.getElementById('overlay');
             document.getElementById('overlay-text').innerText = text;
+            if (loaderTimeout) clearTimeout(loaderTimeout);
             overlay.classList.remove('hidden');
             // Trigger reflow
             void overlay.offsetWidth;
             overlay.classList.remove('opacity-0');
         }
 
+        let loaderTimeout = null;
         function hideLoader() {
             const overlay = document.getElementById('overlay');
             overlay.classList.add('opacity-0');
-            setTimeout(() => { overlay.classList.add('hidden'); }, 300);
+            if (loaderTimeout) clearTimeout(loaderTimeout);
+            loaderTimeout = setTimeout(() => { overlay.classList.add('hidden'); }, 300);
         }
 
         function showToast(message, type = "info") {
