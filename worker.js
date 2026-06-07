@@ -226,7 +226,7 @@ async function executeScrapeEngine(env, force = false) {
   if (!staleProducts || staleProducts.length === 0) return;
 
   // 2. Fetch live data using aws4fetch
-  const parser = new AmazonEdgeParser(env.AWS_ACCESS_KEY, env.AWS_SECRET_KEY, env.PARTNER_TAG);
+  const parser = new AmazonEdgeParser(env.AWS_ACCESS_KEY, env.AWS_SECRET_KEY, env.AMZN_ASSOCIATES_TAG);
   const asins = staleProducts.map(p => p.asin);
   const liveItems = await parser.getItems(asins);
 
@@ -247,6 +247,12 @@ async function executeScrapeEngine(env, force = false) {
           WHERE asin = ?
         `).bind(liveItem.amazonPrice, liveItem.usedPrice, liveItem.newPrice, Date.now(), liveItem.asin)
       );
+      
+      const historyKey = `history:${liveItem.asin}`;
+      let history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
+      if (liveItem.amazonPrice) history.push({ timestamp: Date.now(), price: liveItem.amazonPrice });
+      if (history.length > 500) history = history.slice(-500);
+      dbBatch.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
       
       const { results: subs } = await env.DB.prepare(
         "SELECT chat_id, target_price FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
@@ -537,10 +543,10 @@ async function handleMessage(message, env, ctx) {
 
     // Insert into User_Subscriptions
     await env.DB.prepare(`
-      INSERT INTO User_Subscriptions (chat_id, asin)
-      VALUES (?, ?)
+      INSERT INTO User_Subscriptions (chat_id, asin, added_at)
+      VALUES (?, ?, ?)
       ON CONFLICT(chat_id, asin) DO NOTHING
-    `).bind(chatId, pid).run();
+    `).bind(chatId, pid, Date.now()).run();
 
 
     const title = extractedName ? extractedName : pid;
@@ -791,6 +797,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
       await env.AZTRACKER_DB.put(`approved_by:${targetId}`, chatId);
       
+      await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at) VALUES (?, 'approved', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      
       let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
       if (bannedUsers.includes(targetId)) {
         bannedUsers = bannedUsers.filter(id => id !== targetId);
@@ -825,7 +833,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
       await env.AZTRACKER_DB.delete(`auth:${targetId}`);
       
-      await env.AZTRACKER_DB.delete(`user:${targetId}:products`);
+      await env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId).run();
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire saved list have been permanently erased.`);
       
@@ -855,6 +863,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const updatedAdmins = admins.filter(id => id !== targetId);
       await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
       await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
+      await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
       
       // CRITICAL FIX: Bust the edge cache for both the caller and the target
       if (ctx && ctx.waitUntil) {
@@ -883,7 +892,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data === "admin_panel" && isAdmin) {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
       const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
-      const stats = await env.AZTRACKER_DB.get("global:stats", "json") || { active_api_calls: 0, hivemind_size: 0 };
+      const { count } = await env.DB.prepare("SELECT COUNT(*) as count FROM Global_Products").first();
+      const stats = { active_api_calls: count, hivemind_size: count };
       
       let lastRunText = "Fetching from GitHub...";
       const ghRun = await fetchLastWorkflowRun(env);
@@ -1021,9 +1031,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("set_limit_init_", "");
       await env.AZTRACKER_DB.put(`state:${chatId}`, `setlimit_${targetId}`, { expirationTtl: 300 });
 
-      const limitRaw = await env.AZTRACKER_DB.get(`limit:${targetId}`);
+      const tgtUser = await env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(targetId).first();
       const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
-      const userLimit = limitRaw !== null ? parseInt(limitRaw) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
+      const userLimit = tgtUser && tgtUser.item_limit !== null ? parseInt(tgtUser.item_limit) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
 
       const text = `⚙️ <b>Set Item Limit</b>\n\nUser ID: <code>${targetId}</code>\nCurrent Limit: <b>${userLimit}</b>\n\nPlease type the new maximum number of products this user can save.`;
       await editTelegramMessage(env, chatId, messageId, text, {
@@ -1049,13 +1059,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = parts[1];
       if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
       const pid = parts[2];
-      const targetDbKey = `user:${targetId}:products`;
-      let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
-      const idx = products.findIndex(p => getAsinFromUrl(p.url) === pid);
-      if (idx !== -1) {
-        products[idx].paused = !products[idx].paused;
-        await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(products));
-      }
+      await env.DB.prepare(
+        "UPDATE User_Subscriptions SET is_paused = CASE WHEN is_paused = 1 THEN 0 ELSE 1 END WHERE chat_id = ? AND asin = ?"
+      ).bind(targetId, pid).run();
       await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins);
       
       // AUDIT LOG
@@ -1091,10 +1097,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = parts[1];
       if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
       const pid = parts[2];
-      const targetDbKey = `user:${targetId}:products`;
-      let products = await env.AZTRACKER_DB.get(targetDbKey, "json") || [];
-      const filtered = products.filter(p => getAsinFromUrl(p.url) !== pid);
-      await env.AZTRACKER_DB.put(targetDbKey, JSON.stringify(filtered));
+      await env.DB.prepare(
+        "DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?"
+      ).bind(targetId, pid).run();
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
         inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
@@ -1250,8 +1255,7 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
   let smartAlts = "";
   let title = product.name ? product.name : "Amazon Product";
 
-  const stats = await env.AZTRACKER_DB.get("global:stats", "json");
-  const systemCheckTime = stats ? stats.last_run_timestamp : null;
+  const { last_updated: systemCheckTime } = await env.DB.prepare("SELECT MAX(last_updated) as last_updated FROM Global_Products").first() || { last_updated: null };
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
@@ -1352,8 +1356,8 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // 1. Merge legacy arrays and new atomic keys dynamically
   const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
   const bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
-  const listRes = await env.AZTRACKER_DB.list({ prefix: "auth:" });
-  const authUsers = listRes.keys.map(k => k.name.replace("auth:", ""));
+  const { results: authUsersRaw } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin', 'root')").all();
+  const authUsers = authUsersRaw.map(u => u.chat_id.toString());
 
   // RBAC Directory Scoping: Fetch cached roles
   const { admins, rootAdmins } = await getUserRoles(chatId, env, ctx);
@@ -1450,7 +1454,8 @@ async function renderPendingList(env, chatId, messageId, page = 0, ctx) {
 }
 
 async function renderBannedList(env, chatId, messageId, page = 0, ctx) {
-  const bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+  const { results: bannedUsersRaw } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'rejected'").all();
+  const bannedUsers = bannedUsersRaw.map(u => u.chat_id.toString());
 
   if (bannedUsers.length === 0) {
     const text = `🚫 <b>Banned Users Directory</b>\n\nThere are no banned users right now.`;
@@ -1486,28 +1491,29 @@ async function renderBannedList(env, chatId, messageId, page = 0, ctx) {
 }
 
 async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
-  const userDbKey = `user:${chatId}:products`;
   const limitKey = `limit:${chatId}`;
 
-  const [productsRaw, limitRaw] = await Promise.all([
-      env.AZTRACKER_DB.get(userDbKey, "json"),
-      env.AZTRACKER_DB.get(limitKey)
+  const [stats, userRow] = await Promise.all([
+      env.DB.prepare(`
+        SELECT COUNT(*) as total, SUM(CASE WHEN is_paused = 0 THEN 1 ELSE 0 END) as active 
+        FROM User_Subscriptions WHERE chat_id = ?
+      `).bind(chatId).first(),
+      env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(chatId).first()
   ]);
 
-  const products = productsRaw || [];
   let limitText = "∞";
 
   if (!isAdmin) {
     const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
     if (!isNaN(defaultLimit)) {
-        limitText = limitRaw !== null ? parseInt(limitRaw) : defaultLimit;
+        limitText = userRow && userRow.item_limit !== null ? parseInt(userRow.item_limit) : defaultLimit;
     } else {
         limitText = "⚠️ Error";
     }
   }
 
-  const total = products.length;
-  const active = products.filter(p => !p.paused).length;
+  const total = stats?.total || 0;
+  const active = stats?.active || 0;
   const paused = total - active;
 
   const text = `🏠 <b>Deals Dashboard</b>\n\n📦 <b>Your Saved Items:</b> ${total} / ${limitText}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
@@ -1600,8 +1606,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   let smartAlts = "";
   let title = product.name ? product.name : "Amazon Product";
 
-  const stats = await env.AZTRACKER_DB.get("global:stats", "json");
-  const systemCheckTime = stats ? stats.last_run_timestamp : null;
+  const { last_updated: systemCheckTime } = await env.DB.prepare("SELECT MAX(last_updated) as last_updated FROM Global_Products").first() || { last_updated: null };
 
   if (prices[pid]) {
     if (typeof prices[pid] === 'object') {
