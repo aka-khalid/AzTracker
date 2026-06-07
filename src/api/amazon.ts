@@ -74,7 +74,8 @@ export class AmazonEdgeParser {
             'Content-Type': 'application/json; charset=utf-8',
             'X-Amz-Target': 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems'
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(10000)
         });
 
         if (!response.ok) {

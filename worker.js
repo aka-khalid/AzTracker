@@ -1,8 +1,6 @@
 // AzTracker Cloudflare ChatOps Router - GHOST INPUT INLINE GUI PRO
 // Features: Auto-Deleting Text Inputs, Zero-Trace Callbacks, and Inline UI Editing
 
-//const GITHUB_BRANCH = "feature/chatops-interactive-bot";
-//const GITHUB_BRANCH = "feature/randomized-scheduler";
 
 const GITHUB_BRANCH = "main";
 
@@ -23,12 +21,26 @@ export default {
   },
 
   async queue(batch, env, ctx) {
-    // Native Cloudflare Queue consumer for Telegram Alerts & Broadcasts
+    let rateLimited = false;
+    let retryDelay = 5;
     for (const msg of batch.messages) {
+      if (rateLimited) {
+        msg.retry({ delaySeconds: retryDelay });
+        continue;
+      }
       try {
         const payload = msg.body;
         if (payload.type === 'telegram_alert') {
-          await sendTelegram(env, payload.chatId, payload.text);
+          const res = await sendTelegram(env, payload.chatId, payload.text);
+          if (res && !res.ok) {
+            if (res.error_code === 429) {
+              rateLimited = true;
+              retryDelay = res.parameters?.retry_after || 5;
+              msg.retry({ delaySeconds: retryDelay });
+              continue;
+            }
+            throw new Error(res.description || "Telegram API Error");
+          }
         }
         msg.ack();
       } catch (e) {
@@ -198,8 +210,8 @@ export default {
 async function executeScrapeEngine(env, force = false) {
   // 1. Fetch products needing updates from D1
   const query = force 
-    ? "SELECT asin, amazon_price, used_price, new_price FROM Global_Products"
-    : "SELECT asin, amazon_price, used_price, new_price FROM Global_Products WHERE last_updated < ?";
+    ? "SELECT DISTINCT g.asin, g.amazon_price, g.used_price, g.new_price FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0"
+    : "SELECT DISTINCT g.asin, g.amazon_price, g.used_price, g.new_price FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE g.last_updated < ? AND u.is_paused = 0";
   const bindParams = force ? [] : [Date.now() - 300000];
   
   const { results: staleProducts } = await env.DB.prepare(query).bind(...bindParams).all();
@@ -210,17 +222,30 @@ async function executeScrapeEngine(env, force = false) {
   const asins = staleProducts.map(p => p.asin);
   const liveItems = await parser.getItems(asins);
 
-  const dbBatch = [];
+  const d1Batch = [];
+  const kvPromises = [];
   const queueBatch = [];
   
   for (const liveItem of liveItems) {
     const oldItem = staleProducts.find(p => p.asin === liveItem.asin);
-    const priceDelta = force || oldItem.amazon_price !== liveItem.amazonPrice || 
-                       oldItem.used_price !== liveItem.usedPrice || 
-                       oldItem.new_price !== liveItem.newPrice;
+    
+    // 1. Strict >= 1 EGP mathematical deltas to protect KV Quotas
+    const amznChanged = oldItem.amazon_price === null || liveItem.amazonPrice === null 
+      ? oldItem.amazon_price !== liveItem.amazonPrice 
+      : Math.abs(oldItem.amazon_price - liveItem.amazonPrice) >= 1;
+
+    const usedChanged = oldItem.used_price === null || liveItem.usedPrice === null 
+      ? oldItem.used_price !== liveItem.usedPrice 
+      : Math.abs(oldItem.used_price - liveItem.usedPrice) >= 1;
+
+    const newChanged = oldItem.new_price === null || liveItem.newPrice === null 
+      ? oldItem.new_price !== liveItem.newPrice 
+      : Math.abs(oldItem.new_price - liveItem.newPrice) >= 1;
+
+    const priceDelta = force || amznChanged || usedChanged || newChanged;
 
     if (priceDelta) {
-      dbBatch.push(
+      d1Batch.push(
         env.DB.prepare(`
           UPDATE Global_Products 
           SET amazon_price = ?, used_price = ?, new_price = ?, last_updated = ?
@@ -228,34 +253,56 @@ async function executeScrapeEngine(env, force = false) {
         `).bind(liveItem.amazonPrice, liveItem.usedPrice, liveItem.newPrice, Date.now(), liveItem.asin)
       );
       
-      const historyKey = `history:${liveItem.asin}`;
-      let history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
-      if (liveItem.amazonPrice) history.push({ timestamp: Date.now(), price: liveItem.amazonPrice });
-      if (history.length > 500) history = history.slice(-500);
-      dbBatch.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
+      // 2. ONLY burn a KV write if the price ACTUALLY moved by 1 EGP
+      if (force || amznChanged || usedChanged) {
+        const historyKey = `history:${liveItem.asin}`;
+        let history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
+        
+        // 3. Restore {"t", "n", "u"} contract for the UI Web App
+        history.push({ 
+           t: Math.floor(Date.now() / 1000), 
+           n: liveItem.amazonPrice !== undefined && liveItem.amazonPrice !== null ? liveItem.amazonPrice : liveItem.newPrice, 
+           u: liveItem.usedPrice 
+        });
+        
+        if (history.length > 500) history = history.slice(-500);
+        kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
+      }
       
-      const { results: subs } = await env.DB.prepare(
-        "SELECT chat_id, target_price FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
-      ).bind(liveItem.asin).all();
+      const didAmazonPriceDrop = liveItem.amazonPrice && (!oldItem.amazon_price || liveItem.amazonPrice < oldItem.amazon_price);
       
-      for (const sub of subs) {
-        if (sub.target_price >= liveItem.amazonPrice) {
-          queueBatch.push({
-            type: 'telegram_alert',
-            chatId: sub.chat_id,
-            text: `🚨 <b>Price Drop!</b>\nASIN ${liveItem.asin} dropped to ${liveItem.amazonPrice} EGP!`
-          });
+      if (didAmazonPriceDrop) {
+        const { results: subs } = await env.DB.prepare(
+          "SELECT chat_id, target_price FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
+        ).bind(liveItem.asin).all();
+        
+        for (const sub of subs) {
+          if (!sub.target_price || (oldItem.amazon_price > sub.target_price && liveItem.amazonPrice <= sub.target_price)) {
+            queueBatch.push({
+              type: 'telegram_alert',
+              chatId: sub.chat_id,
+              text: `🚨 <b>Price Drop!</b>\nASIN ${liveItem.asin} dropped to ${liveItem.amazonPrice} EGP!`
+            });
+          }
         }
       }
     }
   }
 
-  if (dbBatch.length > 0) {
-    await env.DB.batch(dbBatch);
+  if (d1Batch.length > 0) {
+    for (let i = 0; i < d1Batch.length; i += 100) {
+      await env.DB.batch(d1Batch.slice(i, i + 100));
+    }
+  }
+  if (kvPromises.length > 0) {
+    await Promise.all(kvPromises);
   }
   
-  for (const alert of queueBatch) {
-    await env.MESSAGE_QUEUE.send(alert);
+  if (queueBatch.length > 0) {
+    for (let i = 0; i < queueBatch.length; i += 100) {
+      const batchBody = queueBatch.slice(i, i + 100).map(b => ({ body: b }));
+      await env.MESSAGE_QUEUE.sendBatch(batchBody);
+    }
   }
 }
 
@@ -303,7 +350,12 @@ async function handleMessage(message, env, ctx) {
     await deleteTelegramMessage(env, chatId, messageId);
     await renderMainMenu(env, chatId, null, isAdmin);
     return;
+  } else if (text.startsWith('/')) {
+    if (activeState) await env.AZTRACKER_DB.delete(stateKey);
+    await deleteTelegramMessage(env, chatId, messageId);
+    return;
   }
+
   // -------------------------------
 
   if (activeState === 'broadcast' && isRootAdmin) {
@@ -633,7 +685,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         return;
       }
       queue = queue.filter(entry => entry.id !== targetId);
-      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      if (queue.length === 0) await env.AZTRACKER_DB.delete("global:join_queue");
+      else await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been denied access by ${escapeHtml(adminName)}.`);
@@ -647,10 +700,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, role, approved_by, item_limit)
-         VALUES (?, 'rejected', ?, ?)
+         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at)
+         VALUES (?, 'rejected', ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3").run();
+      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.`);
       
@@ -674,13 +728,15 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         return;
       }
       queue = queue.filter(entry => entry.id !== targetId);
-      await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+      if (queue.length === 0) await env.AZTRACKER_DB.delete("global:join_queue");
+      else await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
       
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, role, approved_by, item_limit)
-         VALUES (?, 'approved', ?, ?)
+         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at)
+         VALUES (?, 'approved', ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3").run();
+      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`);
@@ -703,6 +759,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
+      if (rootAdmins.includes(targetId) || (admins.includes(targetId) && !isRootAdmin)) return;
       const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>`;
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
@@ -745,10 +802,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("reject_", "");
       
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, role, approved_by, item_limit)
-         VALUES (?, 'rejected', ?, ?)
+         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at)
+         VALUES (?, 'rejected', ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3").run();
+      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       
       await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been explicitly denied access.`);
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.`);
@@ -759,6 +817,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("unban_", "");
       
       await env.DB.prepare("DELETE FROM Users WHERE chat_id = ? AND role = 'rejected'").bind(targetId).run();
+      ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       
       await editTelegramMessage(env, chatId, messageId, `🔄 <b>User Unbanned</b>\nUser <code>${targetId}</code> has been removed from the Banned Directory. They can now send /start to request access again if they wish.`, {
         inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "list_banned_0" }]]
@@ -770,6 +829,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
       await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at) VALUES (?, 'approved', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the Amazon deals application.`);
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
@@ -792,6 +852,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       
       await env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId).run();
+      ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       
       await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire saved list have been permanently erased.`);
       
@@ -838,6 +899,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await renderMainMenu(env, chatId, messageId, isAdmin);
     }
     else if (data.startsWith("list_products_")) {
+      await env.AZTRACKER_DB.delete(`state:${chatId}`);
       const page = parseInt(data.replace("list_products_", "")) || 0;
       await renderProductList(env, chatId, messageId, page);
     }
@@ -1080,8 +1142,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
       });
       
-      ctx.waitUntil(executeScrapeEngine(env, true));
-      ctx.waitUntil(logAudit(env, chatId, "FORCE_CHECK", "executeScrapeEngine", "Initiated manual asynchronous Edge scraper"));
+      ctx.waitUntil(executeScrapeEngine(env, true).catch(e => console.error("executeScrapeEngine failed:", e)));
+      ctx.waitUntil(logAudit(env, chatId, "FORCE_CHECK", "executeScrapeEngine", "Initiated manual asynchronous Edge scraper").catch(e => console.error("logAudit failed:", e)));
     }
     else if (data === "help_add") {
       const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
@@ -1216,7 +1278,6 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
       let newPrice = pData.new_price !== undefined ? pData.new_price : pData.price;
       let newSeller = pData.new_seller || pData.seller;
       let usedPrice = pData.used_price;
-      let usedSeller = pData.used_seller;
 
       if (newPrice !== undefined && newPrice !== null) {
         lastPrice = newPrice.toLocaleString() + " EGP";
@@ -1307,8 +1368,6 @@ async function renderAdminProductView(env, chatId, messageId, targetId, pid, bas
 
 async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   // 1. Merge legacy arrays and new atomic keys dynamically
-  const legacyApproved = await env.AZTRACKER_DB.get("global:approved_users", "json") || [];
-  const bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
   const { results: authUsersRaw } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin', 'root')").all();
   const authUsers = authUsersRaw.map(u => u.chat_id.toString());
 
@@ -1316,10 +1375,10 @@ async function renderUserList(env, chatId, messageId, page = 0, ctx) {
   const { admins, rootAdmins } = await getUserRoles(chatId, env, ctx);
 
   // CRITICAL FIX: Combine arrays and inject rootAdmins to make them visible
-  const allApproved = [...new Set([...legacyApproved, ...authUsers, ...rootAdmins])];
+  const allApproved = [...new Set([...authUsers, ...rootAdmins])];
 
-  // CRITICAL FIX: Strip the caller's own card AND explicitly banned users
-  const visibleUsers = allApproved.filter(id => id !== chatId && !bannedUsers.includes(id));
+  // CRITICAL FIX: Strip the caller's own card
+  const visibleUsers = allApproved.filter(id => id !== chatId);
 
   if (visibleUsers.length === 0) {
     const text = `👥 <b>Approved Users Directory</b>\n\nNo other profile records exist in the database right now.`;
@@ -1444,7 +1503,6 @@ async function renderBannedList(env, chatId, messageId, page = 0, ctx) {
 }
 
 async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
-  const limitKey = `limit:${chatId}`;
 
   const [stats, userRow] = await Promise.all([
       env.DB.prepare(`
@@ -1567,7 +1625,6 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       let newPrice = pData.new_price !== undefined ? pData.new_price : pData.price;
       let newSeller = pData.new_seller || pData.seller;
       let usedPrice = pData.used_price;
-      let usedSeller = pData.used_seller;
 
       if (newPrice !== undefined && newPrice !== null) {
         lastPrice = newPrice.toLocaleString() + " EGP";
@@ -1797,9 +1854,10 @@ function escapeHtml(unsafe) {
 
 async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();
+  if (!secret) throw new Error("Unauthorized: Missing key");
   const key = await crypto.subtle.importKey(
     "raw", 
-    enc.encode(secret || "fallback_secret"), 
+    enc.encode(secret), 
     { name: "HMAC", hash: "SHA-256" }, 
     false, 
     ["sign"]
@@ -1911,7 +1969,7 @@ async function getUserRoles(chatId, env, ctx) {
     let isRootAdmin = rootAdmins.includes(chatId);
     
     // Query D1 instead of KV for global arrays
-    const { results: adminRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'admin'").all();
+    const { results: adminRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'admin' ORDER BY created_at ASC").all();
     const admins = adminRows.map(r => r.chat_id);
     
     const { results: approvedRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
@@ -1981,14 +2039,18 @@ async function resolveUserProfile(env, id, ctx) {
 
 async function deleteTelegramMessage(env, chatId, messageId) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteMessage`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: parseInt(messageId) })
-  });
-  
-  if (!res.ok) {
-    console.error(`Telegram API Error [deleteMessage]: ${res.status} - ${await res.text()}`);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: parseInt(messageId) })
+    });
+    
+    if (!res.ok) {
+      console.error(`Telegram API Error [deleteMessage]: ${res.status} - ${await res.text()}`);
+    }
+  } catch (e) {
+    console.error("deleteTelegramMessage fetch failed:", e);
   }
 }
 
@@ -1996,12 +2058,12 @@ async function expandAmazonUrl(url) {
   let currentUrl = url;
   let hops = 0;
   try {
-    while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
-      const res = await fetch(currentUrl, { method: "GET", redirect: "manual", headers: { "User-Agent": "Agent/AzTrackerBot" } });
+    while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || currentUrl.includes("a.co") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
+      const res = await fetch(currentUrl, { method: "GET", redirect: "manual", headers: { "User-Agent": "Agent/AzTrackerBot" }, signal: AbortSignal.timeout(5000) });
       const location = res.headers.get("location");
       
       if (location) {
-        currentUrl = location;
+        currentUrl = new URL(location, currentUrl).href;
         hops++;
       } else {
         break;
@@ -2015,9 +2077,9 @@ async function expandAmazonUrl(url) {
 
 function getAsinFromUrl(url) {
   if (!url) return null;
-  const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
+  const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})(?=[/?#]|$)/i);
   if (dpMatch) return dpMatch[1].toUpperCase();
-  const gpMatch = url.match(/\/gp\/product\/([A-Z0-9]{10})/i);
+  const gpMatch = url.match(/\/gp\/product\/([A-Z0-9]{10})(?=[/?#]|$)/i);
   if (gpMatch) return gpMatch[1].toUpperCase();
   return null;
 }
@@ -2046,12 +2108,17 @@ async function sendTelegram(env, chatId, text, replyMarkup = null) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
   const body = { chat_id: chatId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return await res.json();
+  } catch (e) {
+    console.error("sendTelegram fetch failed:", e);
+    return { ok: false, error_code: 500, description: e.message };
+  }
 }
 
 async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
@@ -2059,16 +2126,19 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
   const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
   
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
 
-  // The Blindness Fix: explicitly catch and log Telegram rejections (429, 400, 403)
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error(`Telegram API Error [editMessageText]: ${res.status} - ${errText}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Telegram API Error [editMessageText]: ${res.status} - ${errText}`);
+    }
+  } catch (e) {
+    console.error("editTelegramMessage fetch failed:", e);
   }
 }
 
@@ -2090,8 +2160,8 @@ async function sendAppMessage(env, chatId, text, replyMarkup = null) {
     await deleteTelegramMessage(env, chatId, oldMsgId);
   }
   const res = await sendTelegram(env, chatId, text, replyMarkup);
-  if (res && res.result) {
-    await env.AZTRACKER_DB.put(key, res.result.message_id.toString());
+  if (res?.result?.message_id) {
+    await env.AZTRACKER_DB.put(key, res.result.message_id.toString(), { expirationTtl: 172800 });
   }
   return res;
 }
