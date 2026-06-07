@@ -222,6 +222,25 @@ export default {
           env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first()
         ]);
         
+        const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+        const rootAdmins = rootAdminsRaw.split(",").filter(Boolean).map(String);
+        
+        const kvAdmins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
+        const kvBanned = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
+        
+        if (usersRes.results) {
+            usersRes.results.forEach(u => {
+                const idStr = u.chat_id.toString();
+                if (rootAdmins.includes(idStr)) {
+                    u.role = 'root';
+                } else if (u.role !== 'admin' && kvAdmins.includes(idStr)) {
+                    u.role = 'admin';
+                } else if (u.role !== 'rejected' && kvBanned.includes(idStr)) {
+                    u.role = 'rejected';
+                }
+            });
+        }
+        
         const data = {
           systemStats: {
             totalUsers: usersRes.results ? usersRes.results.length : 0,
