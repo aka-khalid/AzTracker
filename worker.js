@@ -1658,6 +1658,20 @@ async function resolveUserProfile(env, id, ctx) {
   return { id, label: `Unknown User (${id})`, handle: null };
 }
 
+function syncUserNames(env, chatId, from, ctx) {
+  if (!from || !ctx || !ctx.waitUntil) return;
+  const first = from.first_name || '';
+  const user = from.username || '';
+  ctx.waitUntil(
+    env.DB.prepare(`
+      UPDATE Users 
+      SET first_name = ?, username = ? 
+      WHERE chat_id = ? 
+      AND (COALESCE(first_name, '') != ? OR COALESCE(username, '') != ?)
+    `).bind(first, user, chatId, first, user).run().catch(e=>console.error("Name sync error:", e))
+  );
+}
+
 async function deleteTelegramMessage(env, chatId, messageId) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteMessage`;
   try {
