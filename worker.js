@@ -835,7 +835,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       return;
     }
     
-    await renderMainMenu(env, chatId, null, isAdmin);
+    await renderMainMenu(env, chatId, null, isAdmin, baseUrl);
     return;
   } else if (text.startsWith('/')) {
     if (activeState) await env.AZTRACKER_DB.delete(stateKey);
@@ -1271,7 +1271,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data === "main_menu") {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
-      await renderMainMenu(env, chatId, messageId, isAdmin);
+      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl);
     }
     else if (data.startsWith("list_products_")) {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
@@ -1365,7 +1365,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
-async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
+async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "") {
 
   const [stats, userRow] = await Promise.all([
       env.DB.prepare(`
