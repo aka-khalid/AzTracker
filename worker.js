@@ -349,10 +349,15 @@ export default {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
         await env.DB.batch([
           env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ?").bind(targetId),
-          env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId)
+          env.DB.prepare("UPDATE Users SET role = 'rejected' WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil(sendAppMessage(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and deleted subscriptions"));
+      } else if (action === "unban") {
+        await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
+        ctx.waitUntil(sendAppMessage(env, targetId, "✅ <b>Your access has been RESTORED.</b>"));
+        ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user"));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "promote") {
@@ -1276,18 +1281,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data === "ignore") {
       return;
     }
-    else if (data === "admin_panel" && isAdmin) {
-      await env.AZTRACKER_DB.delete(`state:${chatId}`);
-      
-      let text = `👑 <b>AzTracker Command Center</b>\n\nClick below to launch the secure Serverless Web App to manage users, view global telemetry, and broadcast messages.`;
-      
-      let adminButtons = [
-        [{ text: "🚀 Launch Command Center", web_app: { url: `${baseUrl}/crm` } }],
-        [{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]
-      ];
 
-      await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
-    }
 
     else if (data === "help_add") {
       const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
@@ -1406,7 +1400,7 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   };
 
   if (isAdmin) {
-    keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", callback_data: "admin_panel" }]);
+    keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", web_app: { url: `${baseUrl}/crm` } }]);
   }
 
   if (messageId) {
@@ -2744,8 +2738,8 @@ function renderCrmHTML() {
                             <div class="text-xs text-gray-500 mt-0.5">Requested: \${time}</div>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="performAction('reject', '${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                            <button onclick="performAction('approve', '${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
+                            <button onclick="performAction('reject', '\${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                            <button onclick="performAction('approve', '\${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
                         </div>
                     </div>\`;
                 }).join('');
@@ -2795,16 +2789,30 @@ function renderCrmHTML() {
                                 <span>Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
                             </div>
                         </div>
-                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
+                        <div class="flex gap-2">
+                            <button onclick="messageUser('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-brand-500/10 text-xs font-medium text-brand-400 hover:bg-brand-500/20 transition shadow">Message</button>
+                            <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
+                        </div>
                     </div>
                     <div class="flex gap-2 relative z-10">
-                        <button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit Limit</button>
-                        \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
-                        \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
-                        \${u.role !== 'root' ? \`<button onclick="confirmRevoke('\${u.chat_id}')" class="w-8 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition flex items-center justify-center border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}
+                        \${u.role === 'rejected' ? 
+                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\`
+                        :
+                            \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit Limit</button>
+                            \${u.role === 'approved' ? \\\`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\\\` : ''}
+                            \${u.role === 'admin' ? \\\`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\\\` : ''}
+                            \${u.role !== 'root' ? \\\`<button onclick="confirmRevoke('\${u.chat_id}')" class="w-8 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition flex items-center justify-center border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\\\` : ''}\`
+                        }
                     </div>
                 </div>\`;
             }).join('');
+        }
+
+        function messageUser(userId) {
+            const msg = prompt("Enter message to send to user " + userId + ":");
+            if (msg) {
+                performAction('direct_message', userId, { message: msg });
+            }
         }
 
         async function openDrawer(userId) {
