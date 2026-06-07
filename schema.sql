@@ -83,3 +83,9 @@ CREATE INDEX idx_subscriptions_chat_id ON User_Subscriptions(chat_id);
 CREATE INDEX idx_subscriptions_asin ON User_Subscriptions(asin);
 -- Optimizes garbage collection / stale product queries
 CREATE INDEX idx_products_last_updated ON Global_Products(last_updated);
+-- Optimizes Web App CRM Pending/Approved/Banned tab grouping
+CREATE INDEX idx_users_role ON Users(role);
+-- Optimizes Web App CRM chronological sorting to prevent memory scans
+CREATE INDEX idx_users_created_at ON Users(created_at DESC);
+-- Optimizes Watch Pool calculations ignoring paused items
+CREATE INDEX idx_subscriptions_is_paused ON User_Subscriptions(is_paused);

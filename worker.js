@@ -174,9 +174,191 @@ export default {
         headers: { "Content-Type": "application/json" }
       });
     }
-    // ---------------------------
+    // --- CRM COMMAND CENTER ENDPOINTS ---
+    async function authAdmin(req, environment) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return null;
+      const initData = authHeader.replace("Bearer ", "");
+      const userData = await verifyInitData(initData, environment.TELEGRAM_BOT_TOKEN);
+      if (!userData) return null;
+      
+      const rootAdmins = environment.ROOT_ADMIN_IDS ? environment.ROOT_ADMIN_IDS.split(",") : [];
+      if (rootAdmins.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
+      
+      const dbUser = await environment.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(userData.id.toString()).first();
+      if (dbUser && dbUser.role === 'admin') return { user: userData, isRootAdmin: false };
+      
+      return null;
+    }
+    
+    if (url.pathname === "/crm" && request.method === "GET") {
+      return new Response(renderCrmHTML(), {
+        status: 200,
+        headers: { "Content-Type": "text/html;charset=UTF-8" }
+      });
+    }
 
+    if (url.pathname === "/api/crm/data" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
 
+      const cacheUrl = new Request(`${url.origin}/_internal/crm/data`, request);
+      const cache = caches.default;
+      let response = await cache.match(cacheUrl);
+      
+      if (!response) {
+        const [usersRes, joinQueueRes, totalProductsRes, lastUpdatedRes] = await Promise.all([
+          env.DB.prepare(`
+            SELECT u.*, COUNT(s.asin) as active_items 
+            FROM Users u 
+            LEFT JOIN User_Subscriptions s ON u.chat_id = s.chat_id AND s.is_paused = 0 
+            GROUP BY u.chat_id
+            ORDER BY u.created_at DESC
+          `).all(),
+          env.AZTRACKER_DB.get("global:join_queue", "json"),
+          env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
+          env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first()
+        ]);
+        
+        const data = {
+          systemStats: {
+            totalUsers: usersRes.results ? usersRes.results.length : 0,
+            activeWatchPool: totalProductsRes ? totalProductsRes.activeWatchPool : 0,
+            lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null
+          },
+          joinQueue: joinQueueRes || [],
+          users: usersRes.results || []
+        };
+        
+        response = new Response(JSON.stringify(data), {
+          status: 200,
+          headers: { 
+            "Content-Type": "application/json",
+            "Cache-Control": "s-maxage=60" 
+          }
+        });
+        ctx.waitUntil(cache.put(cacheUrl, response.clone()));
+      }
+      return response;
+    }
+    
+    if (url.pathname.startsWith("/api/crm/user/") && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      
+      const targetId = url.pathname.split("/")[4];
+      if (!targetId) return new Response("Invalid ID", { status: 400 });
+      
+      const products = await env.DB.prepare(`
+        SELECT s.asin, s.target_price, s.is_paused, 
+               p.name, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller
+        FROM User_Subscriptions s
+        JOIN Global_Products p ON s.asin = p.asin
+        WHERE s.chat_id = ?
+      `).bind(targetId).all();
+      
+      return new Response(JSON.stringify(products.results || []), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
+    if (url.pathname === "/api/crm/action" && request.method === "POST") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      
+      const body = await request.json();
+      const { action, targetId, data } = body;
+      const adminId = auth.user.id.toString();
+      
+      if (action === "force_scrape") {
+        ctx.waitUntil(executeScrapeEngine(env, true));
+        ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check"));
+        return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
+      }
+      
+      if (action === "broadcast") {
+        if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
+        if (!data || !data.message) return new Response("Missing message", { status: 400 });
+        
+        ctx.waitUntil((async () => {
+          const users = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
+          for (const row of users.results) {
+            await sendAppMessage(env, row.chat_id, `📢 <b>Global Broadcast</b>\n\n${data.message}`);
+          }
+          await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", "Sent global broadcast");
+        })());
+        return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
+      }
+      
+      if (action === "approve") {
+        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', 5, ?, ?)").bind(targetId, adminId, Date.now()).run();
+        let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+        queue = queue.filter(u => u.id !== targetId);
+        await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+        ctx.waitUntil(sendAppMessage(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
+        ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
+      } else if (action === "reject") {
+        let queue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
+        queue = queue.filter(u => u.id !== targetId);
+        await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
+        ctx.waitUntil(sendAppMessage(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
+        ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
+      } else if (action === "revoke") {
+        if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
+        await env.DB.batch([
+          env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ?").bind(targetId),
+          env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId)
+        ]);
+        ctx.waitUntil(sendAppMessage(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
+        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and deleted subscriptions"));
+      } else if (action === "promote") {
+        if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
+        await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
+        ctx.waitUntil(sendAppMessage(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
+        ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
+      } else if (action === "demote") {
+        if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
+        if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
+        await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
+        ctx.waitUntil(sendAppMessage(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
+        ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
+      } else if (action === "set_limit") {
+        const newLimit = parseInt(data.limit);
+        if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
+        await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
+        ctx.waitUntil(sendAppMessage(env, targetId, `📈 <b>Your tracking limit has been updated to ${newLimit} items.</b>`));
+        ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, `Changed limit to ${newLimit}`));
+      } else if (action === "delete_product") {
+        const asin = data.asin;
+        await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, `Deleted product ${asin}`));
+      } else if (action === "pause_product") {
+        const asin = data.asin;
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
+      } else if (action === "resume_product") {
+        const asin = data.asin;
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
+      } else if (action === "set_target") {
+        const asin = data.asin;
+        const target = parseFloat(data.target);
+        if (isNaN(target)) return new Response("Invalid target", { status: 400 });
+        await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ? WHERE chat_id = ? AND asin = ?").bind(target, targetId, asin).run();
+        ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, `Set target price for ${asin} to ${target}`));
+      } else if (action === "direct_message") {
+        if (!data || !data.message) return new Response("Missing message", { status: 400 });
+        ctx.waitUntil(sendAppMessage(env, targetId, `💬 <b>Message from Admin:</b>\n\n${data.message}`));
+        ctx.waitUntil(logAudit(env, adminId, "DIRECT_MESSAGE", targetId, "Sent direct message"));
+      } else {
+        return new Response("Unknown action", { status: 400 });
+      }
+      
+      ctx.waitUntil(caches.default.delete(new Request(`${url.origin}/_internal/crm/data`)));
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    // ------------------------------------
 
     if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
@@ -195,7 +377,7 @@ export default {
       if (payload.callback_query) {
         await handleCallback(payload.callback_query, env, baseUrl, ctx); 
       } else if (payload.message && payload.message.text) {
-        await handleMessage(payload.message, env, ctx);
+        await handleMessage(payload.message, env, baseUrl, ctx);
       }
       return new Response("OK", { status: 200 });
     } catch (err) {
@@ -308,7 +490,7 @@ async function executeScrapeEngine(env, force = false) {
 
 
 
-async function handleMessage(message, env, ctx) {
+async function handleMessage(message, env, baseUrl, ctx) {
   const text = convertHindiToArabic(message.text).trim();
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
@@ -348,6 +530,17 @@ async function handleMessage(message, env, ctx) {
   if (text === "/start" || text === "/manage") {
     if (activeState) await env.AZTRACKER_DB.delete(stateKey);
     await deleteTelegramMessage(env, chatId, messageId);
+    
+    if (text === "/manage" && isAdmin) {
+      await sendAppMessage(env, chatId, `👑 <b>AzTracker Command Center</b>\n\nClick below to launch the secure Serverless Web App.`, {
+        inline_keyboard: [
+          [{ text: "🚀 Launch Command Center", web_app: { url: `${baseUrl}/crm` } }],
+          [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+        ]
+      });
+      return;
+    }
+    
     await renderMainMenu(env, chatId, null, isAdmin);
     return;
   } else if (text.startsWith('/')) {
@@ -358,65 +551,9 @@ async function handleMessage(message, env, ctx) {
 
   // -------------------------------
 
-  if (activeState === 'broadcast' && isRootAdmin) {
-    await env.AZTRACKER_DB.delete(stateKey);
-    await deleteTelegramMessage(env, chatId, messageId);
-    
-    const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Broadcasting...</b>\nDispatching to queue...`);
-    
-    let queuedCount = 0;
-    // Push the broadcast ops to the Cloudflare Queue to avoid 30s timeout
-    for (const userId of approvedUsers) {
-      try {
-        await env.MESSAGE_QUEUE.send({
-          type: 'telegram_alert',
-          chatId: userId,
-          text: `📢 <b>System Update</b>\n\n${text}`
-        });
-        queuedCount++;
-      } catch (e) {
-        console.error(`Queue send failed for ${userId}`);
-      }
-    }
-    
-    await editTelegramMessage(env, chatId, sentMsg.result.message_id, `✅ <b>Broadcast Queued!</b>\nSafely dispatched ${queuedCount} messages to the Edge Queue.`, {
-      inline_keyboard: [[{ text: "⬅️ Back to Admin Panel", callback_data: "admin_panel" }]]
-    });
-    
-    // AUDIT LOG
-    ctx.waitUntil(logAudit(env, chatId, "BROADCAST", "ALL_USERS", `Queued broadcast to ${queuedCount} users`));
-    
-    return;
-  }
+
   
-  if (activeState) {
-    if (activeState.startsWith("setlimit_")) {
-      const targetId = activeState.replace("setlimit_", "");
-      const newLimit = parseInt(text);
-
-      if (isNaN(newLimit) || newLimit < 1) {
-        await deleteTelegramMessage(env, chatId, messageId);
-        await sendAppMessage(env, chatId, "⚠️ <b>Invalid limit.</b> Please enter a valid positive number.", {
-          inline_keyboard: [[{ text: "⬅️ Back", callback_data: `manage_user_${targetId}` }]]
-        });
-        return;
-      }
-
-      await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
-      await env.AZTRACKER_DB.delete(stateKey);
-      await deleteTelegramMessage(env, chatId, messageId);
-
-      await sendAppMessage(env, chatId, `✅ <b>Limit Updated!</b>\n\nUser <code>${targetId}</code> can now save up to <b>${newLimit}</b> items.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]]
-      });
-      
-      // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "SET_LIMIT", targetId, `Changed item saving limit to ${newLimit}`));
-
-      return;
-    }
-
-    const pid = activeState;
+  if (activeState) {    const pid = activeState;
     const num = parseFloat(text);
     
     if (isNaN(num) || num <= 0) {
@@ -445,61 +582,7 @@ async function handleMessage(message, env, ctx) {
     await deleteTelegramMessage(env, chatId, messageId);
   }
 
-  if (isAdmin && isNumericId) {
-    const targetId = text;
-    const tgtUser = await env.DB.prepare("SELECT role, item_limit, approved_by FROM Users WHERE chat_id = ?").bind(targetId).first();
-    const targetRole = tgtUser ? tgtUser.role : null;
-    const isTargetRoot = rootAdmins.includes(targetId);
-    const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
-    const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
 
-    const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
-    const userLimit = tgtUser && tgtUser.item_limit !== null ? parseInt(tgtUser.item_limit) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
-    const limitDisplay = isTargetAdmin ? "∞ (Unlimited)" : userLimit;
-
-    const approverId = tgtUser ? tgtUser.approved_by : null;
-    let approverText = "Legacy / Auto-Migrated";
-    if (approverId) {
-      const { label } = await resolveUserProfile(env, approverId, ctx);
-      approverText = escapeHtml(label);
-    } else if (!isTargetApproved) {
-      approverText = "N/A (Not Approved)";
-    }
-
-    let buttons = [];
-    if (isRootAdmin) {
-      if (!isTargetApproved) {
-        buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-        buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
-      }
-      if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
-      if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
-    } else if (isAdmin) {
-      if (!isTargetApproved) {
-        buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-        buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
-      }
-      if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-    }
-
-    if (isTargetApproved) {
-      // VERTICAL PRIVACY LOCK: Normal admins CANNOT view Root Admin products
-      if (isRootAdmin || !isTargetRoot) {
-         buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
-      }
-      if (!isTargetAdmin) {
-         buttons.push([{ text: "⚙️ Change Item Limit", callback_data: `set_limit_init_${targetId}` }]);
-      }
-    }
-
-    if (buttons.length > 0) {
-      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : (targetRole === "rejected" ? "⛔ Banned User" : "🚫 Unapproved Guest");
-      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
-      await sendAppMessage(env, chatId, statusMsg, { inline_keyboard: buttons });
-    }
-    return;
-  }
 
   if (isAmazonLink) {
     // Isolate the link from surrounding text and auto-prepend protocol if missing
@@ -598,11 +681,6 @@ async function handleMessage(message, env, ctx) {
     return;
   }
 
-  if (text === "/start" || text === "/manage") {
-    await deleteTelegramMessage(env, chatId, messageId);
-    await renderMainMenu(env, chatId, null, isAdmin);
-    return;
-  }
 
   await deleteTelegramMessage(env, chatId, messageId);
   await sendAppMessage(env, chatId, "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.", {
@@ -908,243 +986,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data === "admin_panel" && isAdmin) {
       await env.AZTRACKER_DB.delete(`state:${chatId}`);
-      const approvedGuests = approvedUsers.filter(id => !admins.includes(id) && !rootAdmins.includes(id));
-      const { count } = await env.DB.prepare("SELECT COUNT(*) as count FROM Global_Products").first();
-      const stats = { active_api_calls: count, hivemind_size: count };
       
-      let lastRunText = "Never";
-      const { last_updated: systemCheckTime } = await env.DB.prepare("SELECT MAX(last_updated) as last_updated FROM Global_Products").first() || { last_updated: null };
+      let text = `👑 <b>AzTracker Command Center</b>\n\nClick below to launch the secure Serverless Web App to manage users, view global telemetry, and broadcast messages.`;
       
-      if (systemCheckTime) {
-          const date = new Date(systemCheckTime);
-          const timeStr = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
-          lastRunText = `${timeStr} <i>(Edge Cron)</i>`;
-      }
-      
-      const globalLimit = env.GLOBAL_POOL_LIMIT || "450";
-      
-      let text = `👑 <b>Admin Dashboard</b>\n\n` +
-             `👥 <b>Approved Guests:</b> ${approvedGuests.length}\n` +
-             `🛡️ <b>Admins:</b> ${admins.length + rootAdmins.length}\n\n` +
-             `📡 <b>Active Watch Pool:</b> ${stats.active_api_calls} / ${globalLimit}\n` +
-             `🗄️ <b>Global Database:</b> ${stats.hivemind_size} ASINs\n` +
-             `⏱️ <b>Last Engine Run:</b> ${lastRunText}\n\n` +
-             `💡 <b>Manage access:</b>\nBrowse approved users below, or paste a Telegram ID directly into the chat.`;
-      
-
       let adminButtons = [
-        [{ text: "👥 Manage Users Directory", callback_data: "admin_users_menu" }]
+        [{ text: "🚀 Launch Command Center", web_app: { url: `${baseUrl}/crm` } }],
+        [{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]
       ];
-      
-      if (isRootAdmin) {
-        adminButtons.push([{ text: "📢 Broadcast Message", callback_data: "broadcast_init" }]);
-        // AUDIT LOG SIEM INJECTION
-        const exp = Date.now() + (2 * 60 * 60 * 1000);
-        const sig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
-        adminButtons.push([{ text: "🕵️ Security Audit Log", web_app: { url: `${baseUrl}/audit?exp=${exp}&sig=${sig}` } }]);
-        
-
-      }
-      
-      adminButtons.push([{ text: "🏠 Back to Main Menu", callback_data: "main_menu" }]);
 
       await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: adminButtons });
     }
-    else if (data === "admin_users_menu" && isAdmin) {
-      await env.AZTRACKER_DB.delete(`state:${chatId}`);
-      let text = `👥 <b>User Management Directory</b>\n\nSelect a category below to browse users.`;
-      let buttons = [
-        [{ text: "⏳ View Pending Requests", callback_data: "list_pending_0" }],
-        [{ text: "✅ View Approved Users", callback_data: "list_users_0" }],
-        [{ text: "🚫 View Banned Users", callback_data: "list_banned_0" }],
-        [{ text: "⬅️ Back to Admin Panel", callback_data: "admin_panel" }]
-      ];
-      await editTelegramMessage(env, chatId, messageId, text, { inline_keyboard: buttons });
-    }
-    else if (data === "broadcast_init" && isRootAdmin) {
-      await env.AZTRACKER_DB.put(`state:${chatId}`, 'broadcast', { expirationTtl: 300 });
-      const text = `📢 <b>Broadcast Mode</b>\n\nPlease type the exact message you want to send to all approved users.\n\n<i>(HTML formatting is supported)</i>`;
-      await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [[{ text: "❌ Cancel", callback_data: "admin_panel" }]]
-      });
-    }
-    else if (data.startsWith("list_users") && isAdmin) {
-      const parts = data.split("_");
-      const page = parts[2] ? parseInt(parts[2]) : 0; 
-      await renderUserList(env, chatId, messageId, page, ctx);
-    }
-    else if (data.startsWith("list_pending_") && isAdmin) {
-      const page = parseInt(data.replace("list_pending_", "")) || 0;
-      await renderPendingList(env, chatId, messageId, page, ctx);
-    }
-    else if (data.startsWith("list_banned_") && isAdmin) {
-      const page = parseInt(data.replace("list_banned_", "")) || 0;
-      await renderBannedList(env, chatId, messageId, page, ctx);
-    }
-    else if (data.startsWith("manage_user_") && isAdmin) {
-      await env.AZTRACKER_DB.delete(`state:${chatId}`);
-      const targetId = data.replace("manage_user_", "");
-      const tgtUser = await env.DB.prepare("SELECT role, item_limit, approved_by FROM Users WHERE chat_id = ?").bind(targetId).first();
-    const targetRole = tgtUser ? tgtUser.role : null;
-    const isTargetRoot = rootAdmins.includes(targetId);
-    const isTargetAdmin = isTargetRoot || targetRole === "admin" || admins.includes(targetId);
-    const isTargetApproved = isTargetAdmin || targetRole === "approved" || approvedUsers.includes(targetId);
 
-    const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
-    const userLimit = tgtUser && tgtUser.item_limit !== null ? parseInt(tgtUser.item_limit) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
-    const limitDisplay = isTargetAdmin ? "∞ (Unlimited)" : userLimit;
-
-    const approverId = tgtUser ? tgtUser.approved_by : null;
-      let approverText = "Legacy / Auto-Migrated";
-      if (approverId) {
-        const { label } = await resolveUserProfile(env, approverId, ctx);
-        approverText = escapeHtml(label);
-      } else if (!isTargetApproved) {
-        approverText = "N/A (Not Approved)";
-      }
-
-      let buttons = [];
-      if (isRootAdmin) {
-        if (!isTargetApproved) {
-          buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-          if (targetRole === "rejected") buttons.push([{ text: "🔄 Unban User", callback_data: `unban_${targetId}` }]);
-          else buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
-        }
-        if (isTargetApproved && !isTargetRoot) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-        if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🌟 Promote to Admin", callback_data: `confPromote_${targetId}` }]);
-        if (isTargetAdmin && !isTargetRoot) buttons.push([{ text: "🔽 Demote Admin", callback_data: `confDemote_${targetId}` }]);
-      } else if (isAdmin) {
-        if (!isTargetApproved) {
-          buttons.push([{ text: "✅ Approve User", callback_data: `approve_${targetId}` }]);
-          if (targetRole === "rejected") buttons.push([{ text: "🔄 Unban User", callback_data: `unban_${targetId}` }]);
-          else buttons.push([{ text: "❌ Reject Request", callback_data: `reject_${targetId}` }]);
-        }
-        if (isTargetApproved && !isTargetAdmin) buttons.push([{ text: "🗑️ Revoke User", callback_data: `confRevoke_${targetId}` }]);
-      }
-      
-      if (isTargetApproved) {
-        // VERTICAL PRIVACY LOCK: Normal admins CANNOT view Root Admin products
-        if (isRootAdmin || !isTargetRoot) {
-           buttons.push([{ text: "📦 View User's Products", callback_data: `admProd_${targetId}` }]);
-        }
-        if (!isTargetAdmin) {
-           buttons.push([{ text: "⚙️ Change Item Limit", callback_data: `set_limit_init_${targetId}` }]);
-        }
-      }
-      let backCb = "admin_users_menu";
-      if (targetRole === "rejected") backCb = "list_banned_0";
-      else if (isTargetApproved) backCb = "list_users_0";
-      else backCb = "list_pending_0";
-      
-      buttons.push([{ text: "⬅️ Back to Directory", callback_data: backCb }]);
-
-      const statusLabel = isTargetRoot ? "👑 Root Admin" : isTargetAdmin ? "🛡️ Admin" : isTargetApproved ? "👤 Approved User" : (targetRole === "rejected" ? "⛔ Banned User" : "🚫 Unapproved Guest");
-      const statusMsg = `📋 <b>User Management Card</b>\n\n🆔 <b>ID:</b> <code>${targetId}</code>\n📊 <b>Current Status:</b> ${statusLabel}\n🛡️ <b>Approved By:</b> ${approverText}\n📦 <b>Product Limit:</b> ${limitDisplay}\n\n<i>Select an action below:</i>`;
-      await editTelegramMessage(env, chatId, messageId, statusMsg, { inline_keyboard: buttons });
-    }
-    else if (data.startsWith("set_limit_init_") && isAdmin) {
-      const targetId = data.replace("set_limit_init_", "");
-      await env.AZTRACKER_DB.put(`state:${chatId}`, `setlimit_${targetId}`, { expirationTtl: 300 });
-
-      const tgtUser = await env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(targetId).first();
-      const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
-      const userLimit = tgtUser && tgtUser.item_limit !== null ? parseInt(tgtUser.item_limit) : (isNaN(defaultLimit) ? "⚠️ Error" : defaultLimit);
-
-      const text = `⚙️ <b>Set Item Limit</b>\n\nUser ID: <code>${targetId}</code>\nCurrent Limit: <b>${userLimit}</b>\n\nPlease type the new maximum number of products this user can save.`;
-      await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [[{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]]
-      });
-    }
-    else if (data.startsWith("admProd_") && isAdmin) {
-      const parts = data.split("_");
-      const targetId = parts[1];
-      if (!isRootAdmin && rootAdmins.includes(targetId)) return; // IDOR Protection
-      const page = parts[2] ? parseInt(parts[2]) : 0; 
-      await renderAdminUserProducts(env, chatId, messageId, targetId, page);
-    }
-    else if (data.startsWith("admView_") && isAdmin) {
-      const parts = data.split("_");
-      const targetId = parts[1];
-      if (!isRootAdmin && rootAdmins.includes(targetId)) return; // IDOR Protection
-      const pid = parts[2];
-      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins);
-    }
-    else if (data.startsWith("admTog_") && isAdmin) {
-      const parts = data.split("_");
-      const targetId = parts[1];
-      if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
-      const pid = parts[2];
-      await env.DB.prepare(
-        "UPDATE User_Subscriptions SET is_paused = CASE WHEN is_paused = 1 THEN 0 ELSE 1 END WHERE chat_id = ? AND asin = ?"
-      ).bind(targetId, pid).run();
-      await renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins);
-      
-      // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "FORCE_TOGGLE", pid, `Toggled checking status for user ${targetId}`));
-    }
-    else if (data.startsWith("confirmDel_")) {
-      const pid = data.replace("confirmDel_", "");
-      const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\n\n<i>This action cannot be undone.</i>`;
-      
-      await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [
-          [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
-          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
-        ]
-      });
-    }
-    else if (data.startsWith("admConfDel_") && isAdmin) {
-      const parts = data.split("_");
-      const targetId = parts[1];
-      if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
-      const pid = parts[2];
-      const text = `⚠️ <b>Confirm Admin Deletion</b>\n\nAre you sure you want to force-delete ASIN <code>${pid}</code> from user <code>${targetId}</code>'s registry?\n\n<i>This action cannot be undone.</i>`;
-      
-      await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [
-          [{ text: "✅ Yes, Force Delete", callback_data: `admDel_${targetId}_${pid}` }],
-          [{ text: "❌ Cancel", callback_data: `admView_${targetId}_${pid}` }]
-        ]
-      });
-    }
-    else if (data.startsWith("admDel_") && isAdmin) {
-      const parts = data.split("_");
-      const targetId = parts[1];
-      if (!isRootAdmin && (admins.includes(targetId) || rootAdmins.includes(targetId))) return; // Horizontal Write Protection
-      const pid = parts[2];
-      await env.DB.prepare(
-        "DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?"
-      ).bind(targetId, pid).run();
-      
-      await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Admin Override: Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from user <code>${targetId}</code>'s active register.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to User's Products", callback_data: `admProd_${targetId}` }]]
-      });
-      
-      // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "FORCE_DELETE_PRODUCT", pid, `Forcefully removed ASIN from user ${targetId}`));
-    }
-    else if (data === "global_track" && isAdmin) {
-      const lastTrigger = await env.AZTRACKER_DB.get("global:last_trigger");
-      const now = Date.now();
-      const cooldown = 10 * 60 * 1000;
-
-      if (lastTrigger && (now - parseInt(lastTrigger)) < cooldown) {
-          const remaining = Math.ceil((cooldown - (now - parseInt(lastTrigger))) / 60000);
-          await editTelegramMessage(env, chatId, messageId,
-              `⏳ <b>Cooldown Active</b>\n\nNext check available in <b>${remaining} minute(s)</b>.`, {
-              inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
-          });
-          return;
-      }
-      await env.AZTRACKER_DB.put("global:last_trigger", now.toString(), { expirationTtl: 700 });
-      
-      await editTelegramMessage(env, chatId, messageId, "⏳ <b>Manual scrape initiated in the background...</b>\nChecking prices across all global products.", {
-        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
-      });
-      
-      ctx.waitUntil(executeScrapeEngine(env, true).catch(e => console.error("executeScrapeEngine failed:", e)));
-      ctx.waitUntil(logAudit(env, chatId, "FORCE_CHECK", "executeScrapeEngine", "Initiated manual asynchronous Edge scraper").catch(e => console.error("logAudit failed:", e)));
-    }
     else if (data === "help_add") {
       const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
       await editTelegramMessage(env, chatId, messageId, text, {
@@ -1201,306 +1053,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 // ── UI Renderers ────────────────────────────────────────────────────────────
 
-async function renderAdminUserProducts(env, chatId, messageId, targetId, page = 0) {
-  const { results: products } = await env.DB.prepare(
-    `SELECT s.asin, s.is_paused, s.target_price, p.name 
-     FROM User_Subscriptions s 
-     JOIN Global_Products p ON s.asin = p.asin 
-     WHERE s.chat_id = ?`
-  ).bind(targetId).all();
 
-  if (!products || products.length === 0) {
-    const text = `📦 <b>User Items List (ID: <code>${targetId}</code>)</b>\n\nThis user currently has no active or paused products in their database.`;
-    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]] };
-    await editTelegramMessage(env, chatId, messageId, text, keyboard);
-    return;
-  }
-
-  const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
-  if (page >= totalPages) page = Math.max(0, totalPages - 1);
-
-  const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-  
-  const keyboard = { inline_keyboard: [] };
-
-  pagedProducts.forEach((p) => {
-    let name = p.name ? p.name : p.asin;
-    if (name.length > 30) name = name.substring(0, 27) + "...";
-    
-    const statusIcon = p.is_paused ? "⏸️" : "✅";
-    const targetIcon = p.target_price ? "🎯 " : "";
-    keyboard.inline_keyboard.push([{ text: `${statusIcon} ${targetIcon}${name}`, callback_data: `admView_${targetId}_${p.asin}` }]);
-  });
-
-  if (totalPages > 1) {
-    let navRow = [];
-    if (page > 0) {
-      navRow.push({ text: "⬅️ Prev", callback_data: `admProd_${targetId}_${page - 1}` });
-    }
-    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
-    if (page < totalPages - 1) {
-      navRow.push({ text: "Next ➡️", callback_data: `admProd_${targetId}_${page + 1}` });
-    }
-    keyboard.inline_keyboard.push(navRow);
-  }
-
-  keyboard.inline_keyboard.push([{ text: "⬅️ Back to User Card", callback_data: `manage_user_${targetId}` }]);
-
-  const text = `📦 <b>User Items List (ID: <code>${targetId}</code>)</b>\nPage ${page + 1} of ${totalPages}\n\n<i>Select an item below to manage it on behalf of the user:</i>`;
-  await editTelegramMessage(env, chatId, messageId, text, keyboard);
-}
-
-async function renderAdminProductView(env, chatId, messageId, targetId, pid, baseUrl, isRootAdmin, admins, rootAdmins) {
-  const product = await env.DB.prepare(
-    `SELECT s.asin, s.is_paused as paused, s.target_price, p.name as name, 
-            p.amazon_price, p.used_price, p.new_price, p.last_updated 
-     FROM User_Subscriptions s 
-     JOIN Global_Products p ON s.asin = p.asin 
-     WHERE s.chat_id = ? AND s.asin = ?`
-  ).bind(targetId, pid).first();
-
-  if (!product) return;
-  const prices = { [pid]: { new_price: product.amazon_price, used_price: product.used_price, name: product.name } };
-
-  const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
-  let lastPrice = "⏳ Waiting for next automated check...";
-  let lastUpdated = ""; 
-  let sellerInfo = "";
-  let smartAlts = "";
-  let title = product.name ? product.name : "Amazon Product";
-
-  const { last_updated: systemCheckTime } = await env.DB.prepare("SELECT MAX(last_updated) as last_updated FROM Global_Products").first() || { last_updated: null };
-
-  if (prices[pid]) {
-    if (typeof prices[pid] === 'object') {
-      let pData = prices[pid];
-      let newPrice = pData.new_price !== undefined ? pData.new_price : pData.price;
-      let newSeller = pData.new_seller || pData.seller;
-      let usedPrice = pData.used_price;
-
-      if (newPrice !== undefined && newPrice !== null) {
-        lastPrice = newPrice.toLocaleString() + " EGP";
-        if (newSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(newSeller)}</i>`;
-      } else if (usedPrice !== undefined && usedPrice !== null) {
-        lastPrice = "❌ Out of Stock (New)";
-        sellerInfo = "";
-      } else {
-        lastPrice = "❌ Out of Stock";
-        sellerInfo = "";
-      }
-
-      if (pData.name) title = pData.name;
-
-      smartAlts = buildSmartAlternatives(pData, pid, env);
-    } else {
-      lastPrice = prices[pid].toLocaleString() + " EGP";
-    }
-  }
-
-  if (systemCheckTime) {
-    const dateObj = new Date(systemCheckTime);
-    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj);
-    const checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
-    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
-
-    if (checkDate === todayStr) {
-      lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
-    } else {
-      lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
-    }
-  }
-
-  const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
-  let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
-
-  let productUrl = `https://www.amazon.eg/dp/${pid}`;
-  const priceRecord = prices[pid] && typeof prices[pid] === "object" ? prices[pid] : {};
-  const recordNewPrice = priceRecord.new_price !== undefined ? priceRecord.new_price : priceRecord.price;
-  const hasNewOffer = recordNewPrice !== undefined && recordNewPrice !== null;
-  const hasUsedOffer = priceRecord.used_price !== undefined && priceRecord.used_price !== null;
-  const callbackMerchant = pid.includes(":") ? pid.split(":")[1] : null;
-  const targetMerchant = hasNewOffer
-    ? (priceRecord.new_mid || priceRecord.merchant_id || callbackMerchant)
-    : hasUsedOffer
-      ? (priceRecord.used_mid || callbackMerchant)
-      : callbackMerchant;
-
-  const queryParams = new URLSearchParams();
-  if (targetMerchant) queryParams.set("m", targetMerchant);
-  if (env.AMZN_ASSOCIATES_TAG) queryParams.set("tag", env.AMZN_ASSOCIATES_TAG);
-  const queryString = queryParams.toString();
-  if (queryString) productUrl += `?${queryString}`;
-
-  const text = `🛡️ <b>Admin Product Override</b> (User: <code>${targetId}</code>)\n\n` +
-               `📦 <b>${cleanTitle}</b>\n` +
-               `└ 🆔 <code>${pid}</code>\n\n` +
-               `💰 <b>Price:</b> ${lastPrice}` +
-               `${targetText}` +
-               `${sellerInfo}` +
-               `${smartAlts}\n\n` +
-               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n#ad`;
-
-  // HORIZONTAL READ-ONLY AUDITING: Strip write buttons if caller shouldn't have access
-  const isTargetAdmin = admins.includes(targetId) || rootAdmins.includes(targetId);
-  const canWrite = isRootAdmin || !isTargetAdmin;
-
-  let inline_keyboard = [
-    [{ text: "🛒 Open in Amazon.eg", url: productUrl }]
-  ];
-
-  if (canWrite) {
-    inline_keyboard.push([{ text: product.paused ? "▶️ Force Resume" : "⏸️ Force Pause", callback_data: `admTog_${targetId}_${pid}` }]);
-  }
-
-  inline_keyboard.push([{ text: "📊 View Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }]);
-
-  if (canWrite) {
-    inline_keyboard.push([{ text: "🗑️ Force Delete", callback_data: `admConfDel_${targetId}_${pid}` }]);
-  }
-
-  inline_keyboard.push([{ text: "⬅️ Back to User's List", callback_data: `admProd_${targetId}_0` }]);
-
-  const keyboard = { inline_keyboard };
-
-  await editTelegramMessage(env, chatId, messageId, text, keyboard);
-}
-
-async function renderUserList(env, chatId, messageId, page = 0, ctx) {
-  // 1. Merge legacy arrays and new atomic keys dynamically
-  const { results: authUsersRaw } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin', 'root')").all();
-  const authUsers = authUsersRaw.map(u => u.chat_id.toString());
-
-  // RBAC Directory Scoping: Fetch cached roles
-  const { admins, rootAdmins } = await getUserRoles(chatId, env, ctx);
-
-  // CRITICAL FIX: Combine arrays and inject rootAdmins to make them visible
-  const allApproved = [...new Set([...authUsers, ...rootAdmins])];
-
-  // CRITICAL FIX: Strip the caller's own card
-  const visibleUsers = allApproved.filter(id => id !== chatId);
-
-  if (visibleUsers.length === 0) {
-    const text = `👥 <b>Approved Users Directory</b>\n\nNo other profile records exist in the database right now.`;
-    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]] };
-    await editTelegramMessage(env, chatId, messageId, text, keyboard);
-    return;
-  }
-
-  const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(visibleUsers.length / ITEMS_PER_PAGE);
-  if (page >= totalPages) page = Math.max(0, totalPages - 1);
-
-  const pagedUsers = visibleUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-
-  // 2. EDGE-CACHED RESOLUTION: Parallel fetch wrapped in Cloudflare's cache
-  const resolvedUsers = await Promise.all(pagedUsers.map(id => resolveUserProfile(env, id, ctx)));
-
-  const keyboard = { inline_keyboard: [] };
-
-  resolvedUsers.forEach((user) => {
-    // Dynamic Identity Badging
-    let icon = "👤";
-    if (rootAdmins.includes(user.id)) icon = "👑";
-    else if (admins.includes(user.id)) icon = "🛡️";
-
-    keyboard.inline_keyboard.push([{ text: `${icon} ${user.label}`, callback_data: `manage_user_${user.id}` }]);
-  });
-
-  if (totalPages > 1) {
-    let navRow = [];
-    if (page > 0) {
-      navRow.push({ text: "⬅️ Prev", callback_data: `list_users_${page - 1}` });
-    }
-    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
-    if (page < totalPages - 1) {
-      navRow.push({ text: "Next ➡️", callback_data: `list_users_${page + 1}` });
-    }
-    keyboard.inline_keyboard.push(navRow);
-  }
-
-  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]);
-
-  const text = `👥 <b>Approved Users Register</b> (Page ${page + 1} of ${totalPages})\n\nSelect an active profile record below to open its structural permissions card inline:`;
-  await editTelegramMessage(env, chatId, messageId, text, keyboard);
-}
-
-async function renderPendingList(env, chatId, messageId, page = 0, ctx) {
-  const rawQueue = await env.AZTRACKER_DB.get("global:join_queue", "json") || [];
-  const now = Date.now();
-  const queue = rawQueue
-    .map(entry => typeof entry === 'string' ? { id: entry, requested_at: now } : entry)
-    .filter(entry => (now - entry.requested_at) < QUEUE_TTL_MS);
-
-  if (queue.length === 0) {
-    const text = `⏳ <b>Pending Requests</b>\n\nThere are no pending join requests right now.`;
-    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]] };
-    await editTelegramMessage(env, chatId, messageId, text, keyboard);
-    return;
-  }
-
-  const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(queue.length / ITEMS_PER_PAGE);
-  if (page >= totalPages) page = Math.max(0, totalPages - 1);
-
-  const pagedUsers = queue.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-  const resolvedUsers = await Promise.all(pagedUsers.map(entry => resolveUserProfile(env, entry.id, ctx)));
-
-  const keyboard = { inline_keyboard: [] };
-  resolvedUsers.forEach((user) => {
-    keyboard.inline_keyboard.push([{ text: `⏳ ${user.label} (${user.id})`, callback_data: `manage_user_${user.id}` }]);
-  });
-
-  if (totalPages > 1) {
-    let navRow = [];
-    if (page > 0) navRow.push({ text: "⬅️ Prev", callback_data: `list_pending_${page - 1}` });
-    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
-    if (page < totalPages - 1) navRow.push({ text: "Next ➡️", callback_data: `list_pending_${page + 1}` });
-    keyboard.inline_keyboard.push(navRow);
-  }
-
-  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]);
-
-  const text = `⏳ <b>Pending Requests</b> (Page ${page + 1} of ${totalPages})\n\nSelect a user below to open their structural permissions card inline:`;
-  await editTelegramMessage(env, chatId, messageId, text, keyboard);
-}
-
-async function renderBannedList(env, chatId, messageId, page = 0, ctx) {
-  const { results: bannedUsersRaw } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'rejected'").all();
-  const bannedUsers = bannedUsersRaw.map(u => u.chat_id.toString());
-
-  if (bannedUsers.length === 0) {
-    const text = `🚫 <b>Banned Users Directory</b>\n\nThere are no banned users right now.`;
-    const keyboard = { inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]] };
-    await editTelegramMessage(env, chatId, messageId, text, keyboard);
-    return;
-  }
-
-  const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.ceil(bannedUsers.length / ITEMS_PER_PAGE);
-  if (page >= totalPages) page = Math.max(0, totalPages - 1);
-
-  const pagedUsers = bannedUsers.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-  const resolvedUsers = await Promise.all(pagedUsers.map(id => resolveUserProfile(env, id, ctx)));
-
-  const keyboard = { inline_keyboard: [] };
-  resolvedUsers.forEach((user) => {
-    keyboard.inline_keyboard.push([{ text: `🚫 ${user.label} (${user.id})`, callback_data: `manage_user_${user.id}` }]);
-  });
-
-  if (totalPages > 1) {
-    let navRow = [];
-    if (page > 0) navRow.push({ text: "⬅️ Prev", callback_data: `list_banned_${page - 1}` });
-    navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
-    if (page < totalPages - 1) navRow.push({ text: "Next ➡️", callback_data: `list_banned_${page + 1}` });
-    keyboard.inline_keyboard.push(navRow);
-  }
-
-  keyboard.inline_keyboard.push([{ text: "⬅️ Back to Directory", callback_data: "admin_users_menu" }]);
-
-  const text = `🚫 <b>Banned Users Directory</b> (Page ${page + 1} of ${totalPages})\n\nSelect a user below to open their structural permissions card inline:`;
-  await editTelegramMessage(env, chatId, messageId, text, keyboard);
-}
 
 async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
 
@@ -1537,7 +1090,6 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false) {
   };
 
   if (isAdmin) {
-    keyboard.inline_keyboard.push([{ text: "🚀 Force Price Check", callback_data: "global_track" }]);
     keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", callback_data: "admin_panel" }]);
   }
 
@@ -1864,6 +1416,49 @@ async function generateSignature(secret, asin, exp) {
   );
   const signature = await crypto.subtle.sign("HMAC", key, enc.encode(`${asin}:${exp}`));
   return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyInitData(telegramInitData, botToken) {
+  if (!telegramInitData || !botToken) return null;
+  try {
+    const urlParams = new URLSearchParams(telegramInitData);
+    const hash = urlParams.get('hash');
+    if (!hash) return null;
+    urlParams.delete('hash');
+    
+    const keys = Array.from(urlParams.keys()).sort();
+    const dataCheckString = keys.map(key => `${key}=${urlParams.get(key)}`).join('\n');
+    
+    const enc = new TextEncoder();
+    const secretKey = await crypto.subtle.importKey(
+      "raw",
+      enc.encode("WebAppData"),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    
+    const secretKeyBytes = await crypto.subtle.sign("HMAC", secretKey, enc.encode(botToken));
+    
+    const hmacKey = await crypto.subtle.importKey(
+      "raw",
+      secretKeyBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    
+    const signature = await crypto.subtle.sign("HMAC", hmacKey, enc.encode(dataCheckString));
+    const hexSignature = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    if (hexSignature === hash) {
+      const userStr = urlParams.get('user');
+      if (userStr) return JSON.parse(userStr);
+    }
+  } catch (e) {
+    console.error("InitData Verification Error:", e);
+  }
+  return null;
 }
 
 function toPrice(value) {
@@ -2555,3 +2150,459 @@ function renderAuditHTML(exp, sig) {
 }
 
 
+// ── Web App Frontend ────────────────────────────────────────────────────────
+function renderCrmHTML() {
+  return `<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AzTracker Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'sans-serif'] },
+            colors: {
+              gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' },
+              brand: { 400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7' }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { background-color: #030712; color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
+      .glass { background: rgba(31, 41, 55, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+      .toast { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+      .toast-enter { transform: translateY(100%); opacity: 0; }
+      .toast-enter-active { transform: translateY(0); opacity: 1; }
+      .toast-leave { transform: translateY(0); opacity: 1; }
+      .toast-leave-active { transform: translateY(100%); opacity: 0; }
+      
+      .loader { border-top-color: #38bdf8; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+      @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      
+      .tab-active { border-bottom: 2px solid #38bdf8; color: #f3f4f6; }
+      .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans">
+    
+    <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center font-bold text-white shadow-lg">A</div>
+            <h1 class="font-bold text-lg tracking-tight">AzTracker <span class="text-brand-400">Hub</span></h1>
+        </div>
+        <button onclick="refreshData()" class="p-2 rounded-full hover:bg-gray-800 transition text-gray-400 hover:text-white">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        </button>
+    </header>
+
+    <main class="flex-1 px-4 py-6 pb-24 space-y-6 max-w-2xl mx-auto w-full" id="app-container">
+        
+        <!-- TELEMETRY -->
+        <section>
+            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Global Telemetry</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="glass rounded-xl p-4 flex flex-col justify-center">
+                    <div class="text-gray-400 text-sm mb-1">Users</div>
+                    <div class="text-2xl font-bold" id="stat-users">--</div>
+                </div>
+                <div class="glass rounded-xl p-4 flex flex-col justify-center">
+                    <div class="text-gray-400 text-sm mb-1">Watch Pool</div>
+                    <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
+                </div>
+            </div>
+            <div class="mt-3 glass rounded-xl p-4 flex justify-between items-center">
+                <div>
+                    <div class="text-gray-400 text-sm">Last Sync</div>
+                    <div class="text-sm font-medium" id="stat-sync">--</div>
+                </div>
+                <button onclick="triggerGlobalScrape()" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
+                </button>
+            </div>
+        </section>
+
+        <!-- BROADCAST -->
+        <section>
+            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Broadcast</h2>
+            <div class="glass rounded-xl p-4">
+                <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="Enter message to blast to all approved users... (HTML allowed)"></textarea>
+                <div class="flex justify-end mt-3">
+                    <button onclick="sendBroadcast()" class="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-brand-500/20 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> Send Broadcast
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- DIRECTORY NAVIGATION -->
+        <section>
+            <div class="flex border-b border-gray-800 mb-4">
+                <button onclick="switchTab('queue')" id="tab-queue" class="flex-1 pb-3 text-sm font-medium tab-inactive transition relative">
+                    Join Queue <span id="badge-queue" class="hidden absolute top-0 right-4 ml-1 bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
+                </button>
+                <button onclick="switchTab('users')" id="tab-users" class="flex-1 pb-3 text-sm font-medium tab-active transition">
+                    Directory
+                </button>
+            </div>
+
+            <!-- Queue View -->
+            <div id="view-queue" class="hidden space-y-3">
+                <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">Loading queue...</div>
+            </div>
+
+            <!-- Users View -->
+            <div id="view-users" class="space-y-3">
+                <div class="relative">
+                    <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="Search by ID..." class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                    <svg class="w-4 h-4 text-gray-500 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <div id="users-list" class="space-y-3">
+                    <div class="text-center py-8 text-gray-500 text-sm">Loading directory...</div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Overlay Loader -->
+    <div id="overlay" class="fixed inset-0 bg-gray-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
+        <div class="glass rounded-2xl p-6 flex flex-col items-center shadow-2xl border-gray-700">
+            <div class="w-10 h-10 border-4 border-gray-700 border-t-brand-500 rounded-full animate-spin mb-4"></div>
+            <p class="text-sm font-medium" id="overlay-text">Processing...</p>
+        </div>
+    </div>
+
+    <!-- Product Drawer -->
+    <div id="drawer" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg" id="drawer-title">User Products</h3>
+                    <p class="text-xs text-gray-400" id="drawer-subtitle">ID: --</p>
+                </div>
+                <button onclick="closeDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
+                <div class="text-center py-8 text-gray-500 text-sm">Loading items...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        tg.setHeaderColor('#030712');
+        tg.setBackgroundColor('#030712');
+
+        const initData = tg.initData || '';
+        let appData = { users: [], joinQueue: [] };
+        let activeTab = 'users';
+
+        async function fetchAPI(path, method = 'GET', body = null) {
+            if(!initData) return showToast("Local mode: Telegram verification bypassed (Read Only)", "error");
+            try {
+                const opts = {
+                    method,
+                    headers: { 'Authorization': \`Bearer \${initData}\`, 'Content-Type': 'application/json' }
+                };
+                if (body) opts.body = JSON.stringify(body);
+                
+                const res = await fetch(\`/api/crm\${path}\`, opts);
+                if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+                
+                if (res.status === 202) return { status: 'queued' };
+                return await res.json();
+            } catch (err) {
+                console.error(err);
+                showToast(\`Network Error: \${err.message}\`, 'error');
+                return null;
+            }
+        }
+
+        async function refreshData() {
+            showLoader("Syncing...");
+            const data = await fetchAPI('/data');
+            hideLoader();
+            if (data) {
+                appData = data;
+                renderTelemetry();
+                renderTabs();
+                showToast("Data synchronized", "success");
+            }
+        }
+
+        function renderTelemetry() {
+            document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
+            document.getElementById('stat-stat').innerText = appData.systemStats.activeWatchPool || 0;
+            const ms = appData.systemStats.lastRunMs;
+            document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Never';
+            
+            const badge = document.getElementById('badge-queue');
+            if(appData.joinQueue.length > 0) {
+                badge.innerText = appData.joinQueue.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById('tab-queue').className = \`flex-1 pb-3 text-sm font-medium transition relative \${tab === 'queue' ? 'tab-active' : 'tab-inactive'}\`;
+            document.getElementById('tab-users').className = \`flex-1 pb-3 text-sm font-medium transition \${tab === 'users' ? 'tab-active' : 'tab-inactive'}\`;
+            
+            document.getElementById('view-queue').style.display = tab === 'queue' ? 'block' : 'none';
+            document.getElementById('view-users').style.display = tab === 'users' ? 'block' : 'none';
+            
+            renderTabs();
+        }
+
+        function renderTabs() {
+            if (activeTab === 'queue') {
+                const list = document.getElementById('queue-list');
+                if (!appData.joinQueue || appData.joinQueue.length === 0) {
+                    list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No pending requests</div>';
+                    return;
+                }
+                
+                list.innerHTML = appData.joinQueue.map(u => {
+                    const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    return \`
+                    <div class="glass rounded-xl p-3 flex justify-between items-center">
+                        <div>
+                            <div class="font-medium text-sm truncate max-w-[150px]">ID: \${u.id}</div>
+                            <div class="text-xs text-gray-500 mt-0.5">Requested: \${time}</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="performAction('reject', '\${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                            <button onclick="performAction('approve', '\${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
+                        </div>
+                    </div>\`;
+                }).join('');
+            } else {
+                filterUsers();
+            }
+        }
+
+        function filterUsers() {
+            const query = (document.getElementById('search-users').value || '').toLowerCase();
+            const list = document.getElementById('users-list');
+            
+            const filtered = appData.users.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query));
+            
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No users found</div>';
+                return;
+            }
+            
+            list.innerHTML = filtered.map(u => {
+                const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800' };
+                const roleStyle = roleColors[u.role] || 'text-red-400 border-red-400/20 bg-red-400/10';
+                
+                return \`
+                <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative">
+                    \${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
+                    <div class="flex justify-between items-start mb-3 relative z-10">
+                        <div>
+                            <div class="font-medium flex items-center gap-2">
+                                <span class="text-sm">\${u.chat_id}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
+                                <span>\${u.active_items} / \${u.item_limit} Items</span>
+                                <span>•</span>
+                                <span>Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
+                    </div>
+                    <div class="flex gap-2 relative z-10">
+                        <button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit Limit</button>
+                        \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
+                        \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
+                        \${u.role !== 'root' ? \`<button onclick="confirmRevoke('\${u.chat_id}')" class="w-8 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition flex items-center justify-center border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}
+                    </div>
+                </div>\`;
+            }).join('');
+        }
+
+        async function openDrawer(userId) {
+            const drawer = document.getElementById('drawer');
+            const content = document.getElementById('drawer-content');
+            const itemsCont = document.getElementById('drawer-items');
+            
+            document.getElementById('drawer-subtitle').innerText = \`ID: \${userId}\`;
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>Loading items...</div>';
+            
+            drawer.classList.remove('hidden');
+            setTimeout(() => {
+                content.style.transform = 'translateY(0)';
+            }, 10);
+            
+            const products = await fetchAPI(\`/user/\${userId}/products\`);
+            
+            if (!products || products.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No saved products</div>';
+                return;
+            }
+            
+            itemsCont.innerHTML = products.map(p => {
+                const isPaused = p.is_paused === 1;
+                const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
+                const statusText = isPaused ? 'Paused' : 'Active';
+                const name = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
+                const price = p.amazon_price ? \`\${p.amazon_price} EGP\` : (p.used_price ? 'Used Only' : 'Out of Stock');
+                
+                return \`
+                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="pr-6">
+                            <a href="https://www.amazon.eg/dp/\${p.asin}" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">\${name}</a>
+                            <div class="text-xs text-gray-500 mt-1 font-mono">\${p.asin}</div>
+                        </div>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${statusColor} whitespace-nowrap">\${statusText}</span>
+                    </div>
+                    <div class="flex justify-between items-end mb-3">
+                        <div class="text-sm font-semibold">\${price}</div>
+                        \${p.target_price ? \`<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: \${p.target_price}</div>\` : ''}
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ Resume' : '⏸️ Pause'}</button>
+                        <button onclick="changeTarget('\${userId}', '\${p.asin}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">🎯 Target</button>
+                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="w-10 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20 flex items-center justify-center"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                    </div>
+                </div>\`;
+            }).join('');
+        }
+
+        function closeDrawer() {
+            const content = document.getElementById('drawer-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => {
+                document.getElementById('drawer').classList.add('hidden');
+            }, 300);
+        }
+
+        async function performAction(action, targetId, data = null) {
+            if (!targetId) targetId = "global";
+            showLoader();
+            const res = await fetchAPI('/action', 'POST', { action, targetId, data });
+            hideLoader();
+            
+            if (res) {
+                if (res.status === 'queued') {
+                    showToast("Action queued in background", "success");
+                } else {
+                    showToast("Success", "success");
+                    if(action.includes('_product')) {
+                        openDrawer(targetId); // refresh drawer
+                    }
+                    refreshData(); // refresh background
+                }
+            }
+        }
+
+        function triggerGlobalScrape() {
+            tg.showConfirm("Trigger global force check? This will execute the scraper for all active items immediately.", (ok) => {
+                if(ok) performAction("force_scrape", null);
+            });
+        }
+
+        function sendBroadcast() {
+            const msg = document.getElementById('broadcast-msg').value.trim();
+            if(!msg) return showToast("Message is empty", "error");
+            tg.showConfirm("Send this broadcast to all users?", (ok) => {
+                if(ok) {
+                    performAction("broadcast", null, { message: msg });
+                    document.getElementById('broadcast-msg').value = '';
+                }
+            });
+        }
+
+        function changeLimit(userId, currentLimit) {
+            // Use native prompt since tg.showPopup doesn't support input fields
+            const limit = prompt(\`Enter new limit for \${userId}:\`, currentLimit);
+            if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
+                performAction('set_limit', userId, { limit: parseInt(limit) });
+            }
+        }
+
+        function changeTarget(userId, asin) {
+            const target = prompt(\`Enter new target price (EGP) for \${asin}:\`);
+            if (target !== null && target !== "" && !isNaN(target) && target > 0) {
+                performAction('set_target', userId, { asin, target: parseFloat(target) });
+            }
+        }
+
+        function confirmRevoke(userId) {
+            tg.showConfirm(\`Are you sure you want to REVOKE \${userId}? This will delete all their saved products.\`, (ok) => {
+                if(ok) performAction('revoke', userId);
+            });
+        }
+
+        // --- Helpers ---
+        function showLoader(text = "Processing...") {
+            const overlay = document.getElementById('overlay');
+            document.getElementById('overlay-text').innerText = text;
+            overlay.classList.remove('hidden');
+            // Trigger reflow
+            void overlay.offsetWidth;
+            overlay.classList.remove('opacity-0');
+        }
+
+        function hideLoader() {
+            const overlay = document.getElementById('overlay');
+            overlay.classList.add('opacity-0');
+            setTimeout(() => { overlay.classList.add('hidden'); }, 300);
+        }
+
+        function showToast(message, type = "info") {
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            const bg = type === 'error' ? 'bg-red-500/90 border-red-500' : 'bg-gray-800 border-gray-700';
+            const icon = type === 'error' ? '❌' : '✅';
+            
+            el.className = \`glass rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter \${bg}\`;
+            el.innerHTML = \`<span>\${icon}</span> <span>\${message}</span>\`;
+            
+            container.appendChild(el);
+            
+            // Trigger reflow
+            void el.offsetWidth;
+            el.classList.remove('toast-enter');
+            el.classList.add('toast-enter-active');
+            
+            setTimeout(() => {
+                el.classList.remove('toast-enter-active');
+                el.classList.add('toast-leave');
+                // Trigger reflow
+                void el.offsetWidth;
+                el.classList.remove('toast-leave');
+                el.classList.add('toast-leave-active');
+                setTimeout(() => el.remove(), 300);
+            }, 3000);
+        }
+
+        // Init
+        document.getElementById('stat-pool').id = 'stat-stat'; // Fix id mapping
+        refreshData();
+    </script>
+</body>
+</html>`;
+}

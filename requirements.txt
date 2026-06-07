@@ -1,2 +1,0 @@
-aiohttp
-git+https://github.com/aka-khalid/python-amazon-paapi.git@2a17aaa421f2626b80831a0b8cf8526e7b0c57f2
