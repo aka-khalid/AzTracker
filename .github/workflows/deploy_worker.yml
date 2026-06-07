@@ -28,14 +28,3 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.92.0"
 
-      - name: Upload Worker Secrets
-        run: |
-          echo "${{ secrets.TELEGRAM_BOT_TOKEN }}" | npx wrangler secret put TELEGRAM_BOT_TOKEN --name aztracker-bot
-          echo "${{ secrets.TELEGRAM_ROOT_ADMIN_IDS }}" | npx wrangler secret put TELEGRAM_ROOT_ADMIN_IDS --name aztracker-bot
-          echo "${{ secrets.CRON_AUTH_KEY }}" | npx wrangler secret put CRON_AUTH_KEY --name aztracker-bot
-          echo "${{ secrets.GH_WORKFLOW_TOKEN }}" | npx wrangler secret put GH_WORKFLOW_TOKEN --name aztracker-bot
-          echo "${{ secrets.TELEGRAM_WEBHOOK_SECRET }}" | npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --name aztracker-bot
-          echo "${{ secrets.AMZN_ASSOCIATES_TAG }}" | npx wrangler secret put AMZN_ASSOCIATES_TAG --name aztracker-bot
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
