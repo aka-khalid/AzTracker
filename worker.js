@@ -184,8 +184,8 @@ export default {
       
       const { admins, rootAdmins } = await getUserRoles(userData.id.toString(), environment);
       
-      const rootAdminsStr = rootAdmins.map(String);
-      const adminsStr = admins.map(String);
+      const rootAdminsStr = (rootAdmins || []).map(String);
+      const adminsStr = (admins || []).map(String);
       
       if (rootAdminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
       if (adminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: false };
@@ -241,7 +241,10 @@ export default {
         });
         ctx.waitUntil(cache.put(cacheUrl, response.clone()));
       }
-      return response;
+      
+      const clone = new Response(response.body, response);
+      clone.headers.set("X-Current-User", auth.user.id.toString());
+      return clone;
     }
     
     if (url.pathname.startsWith("/api/crm/user/") && request.method === "GET") {
@@ -498,6 +501,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
   const messageId = message.message_id;
 
   const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
+  syncUserNames(env, chatId, message.from, ctx);
 
   if (!isApproved) {
     if (isRejected) {
@@ -692,12 +696,12 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
 async function handleCallback(callback, env, baseUrl, ctx) {
   const data = callback.data;
-  const messageId = callback.message.message_id;
-  const chatId = callback.message.chat.id.toString();
-  
+  const message = callback.message;
+  const chatId = message.chat.id.toString();
+  const messageId = message.message_id;
+
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
-
-
+  syncUserNames(env, chatId, callback.from, ctx);
 
   if (!isApproved && !data.startsWith("request_access_")) return;
 
@@ -745,7 +749,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
       
-      queue.push({ id: chatId, requested_at: now, admin_messages: admin_messages });
+      queue.push({ 
+        id: chatId, 
+        first_name: callback.from ? callback.from.first_name : '', 
+        username: callback.from ? callback.from.username : '', 
+        requested_at: now, 
+        admin_messages: admin_messages 
+      });
       await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
     }
     else if (data.startsWith("queueReject_") && isAdmin) {
@@ -780,10 +790,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
       
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at)
-         VALUES (?, 'rejected', ?, ?, ?)
+         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at)
+         VALUES (?, ?, ?, 'rejected', ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      `).bind(
+        targetId, 
+        queueObj ? (queueObj.first_name || '') : '', 
+        queueObj ? (queueObj.username || '') : '', 
+        chatId, 
+        env.DEFAULT_USER_PRODUCT_LIMIT || "3", 
+        Date.now()
+      ).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
       await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.`);
@@ -812,10 +829,17 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       else await env.AZTRACKER_DB.put("global:join_queue", JSON.stringify(queue));
       
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at)
-         VALUES (?, 'approved', ?, ?, ?)
+         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at)
+         VALUES (?, ?, ?, 'approved', ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      `).bind(
+        targetId, 
+        queueObj ? (queueObj.first_name || '') : '', 
+        queueObj ? (queueObj.username || '') : '', 
+        chatId, 
+        env.DEFAULT_USER_PRODUCT_LIMIT || "3", 
+        Date.now()
+      ).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
@@ -2209,14 +2233,14 @@ function renderCrmHTML() {
         
         <!-- TELEMETRY -->
         <section>
-            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Global Telemetry</h2>
+            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Overview</h2>
             <div class="grid grid-cols-2 gap-3">
                 <div class="glass rounded-xl p-4 flex flex-col justify-center">
                     <div class="text-gray-400 text-sm mb-1">Users</div>
                     <div class="text-2xl font-bold" id="stat-users">--</div>
                 </div>
                 <div class="glass rounded-xl p-4 flex flex-col justify-center">
-                    <div class="text-gray-400 text-sm mb-1">Watch Pool</div>
+                    <div class="text-gray-400 text-sm mb-1">Active Tracked Products</div>
                     <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                 </div>
             </div>
@@ -2246,12 +2270,18 @@ function renderCrmHTML() {
 
         <!-- DIRECTORY NAVIGATION -->
         <section>
-            <div class="flex border-b border-gray-800 mb-4">
-                <button onclick="switchTab('queue')" id="tab-queue" class="flex-1 pb-3 text-sm font-medium tab-inactive transition relative">
-                    Join Queue <span id="badge-queue" class="hidden absolute top-0 right-4 ml-1 bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
+            <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
+                <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition relative whitespace-nowrap">
+                    Pending <span id="badge-queue" class="hidden absolute top-0 right-1 bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
                 </button>
-                <button onclick="switchTab('users')" id="tab-users" class="flex-1 pb-3 text-sm font-medium tab-active transition">
-                    Directory
+                <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">
+                    Admins
+                </button>
+                <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">
+                    Users
+                </button>
+                <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">
+                    Banned
                 </button>
             </div>
 
@@ -2263,7 +2293,7 @@ function renderCrmHTML() {
             <!-- Users View -->
             <div id="view-users" class="space-y-3">
                 <div class="relative">
-                    <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="Search by ID..." class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                    <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="Search Name, @username or ID..." class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
                     <svg class="w-4 h-4 text-gray-500 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
                 <div id="users-list" class="space-y-3">
@@ -2329,7 +2359,10 @@ function renderCrmHTML() {
                 if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
                 
                 if (res.status === 202) return { status: 'queued' };
-                return await res.json();
+                const json = await res.json();
+                const currentUser = res.headers.get("X-Current-User");
+                if (currentUser) json._currentUser = currentUser;
+                return json;
             } catch (err) {
                 console.error(err);
                 showToast(\`Network Error: \${err.message}\`, 'error');

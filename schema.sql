@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS Users;
 -- ============================================================================
 CREATE TABLE Users (
     chat_id TEXT PRIMARY KEY,
+    first_name TEXT,
+    username TEXT,
     role TEXT NOT NULL DEFAULT 'approved', -- Roles: 'approved', 'admin', 'rejected'
     item_limit INTEGER NOT NULL DEFAULT 5,
     approved_by TEXT,
