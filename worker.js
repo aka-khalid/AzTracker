@@ -209,7 +209,7 @@ export default {
       let response = await cache.match(cacheUrl);
       
       if (!response) {
-        const [usersRes, joinQueueRes, totalProductsRes, lastUpdatedRes] = await Promise.all([
+        const [usersRes, totalProductsRes, lastUpdatedRes] = await Promise.all([
           env.DB.prepare(`
             SELECT u.*, COUNT(s.asin) as active_items 
             FROM Users u 
@@ -217,7 +217,6 @@ export default {
             GROUP BY u.chat_id
             ORDER BY u.created_at DESC
           `).all(),
-          env.AZTRACKER_DB.get("global:join_queue", "json"),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first()
         ]);
@@ -225,30 +224,35 @@ export default {
         const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
         const rootAdmins = rootAdminsRaw.split(",").filter(Boolean).map(String);
         
-        const kvAdmins = await env.AZTRACKER_DB.get("global:admins", "json") || [];
-        const kvBanned = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
-        
+        let mutableUsers = [];
         if (usersRes.results) {
-            usersRes.results.forEach(u => {
-                const idStr = u.chat_id.toString();
+            mutableUsers = usersRes.results.map(u => {
+                const userClone = { ...u };
+                const idStr = userClone.chat_id.toString();
                 if (rootAdmins.includes(idStr)) {
-                    u.role = 'root';
-                } else if (u.role !== 'admin' && kvAdmins.includes(idStr)) {
-                    u.role = 'admin';
-                } else if (u.role !== 'rejected' && kvBanned.includes(idStr)) {
-                    u.role = 'rejected';
+                    userClone.role = 'root';
                 }
+                return userClone;
             });
         }
         
+        const { results: queueResults } = await env.DB.prepare("SELECT * FROM Join_Queue ORDER BY requested_at DESC").all();
+        const joinQueueRes = queueResults.map(q => ({
+             id: q.chat_id,
+             first_name: q.first_name,
+             username: q.username,
+             requested_at: q.requested_at,
+             admin_messages: q.admin_messages ? JSON.parse(q.admin_messages) : {}
+        }));
+        
         const data = {
           systemStats: {
-            totalUsers: usersRes.results ? usersRes.results.length : 0,
+            totalUsers: mutableUsers.length,
             activeWatchPool: totalProductsRes ? totalProductsRes.activeWatchPool : 0,
             lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null
           },
           joinQueue: joinQueueRes || [],
-          users: usersRes.results || []
+          users: mutableUsers
         };
         
         response = new Response(JSON.stringify(data), {
@@ -296,8 +300,17 @@ export default {
       const adminId = auth.user.id.toString();
       
       if (action === "force_scrape") {
-        ctx.waitUntil(executeScrapeEngine(env, true));
-        ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check"));
+        ctx.waitUntil((async () => {
+          try {
+            await executeScrapeEngine(env, true);
+            await sendAppMessage(env, adminId, "✅ <b>Force Scrape Completed</b>\n\nThe background queue has successfully finished processing all items.");
+            await logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check (Success)");
+          } catch (error) {
+            console.error("Scrape Engine Error:", error);
+            await sendAppMessage(env, adminId, `❌ <b>Force Scrape Failed</b>\n\nError: <code>${error.message}</code>`);
+            await logAudit(env, adminId, "FORCE_SCRAPE", "global", `Triggered global price check (Failed: ${error.message})`);
+          }
+        })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
       }
       
@@ -520,7 +533,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
   const messageId = message.message_id;
 
   const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
-  syncUserNames(env, chatId, message.from, ctx);
+  if (ctx && ctx.waitUntil) ctx.waitUntil(syncUserNames(env, chatId, message.from, baseUrl));
 
   if (!isApproved) {
     if (isRejected) {
@@ -720,7 +733,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const messageId = message.message_id;
 
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
-  syncUserNames(env, chatId, callback.from, ctx);
+  if (ctx && ctx.waitUntil) ctx.waitUntil(syncUserNames(env, chatId, callback.from, baseUrl));
 
   if (!isApproved && !data.startsWith("request_access_")) return;
 
@@ -970,7 +983,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (rootAdmins.includes(targetId)) return;
       
       // Security Boundary 2: Standard Admins cannot revoke other Admins
-      if (admins.includes(targetId) && !isRootAdmin) return;
+      const targetRoles = await getUserRoles(targetId, env, ctx);
+        if (targetRoles.isRootAdmin || (targetRoles.isAdmin && !isRootAdmin)) return;
 
 
       
@@ -1677,18 +1691,27 @@ async function resolveUserProfile(env, id, ctx) {
   return { id, label: `Unknown User (${id})`, handle: null };
 }
 
-function syncUserNames(env, chatId, from, ctx) {
-  if (!from || !ctx || !ctx.waitUntil) return;
-  const first = from.first_name || '';
-  const user = from.username || '';
-  ctx.waitUntil(
-    env.DB.prepare(`
+async function syncUserNames(env, chatId, from, baseUrl) {
+  if (!from) return;
+  const first = from.first_name || null;
+  const user = from.username || null;
+  try {
+    const res = await env.DB.prepare(`
       UPDATE Users 
       SET first_name = ?, username = ? 
       WHERE chat_id = ? 
-      AND (COALESCE(first_name, '') != ? OR COALESCE(username, '') != ?)
-    `).bind(first, user, chatId, first, user).run().catch(e=>console.error("Name sync error:", e))
-  );
+      AND (first_name IS NOT ? OR username IS NOT ?)
+    `).bind(first, user, chatId, first, user).run();
+    
+    if (res && res.meta && res.meta.changes > 0) {
+       await caches.default.delete(new Request(`https://profile.internal/user/${chatId}`));
+       if (baseUrl) {
+         await caches.default.delete(new Request(`${baseUrl}/_internal/crm/data`));
+       }
+    }
+  } catch (e) {
+    console.error("Name sync error:", e);
+  }
 }
 
 async function deleteTelegramMessage(env, chatId, messageId) {
