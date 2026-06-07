@@ -2737,7 +2737,7 @@ function renderCrmHTML() {
                 
                 list.innerHTML = appData.joinQueue.map(u => {
                     const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    return `
+                    return \`
                     <div class="glass rounded-xl p-3 flex justify-between items-center">
                         <div>
                             <div class="font-medium text-sm truncate max-w-[250px]">\${u.first_name || 'User'} \${u.username ? '(@' + u.username + ')' : ''} (\${u.id})</div>
@@ -2747,7 +2747,7 @@ function renderCrmHTML() {
                             <button onclick="performAction('reject', '${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
                             <button onclick="performAction('approve', '${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
                         </div>
-                    </div>`;
+                    </div>\`;
                 }).join('');
             } else {
                 filterUsers();
