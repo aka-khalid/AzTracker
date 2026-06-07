@@ -895,14 +895,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const { count } = await env.DB.prepare("SELECT COUNT(*) as count FROM Global_Products").first();
       const stats = { active_api_calls: count, hivemind_size: count };
       
-      let lastRunText = "Fetching from GitHub...";
-      const ghRun = await fetchLastWorkflowRun(env);
+      let lastRunText = "Never";
+      const { last_updated: systemCheckTime } = await env.DB.prepare("SELECT MAX(last_updated) as last_updated FROM Global_Products").first() || { last_updated: null };
       
-      if (ghRun && ghRun.updated_at) {
-          const date = new Date(ghRun.updated_at);
+      if (systemCheckTime) {
+          const date = new Date(systemCheckTime);
           const timeStr = date.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
-          const stateTag = ghRun.status === "in_progress" ? " <i>(🔄 Running...)</i>" : "";
-          lastRunText = `${timeStr}${stateTag}`;
+          lastRunText = `${timeStr} <i>(Edge Cron)</i>`;
       }
       
       const globalLimit = env.GLOBAL_POOL_LIMIT || "450";
