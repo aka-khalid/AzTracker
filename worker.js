@@ -589,7 +589,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
   if (!isApproved && !data.startsWith("request_access_")) return;
 
-  const userDbKey = `user:${chatId}:products`;
+
 
   try {
     if (data.startsWith("request_access_")) {
@@ -789,21 +789,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
-      if (!approvedUsers.includes(targetId)) {
-        approvedUsers.push(targetId);
-        await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(approvedUsers));
-      }
-      // Write the authoritative key out-of-band to prevent TOCTOU array overwrites
-      await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
-      await env.AZTRACKER_DB.put(`approved_by:${targetId}`, chatId);
-      
       await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at) VALUES (?, 'approved', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
-      
-      let bannedUsers = await env.AZTRACKER_DB.get("global:banned_users", "json") || [];
-      if (bannedUsers.includes(targetId)) {
-        bannedUsers = bannedUsers.filter(id => id !== targetId);
-        await env.AZTRACKER_DB.put("global:banned_users", JSON.stringify(bannedUsers));
-      }
       await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the Amazon deals application.`);
       
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "5";
@@ -823,15 +809,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // Security Boundary 2: Standard Admins cannot revoke other Admins
       if (admins.includes(targetId) && !isRootAdmin) return;
 
-      // If a Root Admin is revoking an Admin directly, clean the admin array
-      if (admins.includes(targetId)) {
-        const updatedAdmins = admins.filter(id => id !== targetId);
-        await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
-      }
-      
-      const updatedUsers = approvedUsers.filter(id => id !== targetId);
-      await env.AZTRACKER_DB.put("global:approved_users", JSON.stringify(updatedUsers));
-      await env.AZTRACKER_DB.delete(`auth:${targetId}`);
+
       
       await env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId).run();
       
@@ -860,9 +838,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("demote_") && isRootAdmin) {
       const targetId = data.replace("demote_", "");
-      const updatedAdmins = admins.filter(id => id !== targetId);
-      await env.AZTRACKER_DB.put("global:admins", JSON.stringify(updatedAdmins));
-      await env.AZTRACKER_DB.put(`auth:${targetId}`, "approved");
       await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
       
       // CRITICAL FIX: Bust the edge cache for both the caller and the target
@@ -2138,26 +2113,7 @@ async function sendAppMessage(env, chatId, text, replyMarkup = null) {
   return res;
 }
 
-async function fetchLastWorkflowRun(env) {
-  try {
-    const url = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/price_tracker.yml/runs?per_page=1`;
-    const res = await fetch(url, {
-      headers: {
-        "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
-        "User-Agent": "Agent/AzTrackerBot",
-        "Accept": "application/vnd.github+json"
-      }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.workflow_runs && data.workflow_runs.length > 0) {
-        const run = data.workflow_runs[0];
-        return { status: run.status, updated_at: run.updated_at };
-      }
-    }
-  } catch (e) { console.error("GitHub API error", e); }
-  return null;
-}
+
 
 async function logAudit(env, adminId, action, target, details) {
   try {
