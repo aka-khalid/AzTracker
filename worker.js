@@ -311,11 +311,11 @@ export default {
         ctx.waitUntil((async () => {
           try {
             await executeScrapeEngine(env, true);
-            await sendAppMessage(env, adminId, "✅ <b>Force Scrape Completed</b>\n\nThe background queue has successfully finished processing all items.");
+            await sendTelegram(env, adminId, "✅ <b>Force Scrape Completed</b>\n\nThe background queue has successfully finished processing all items.");
             await logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check (Success)");
           } catch (error) {
             console.error("Scrape Engine Error:", error);
-            await sendAppMessage(env, adminId, `❌ <b>Force Scrape Failed</b>\n\nError: <code>${error.message}</code>`);
+            await sendTelegram(env, adminId, `❌ <b>Force Scrape Failed</b>\n\nError: <code>${error.message}</code>`);
             await logAudit(env, adminId, "FORCE_SCRAPE", "global", `Triggered global price check (Failed: ${error.message})`);
           }
         })());
@@ -329,7 +329,7 @@ export default {
         ctx.waitUntil((async () => {
           const users = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
           for (const row of users.results) {
-            await sendAppMessage(env, row.chat_id, `📢 <b>Global Broadcast</b>\n\n${data.message}`);
+            await sendTelegram(env, row.chat_id, `📢 <b>Global Broadcast</b>\n\n${data.message}`);
           }
           await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", "Sent global broadcast");
         })());
@@ -339,13 +339,13 @@ export default {
       if (action === "approve") {
         await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', 5, ?, ?)").bind(targetId, adminId, Date.now()).run();
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendAppMessage(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
+        ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         } else if (action === "reject") {
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendAppMessage(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
+        ctx.waitUntil(sendTelegram(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
@@ -355,11 +355,11 @@ export default {
           env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ?").bind(targetId),
           env.DB.prepare("UPDATE Users SET role = 'rejected' WHERE chat_id = ?").bind(targetId)
         ]);
-        ctx.waitUntil(sendAppMessage(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
+        ctx.waitUntil(sendTelegram(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and deleted subscriptions"));
       } else if (action === "unban") {
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendAppMessage(env, targetId, "✅ <b>Your access has been RESTORED.</b>"));
+        ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access has been RESTORED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
@@ -367,7 +367,7 @@ export default {
         } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendAppMessage(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
+        ctx.waitUntil(sendTelegram(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
         ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
@@ -375,7 +375,7 @@ export default {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendAppMessage(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
+        ctx.waitUntil(sendTelegram(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
@@ -383,7 +383,7 @@ export default {
         const newLimit = parseInt(data.limit);
         if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
         await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
-        ctx.waitUntil(sendAppMessage(env, targetId, `📈 <b>Your tracking limit has been updated to ${newLimit} items.</b>`));
+        ctx.waitUntil(sendTelegram(env, targetId, `📈 <b>Your tracking limit has been updated to ${newLimit} items.</b>`));
         ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, `Changed limit to ${newLimit}`));
       } else if (action === "delete_product") {
         const asin = data.asin;
@@ -409,7 +409,7 @@ export default {
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
-        ctx.waitUntil(sendAppMessage(env, targetId, `💬 <b>Message from Admin:</b>\n\n${data.message}`));
+        ctx.waitUntil(sendTelegram(env, targetId, `💬 <b>Message from Admin:</b>\n\n${data.message}`));
         ctx.waitUntil(logAudit(env, adminId, "DIRECT_MESSAGE", targetId, "Sent direct message"));
       } else {
         return new Response("Unknown action", { status: 400 });
