@@ -229,11 +229,12 @@ export default {
         const subStmts = [];
 
         for (const uid of allValidUsers) {
-          const role = (adminIds.includes(uid) || rootAdminIds.includes(uid.toString())) ? 'admin' : 'approved';
-          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uid, role, now));
+          const uidStr = uid.toString();
+          const role = (adminIds.includes(uid) || rootAdminIds.includes(uidStr)) ? 'admin' : 'approved';
+          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uidStr, role, now));
         }
         for (const uid of bannedIds) {
-          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'rejected', 5, ?)").bind(uid, now));
+          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'rejected', 5, ?)").bind(uid.toString(), now));
         }
         
         do {
@@ -252,7 +253,7 @@ export default {
                   const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
                   const asin = asinMatch ? asinMatch[1] : `ASIN${Math.floor(Math.random()*1000)}`;
                   productStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
-                  subStmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatId, asin, p.target_price || null, p.paused ? 1 : 0, now));
+                  subStmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatIdStr, asin, p.target_price || null, p.paused ? 1 : 0, now));
                   migratedCount++;
                 }
               }
