@@ -427,7 +427,6 @@ export default {
                 const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
                 
                 if (itemData) {
-                  await env.DB.prepare(`
                     // Calculate derived stats from legacy history
                     let histMean = 0;
                     let histStdev = 0;
