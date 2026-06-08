@@ -2940,9 +2940,9 @@ function renderCrmHTML() {
                     </div>
                 </div>
                 <div class="mt-3 glass rounded-xl p-4 flex flex-col gap-3">
-                    <div>
-                        <div class="text-gray-400 text-sm">Last Sync</div>
-                        <div class="text-sm font-medium" id="stat-sync">--</div>
+                    <div class="text-center w-full">
+                        <span class="text-gray-400 text-sm">Last Sync: </span>
+                        <span class="text-sm font-medium" id="stat-sync">--</span>
                     </div>
                     <div class="flex gap-2 w-full">
                         <button onclick="performAction('restore_kv', 'global')" class="flex-1 justify-center bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
