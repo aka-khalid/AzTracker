@@ -217,19 +217,23 @@ export default {
         
         const adminIds = (await env.AZTRACKER_DB.get("global:admins", "json")) || [];
         const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
-        const rootAdminIds = rootAdminsRaw.split(",").filter(Boolean);
+        const rootAdminIds = rootAdminsRaw.split(",").filter(Boolean).map(s => s.trim());
         
         const approvedIds = (await env.AZTRACKER_DB.get("global:approved_users", "json")) || [];
         const bannedIds = (await env.AZTRACKER_DB.get("global:banned_users", "json")) || [];
         
         const allValidUsers = Array.from(new Set([...approvedIds, ...adminIds, ...rootAdminIds]));
 
+        const userStmts = [];
+        const productStmts = [];
+        const subStmts = [];
+
         for (const uid of allValidUsers) {
           const role = (adminIds.includes(uid) || rootAdminIds.includes(uid.toString())) ? 'admin' : 'approved';
-          stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uid, role, now));
+          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uid, role, now));
         }
         for (const uid of bannedIds) {
-          stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'rejected', 5, ?)").bind(uid, now));
+          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'rejected', 5, ?)").bind(uid, now));
         }
         
         do {
@@ -247,8 +251,8 @@ export default {
                 for (const p of products) {
                   const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
                   const asin = asinMatch ? asinMatch[1] : `ASIN${Math.floor(Math.random()*1000)}`;
-                  stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
-                  stmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatId, asin, p.target_price || null, p.paused ? 1 : 0, now));
+                  productStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
+                  subStmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatId, asin, p.target_price || null, p.paused ? 1 : 0, now));
                   migratedCount++;
                 }
               }
@@ -256,12 +260,13 @@ export default {
           }
         } while (cursor);
         
-        if (stmts.length > 0) {
-          for (let i = 0; i < stmts.length; i += 50) {
-             await env.DB.batch(stmts.slice(i, i + 50));
+        const allStmts = [...userStmts, ...productStmts, ...subStmts];
+        if (allStmts.length > 0) {
+          for (let i = 0; i < allStmts.length; i += 50) {
+             await env.DB.batch(allStmts.slice(i, i + 50));
           }
         }
-        return new Response(`Successfully migrated ${migratedCount} subscriptions and ${approvedIds.length} users!`, { status: 200 });
+        return new Response(`Successfully migrated ${migratedCount} subscriptions and ${allValidUsers.length} users!`, { status: 200 });
       } catch (err) {
         return new Response(`Migration failed: ${err.message}\n${err.stack}`, { status: 500 });
       }
