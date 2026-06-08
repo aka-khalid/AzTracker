@@ -405,22 +405,66 @@ export default {
       
       if (action === "restore_kv") {
         ctx.waitUntil((async () => {
-          const rejectedUsers = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'rejected'").all();
-          let count = 0;
-          const now = Date.now();
-          for (const row of rejectedUsers.results) {
-            const products = await env.AZTRACKER_DB.get("user:" + row.chat_id + ":products", "json");
-            if (products) {
+          try {
+            const allUsers = await env.DB.prepare("SELECT chat_id, role FROM Users").all();
+            let count = 0;
+            const now = Date.now();
+            
+            for (const row of allUsers.results) {
+              const products = await env.AZTRACKER_DB.get("user:" + row.chat_id + ":products", "json");
+              if (!products) continue;
+              
+              // Get current D1 subscriptions for this user
+              const existingSubs = await env.DB.prepare("SELECT asin FROM User_Subscriptions WHERE chat_id = ?").bind(row.chat_id).all();
+              const existingAsins = new Set(existingSubs.results.map(s => s.asin));
+              
               for (const p of products) {
                 const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
-                const asin = asinMatch ? asinMatch[1] : `ASIN${Math.floor(Math.random()*1000)}`;
-                await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now).run();
-                await env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, 1, ?)").bind(row.chat_id, asin, p.target_price || null, now).run();
-                count++;
+                const asin = asinMatch ? asinMatch[1] : null;
+                if (!asin) continue;
+                
+                if (!existingAsins.has(asin)) {
+                  // It's missing! Fetch its history from item:<asin>
+                  const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
+                  
+                  if (itemData) {
+                    await env.DB.prepare(`
+                      INSERT OR REPLACE INTO Global_Products 
+                      (asin, name, new_price, used_price, amazon_price, history_new, history_used, history_amazon, last_updated, new_seller, used_seller, amazon_seller)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `).bind(
+                      asin, 
+                      p.name || itemData.name || "Unknown Product",
+                      itemData.new_price || null,
+                      itemData.used_price || null,
+                      itemData.amazon_price || null,
+                      itemData.history_new ? JSON.stringify(itemData.history_new) : "[]",
+                      itemData.history_used ? JSON.stringify(itemData.history_used) : "[]",
+                      itemData.history_amazon ? JSON.stringify(itemData.history_amazon) : "[]",
+                      itemData.last_updated || now,
+                      itemData.new_seller || null,
+                      itemData.used_seller || null,
+                      itemData.amazon_seller || null
+                    ).run();
+                  } else {
+                    await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name || "Unknown Product", now).run();
+                  }
+                  
+                  const isPaused = (row.role === 'rejected' || p.paused) ? 1 : 0;
+                  await env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(
+                    row.chat_id, asin, p.target_price || null, isPaused, now
+                  ).run();
+                  
+                  count++;
+                }
               }
             }
+            await sendTelegram(env, adminId, `✅ <b>Restoration Complete</b>\n\nSuccessfully restored ${count} missing products (including their history and properties) from the main KV database.`);
+            await logAudit(env, adminId, "RESTORE_KV", "global", `Restored ${count} missing products`);
+          } catch (e) {
+            console.error("KV Restore error:", e);
+            await sendTelegram(env, adminId, `❌ <b>Restoration Failed</b>\n\nError: <code>${e.message}</code>`);
           }
-          await sendTelegram(env, adminId, `✅ <b>Restoration Complete</b>\n\nRestored ${count} paused products for rejected users from KV.`);
         })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
       }
