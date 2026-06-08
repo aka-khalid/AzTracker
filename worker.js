@@ -219,7 +219,9 @@ export default {
         const approvedIds = (await env.AZTRACKER_DB.get("global:approved_users", "json")) || [];
         const bannedIds = (await env.AZTRACKER_DB.get("global:banned_users", "json")) || [];
         
-        for (const uid of approvedIds) {
+        const allValidUsers = Array.from(new Set([...approvedIds, ...adminIds]));
+
+        for (const uid of allValidUsers) {
           const role = adminIds.includes(uid) ? 'admin' : 'approved';
           stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uid, role, now));
         }
@@ -233,12 +235,15 @@ export default {
           
           for (const key of list.keys) {
             if (key.name.endsWith(":products")) {
-              const chatId = key.name.split(":")[1];
+              const chatIdStr = key.name.split(":")[1];
+              const chatId = parseInt(chatIdStr, 10);
+              
+              if (!allValidUsers.includes(chatId) && !allValidUsers.includes(chatIdStr)) continue;
               const products = await env.AZTRACKER_DB.get(key.name, "json");
               if (products) {
                 for (const p of products) {
                   const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
-                  const asin = asinMatch ? asinMatch[1] : `ASIN\${Math.floor(Math.random()*1000)}`;
+                  const asin = asinMatch ? asinMatch[1] : `ASIN${Math.floor(Math.random()*1000)}`;
                   stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
                   stmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatId, asin, p.target_price || null, p.paused ? 1 : 0, now));
                   migratedCount++;
