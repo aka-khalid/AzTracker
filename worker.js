@@ -854,7 +854,7 @@ async function executeScrapeEngine(env, force = false) {
     // Stat math calculated BEFORE pushing new price to history (Parity with Python)
     const historyKey = `history:${liveItem.asin}`;
     let history = [];
-    if (amznChanged || newChanged || usedChanged) {
+    if (newChanged || usedChanged) {
        history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
        if (history.length >= 2) {
            const newPrices = history.map(h => h.n).filter(n => n !== null);
@@ -889,7 +889,6 @@ async function executeScrapeEngine(env, force = false) {
       // Decoupled New vs Amazon logic for Alerts
       if (targetPrice) {
           if (finalNewPrice !== null && finalNewPrice > targetPrice) { if (alertSentNew) alertSentNew = 0; }
-          if (finalAmazonPrice !== null && finalAmazonPrice > targetPrice) { if (alertSentNew) alertSentNew = 0; }
           if (finalUsedPrice !== null && finalUsedPrice > targetPrice) { if (alertSentUsed) alertSentUsed = 0; }
           
           let targetHitNew = false;
@@ -897,9 +896,6 @@ async function executeScrapeEngine(env, force = false) {
           
           if (finalNewPrice !== null && finalNewPrice <= targetPrice && !alertSentNew) {
               queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-              targetHitNew = true;
-          } else if (finalAmazonPrice !== null && finalAmazonPrice <= targetPrice && !alertSentNew) {
-              queueAlert(sub.chat_id, "(Amazon.eg)", finalAmazonPrice, oldItem.amazon_price, finalAmazonSeller, finalAmazonMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               targetHitNew = true;
           }
           
@@ -921,18 +917,8 @@ async function executeScrapeEngine(env, force = false) {
           if (finalNewPrice !== null) {
               if (oldItem.new_price === null && oldItem.last_updated) {
                   queueAlert(sub.chat_id, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-                  newAlertSentThisTick = true;
               } else if (oldItem.new_price !== null && finalNewPrice < oldItem.new_price) {
                   queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-                  newAlertSentThisTick = true;
-              }
-          }
-          
-          if (!newAlertSentThisTick && finalAmazonPrice !== null) {
-              if (oldItem.amazon_price === null && oldItem.last_updated) {
-                  queueAlert(sub.chat_id, "(Amazon.eg - Restocked)", finalAmazonPrice, null, finalAmazonSeller, finalAmazonMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-              } else if (oldItem.amazon_price !== null && finalAmazonPrice < oldItem.amazon_price) {
-                  queueAlert(sub.chat_id, "(Amazon.eg)", finalAmazonPrice, oldItem.amazon_price, finalAmazonSeller, finalAmazonMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               }
           }
       }
@@ -948,7 +934,7 @@ async function executeScrapeEngine(env, force = false) {
       dbNeedsUpdate = true;
     }
 
-    if (dbNeedsUpdate && (amznChanged || newChanged || usedChanged)) {
+    if (dbNeedsUpdate && (newChanged || usedChanged)) {
       history.push({ t: Math.floor(now / 1000), n: finalNewPrice, u: finalUsedPrice }); // Exclusively tracking NewPrice
       if (history.length > 500) history = history.slice(-500);
       kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
@@ -996,8 +982,8 @@ async function executeScrapeEngine(env, force = false) {
     }
     
     // Broadcast Collection logic
-    const broadcastPrice = finalAmazonPrice !== null ? finalAmazonPrice : finalNewPrice; // Allow either to trigger a broadcast
-    const lPrice = oldItem.amazon_price !== null ? oldItem.amazon_price : oldItem.new_price;
+    const broadcastPrice = finalNewPrice; 
+    const lPrice = oldItem.new_price;
     if (env.TELEGRAM_PUBLIC_CHANNEL_ID && broadcastPrice && lPrice && broadcastPrice < lPrice) {
         const last_broadcast_time = oldItem.last_broadcast_time_ms || 0;
         const last_broadcast_price = oldItem.last_broadcast_price || 0;
