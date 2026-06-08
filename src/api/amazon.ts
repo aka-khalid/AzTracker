@@ -138,19 +138,29 @@ export class AmazonEdgeParser {
       parsed.name = itemInfo.title.displayValue;
     }
     
-    // Retrieve AMZN_RETAIL_MID from global env if available, else fallback to Amazon.eg default
-    const amazonEgMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RETAIL_MID || 'A1ZVRGNO5AYLOV') : 'A1ZVRGNO5AYLOV';
-    const amazonResaleMid = 'A2N2MP47XAP1MK';
+    // Retrieve MIDs from global env if available, else fallback to defaults
+    const amazonEgMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_EG_MERCHANT_ID || 'A1ZVRGNO5AYLOV') : 'A1ZVRGNO5AYLOV';
+    const amazonResaleMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RESALE_MERCHANT_ID || 'A2N2MP47XAP1MK') : 'A2N2MP47XAP1MK';
 
     const offers = rawItem.OffersV2 || rawItem.Offers || rawItem.offersV2 || rawItem.offers;
     const listings = offers?.Listings || offers?.listings;
 
     let newIsBuybox = false;
 
+    // Helper: Normalize offer label (Python parity)
+    const normalizeLabel = (lbl: string) => {
+        if (!lbl) return '';
+        let s = lbl.toString().toLowerCase();
+        if (s.includes('.')) s = s.split('.')[1];
+        return s.replace(/_/g, ' ').trim();
+    };
+
     if (listings) {
       for (const listing of listings) {
-        const condition = (listing.Condition?.Value || listing.condition?.value || '').toLowerCase();
-        const subcondition = (listing.Condition?.SubCondition?.Value || listing.condition?.subCondition?.value || '').toLowerCase();
+        const rawCond = listing.Condition?.Value || listing.condition?.value || '';
+        const rawSub = listing.Condition?.SubCondition?.Value || listing.condition?.subCondition?.value || '';
+        const condition = normalizeLabel(rawCond);
+        const subcondition = normalizeLabel(rawSub);
         
         // Creators API uses price.money.amount (matching Python SDK: lst.price.money.amount)
         const priceObj = listing.Price || listing.price;
@@ -171,12 +181,16 @@ export class AmazonEdgeParser {
         const isBuyBox = String(rawIsBuyBox).toLowerCase() === 'true';
 
         // Match Python's exact logic
-        const isAmazon = sellerId === amazonEgMid || sellerId === 'A2L6CS9TW1640Y' || sellerName.toLowerCase() === 'amazon' || sellerName.toLowerCase().includes('amazon.eg');
-        const isAmazonResale = sellerId === amazonResaleMid || sellerName.toLowerCase().includes('resale');
+        const sellerLower = sellerName.toLowerCase();
+        const isAmazon = Boolean(sellerId && sellerId === amazonEgMid);
+        const isAmazonResale = sellerId === amazonResaleMid || sellerLower.includes('resale') || sellerLower.includes('warehouse') || sellerLower.includes('renewed');
+        
+        const usedTokens = ['used', 'refurbished', 'renewed', 'collectible'];
+        const subTokens = ['like new', 'very good', 'good', 'acceptable', 'open box', 'oem', 'likenew', 'verygood', 'openbox'];
         
         const isUsedLike = 
-            ['used', 'refurbished', 'renewed', 'collectible'].includes(condition) ||
-            ['likenew', 'verygood', 'good', 'acceptable', 'open box', 'oem'].includes(subcondition) ||
+            usedTokens.some(t => condition.includes(t)) ||
+            subTokens.some(t => subcondition.includes(t)) ||
             isAmazonResale;
 
         if (isAmazon) {
@@ -188,14 +202,14 @@ export class AmazonEdgeParser {
             }
         }
 
-        if (!isUsedLike) {
+        if (condition === 'new') {
             if (!parsed.newPrice || isBuyBox || (price < parsed.newPrice && !newIsBuybox)) {
                 parsed.newPrice = price;
                 parsed.newSeller = sellerName;
                 parsed.newMid = sellerId;
                 newIsBuybox = isBuyBox;
             }
-        } else {
+        } else if (isUsedLike) {
             if (!parsed.usedPrice || price < parsed.usedPrice) {
                 parsed.usedPrice = price;
                 parsed.usedSeller = sellerName;
