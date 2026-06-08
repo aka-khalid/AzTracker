@@ -1600,7 +1600,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   ).bind(chatId, pid).first();
 
   if (!product) return;
-  const prices = { [pid]: { new_price: product.amazon_price, used_price: product.used_price, name: product.name } };
+  const prices = { [pid]: { new_price: product.new_price, used_price: product.used_price, name: product.name } };
 
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next automated check...";
@@ -2994,21 +2994,22 @@ function renderCrmHTML() {
                         <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
                         <span class="text-xs text-gray-500">•</span>
                         <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
+                        <span class="text-xs text-gray-500">Joined: ${new Date(u.created_at).toLocaleDateString()}</span>
                     </div>
 
                     <!-- Third Row: Actions -->
                     <div class="flex gap-2 relative z-10">
-                        \${u.role === 'rejected' ? 
-                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\`
+                        ${u.role === 'rejected' ? 
+                            `<button onclick="performAction('unban', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>`
                         :
-                            \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
-                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\`}
-                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
-                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
-                            \${u.role !== 'root' ? \`<button onclick="performAction('ban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition text-center border border-red-500/20">🗑️</button>\` : ''}\`
+                            `<button onclick="messageUser('${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
+                            ${(u.role === 'admin' || u.role === 'root') ? '' : `<button onclick="changeLimit('${u.chat_id}', ${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>`}
+                            ${u.role === 'approved' ? `<button onclick="performAction('promote', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>` : ''}
+                            ${u.role === 'admin' ? `<button onclick="performAction('demote', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>` : ''}
+                            ${u.role !== 'root' ? `<button onclick="performAction('ban', '${u.chat_id}')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>` : ''}`
                         }
                     </div>
-                </div>\`;
+                </div>`;
             }).join('');
         }
 
@@ -3024,7 +3025,7 @@ function renderCrmHTML() {
             const content = document.getElementById('drawer-content');
             const itemsCont = document.getElementById('drawer-items');
             
-            document.getElementById('drawer-subtitle').innerText = \`ID: \${userId}\`;
+            document.getElementById('drawer-subtitle').innerText = `ID: ${userId}`;
             itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>Loading items...</div>';
             
             drawer.classList.remove('hidden');
@@ -3032,7 +3033,7 @@ function renderCrmHTML() {
                 content.style.transform = 'translateY(0)';
             }, 10);
             
-            const products = await fetchAPI(\`/user/\${userId}/products\`);
+            const products = await fetchAPI(`/user/${userId}/products`);
             
             if (!products || products.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No saved products</div>';
@@ -3044,9 +3045,9 @@ function renderCrmHTML() {
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
                 const statusText = isPaused ? 'Paused' : 'Active';
                 const name = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
-                const price = p.amazon_price ? \`\${p.amazon_price} EGP\` : (p.used_price ? 'Used Only' : 'Out of Stock');
+                const price = p.new_price ? `${p.new_price} EGP` : (p.used_price ? 'Used Only' : 'Out of Stock');
                 
-                return \`
+                return `
                 <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">
                     <div class="flex justify-between items-start mb-2">
                         <div class="pr-6">
