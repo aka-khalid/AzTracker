@@ -2895,16 +2895,16 @@ function renderCrmHTML() {
                         <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                     </div>
                 </div>
-                <div class="mt-3 glass rounded-xl p-4 flex justify-between items-center">
+                <div class="mt-3 glass rounded-xl p-4 flex flex-col gap-3">
                     <div>
                         <div class="text-gray-400 text-sm">Last Sync</div>
                         <div class="text-sm font-medium" id="stat-sync">--</div>
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="performAction('restore_kv', 'global')" class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
+                    <div class="flex gap-2 w-full">
+                        <button onclick="performAction('restore_kv', 'global')" class="flex-1 justify-center bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Restore Products
                         </button>
-                        <button onclick="triggerGlobalScrape()" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                        <button onclick="triggerGlobalScrape()" class="flex-1 justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
                         </button>
                     </div>
