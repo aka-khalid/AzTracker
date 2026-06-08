@@ -854,7 +854,7 @@ async function executeScrapeEngine(env, force = false) {
     // Stat math calculated BEFORE pushing new price to history (Parity with Python)
     const historyKey = `history:${liveItem.asin}`;
     let history = [];
-    if (dbNeedsUpdate = (amznChanged || newChanged || usedChanged)) {
+    if (amznChanged || newChanged || usedChanged) {
        history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
        if (history.length >= 2) {
            const newPrices = history.map(h => h.n).filter(n => n !== null);
