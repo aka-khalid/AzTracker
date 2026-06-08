@@ -208,6 +208,57 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/migrate-kv" && request.method === "GET") {
+      try {
+        let migratedCount = 0;
+        let cursor = null;
+        const stmts = [];
+        const now = Date.now();
+        
+        const adminIds = (await env.AZTRACKER_DB.get("global:admins", "json")) || [];
+        const approvedIds = (await env.AZTRACKER_DB.get("global:approved_users", "json")) || [];
+        const bannedIds = (await env.AZTRACKER_DB.get("global:banned_users", "json")) || [];
+        
+        for (const uid of approvedIds) {
+          const role = adminIds.includes(uid) ? 'admin' : 'approved';
+          stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uid, role, now));
+        }
+        for (const uid of bannedIds) {
+          stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'rejected', 5, ?)").bind(uid, now));
+        }
+        
+        do {
+          const list = await env.AZTRACKER_DB.list({ prefix: "user:", cursor });
+          cursor = list.list_complete ? null : list.cursor;
+          
+          for (const key of list.keys) {
+            if (key.name.endsWith(":products")) {
+              const chatId = key.name.split(":")[1];
+              const products = await env.AZTRACKER_DB.get(key.name, "json");
+              if (products) {
+                for (const p of products) {
+                  const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
+                  const asin = asinMatch ? asinMatch[1] : `ASIN\${Math.floor(Math.random()*1000)}`;
+                  stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
+                  stmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatId, asin, p.target_price || null, p.paused ? 1 : 0, now));
+                  migratedCount++;
+                }
+              }
+            }
+          }
+        } while (cursor);
+        
+        if (stmts.length > 0) {
+          for (let i = 0; i < stmts.length; i += 50) {
+             await env.DB.batch(stmts.slice(i, i + 50));
+          }
+        }
+        return new Response(`Successfully migrated \${migratedCount} subscriptions and \${approvedIds.length} users!`, { status: 200 });
+      } catch (err) {
+        return new Response(`Migration failed: \${err.message}`, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/crm/data" && request.method === "GET") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
@@ -2876,7 +2927,7 @@ function renderCrmHTML() {
                             \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\`}
                             \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
                             \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
-                            \${u.role !== 'root' ? \`<button onclick="performAction('ban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition text-center border border-red-500/20">Delete</button>\` : ''}\`
+                            \${u.role !== 'root' ? \`<button onclick="performAction('ban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition text-center border border-red-500/20">🗑️</button>\` : ''}\`
                         }
                     </div>
                 </div>\`;

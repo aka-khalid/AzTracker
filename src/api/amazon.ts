@@ -15,18 +15,19 @@ export interface AmazonItem {
 
 export async function getAmazonAccessToken(clientId: string, clientSecret: string): Promise<string> {
   const url = 'https://api.amazon.com/auth/o2/token';
-  const body = new URLSearchParams({
+  const body = {
     grant_type: 'client_credentials',
+    scope: 'creatorsapi::default',
     client_id: clientId,
     client_secret: clientSecret
-  });
+  };
 
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
+      'Content-Type': 'application/json'
     },
-    body: body.toString()
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {
