@@ -12,7 +12,7 @@ const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const QUEUE_MAX_DEPTH = 25;
 
 
-import { AmazonEdgeParser } from './src/api/amazon';
+import { AmazonEdgeParser, getAmazonAccessToken } from './src/api/amazon';
 
 export default {
   async scheduled(event, env, ctx) {
@@ -454,7 +454,22 @@ async function executeScrapeEngine(env, force = false) {
   const { results: staleProducts } = await env.DB.prepare(query).bind(...bindParams).all();
   if (!staleProducts || staleProducts.length === 0) return;
 
-  const parser = new AmazonEdgeParser(env.AMZN_CREATORS_ACCESS_KEY, env.AMZN_CREATORS_SECRET_KEY, env.AMZN_ASSOCIATES_TAG);
+  const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+  const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+  
+  let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
+  if (!accessToken) {
+    try {
+      accessToken = await getAmazonAccessToken(clientId, clientSecret);
+      await env.AZTRACKER_DB.put('amazon_access_token', accessToken, { expirationTtl: 3300 }); // 55 minutes
+    } catch (e) {
+      console.error("Failed to acquire Amazon Access Token:", e);
+      if (force) throw e;
+      return;
+    }
+  }
+
+  const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG);
   const asins = staleProducts.map(p => p.asin);
   
   let liveItems;
