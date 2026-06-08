@@ -2553,77 +2553,84 @@ function renderCrmHTML() {
 
     <main class="flex-1 px-4 py-6 pb-24 space-y-6 max-w-2xl mx-auto w-full" id="app-container">
         
-        <!-- TELEMETRY -->
-        <section>
-            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Overview</h2>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="glass rounded-xl p-4 flex flex-col justify-center">
-                    <div class="text-gray-400 text-sm mb-1">Users</div>
-                    <div class="text-2xl font-bold" id="stat-users">--</div>
-                </div>
-                <div class="glass rounded-xl p-4 flex flex-col justify-center">
-                    <div class="text-gray-400 text-sm mb-1">Active Tracked Products</div>
-                    <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
-                </div>
-            </div>
-            <div class="mt-3 glass rounded-xl p-4 flex justify-between items-center">
-                <div>
-                    <div class="text-gray-400 text-sm">Last Sync</div>
-                    <div class="text-sm font-medium" id="stat-sync">--</div>
-                </div>
-                <button onclick="triggerGlobalScrape()" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
-                </button>
-            </div>
-        </section>
+        <!-- MAIN TABS -->
+        <div class="flex space-x-6 border-b border-gray-800 mb-6" id="main-tabs">
+            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">Users</button>
+            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">Audit Log</button>
+        </div>
 
-        <!-- BROADCAST -->
-        <section>
-            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Broadcast</h2>
-            <div class="glass rounded-xl p-4">
-                <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="Enter message to blast to all approved users... (HTML allowed)"></textarea>
-                <div class="flex justify-end mt-3">
-                    <button onclick="sendBroadcast()" class="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-brand-500/20 flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> Send Broadcast
+        <div id="users-view-container" class="space-y-6">
+            <!-- TELEMETRY -->
+            <section>
+                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Overview</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center">
+                        <div class="text-gray-400 text-sm mb-1">Users</div>
+                        <div class="text-2xl font-bold" id="stat-users">--</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center">
+                        <div class="text-gray-400 text-sm mb-1">Active Tracked Products</div>
+                        <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
+                    </div>
+                </div>
+                <div class="mt-3 glass rounded-xl p-4 flex justify-between items-center">
+                    <div>
+                        <div class="text-gray-400 text-sm">Last Sync</div>
+                        <div class="text-sm font-medium" id="stat-sync">--</div>
+                    </div>
+                    <button onclick="triggerGlobalScrape()" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
                     </button>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <!-- DIRECTORY NAVIGATION -->
-        <section>
-            <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
-                <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition relative whitespace-nowrap">
-                    Pending <span id="badge-queue" class="hidden absolute top-0 right-1 bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
-                </button>
-                <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">
-                    Admins
-                </button>
-                <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">
-                    Users
-                </button>
-                <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">
-                    Banned
-                </button>
-            </div>
-
-            <!-- Queue View -->
-            <div id="view-queue" class="hidden space-y-3">
-                <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">Loading queue...</div>
-            </div>
-
-            <!-- Users View -->
-            <div id="view-users" class="space-y-3">
-                <div class="relative">
-                    <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="Search Name, @username or ID..." class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
-                    <svg class="w-4 h-4 text-gray-500 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <!-- BROADCAST -->
+            <section>
+                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Broadcast</h2>
+                <div class="glass rounded-xl p-4">
+                    <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="Enter message to blast to all approved users... (HTML allowed)"></textarea>
+                    <div class="flex justify-end mt-3">
+                        <button onclick="sendBroadcast()" class="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-brand-500/20 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> Send Broadcast
+                        </button>
+                    </div>
                 </div>
-                <div id="users-list" class="space-y-3">
-                    <div class="text-center py-8 text-gray-500 text-sm">Loading directory...</div>
-                </div>
-            </div>
-        </section>
+            </section>
 
+            <!-- DIRECTORY NAVIGATION -->
+            <section>
+                <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
+                    <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">Approved</button>
+                    <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition relative whitespace-nowrap">
+                        Pending <span id="badge-queue" class="hidden absolute top-0 right-1 bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
+                    </button>
+                    <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">Banned</button>
+                    <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">Admins</button>
+                </div>
+
+                <!-- Queue View -->
+                <div id="view-queue" class="hidden space-y-3">
+                    <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">Loading queue...</div>
+                </div>
+
+                <!-- Users View -->
+                <div id="view-users" class="space-y-3">
+                    <div class="relative">
+                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="Search Name, @username or ID..." class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                        <svg class="w-4 h-4 text-gray-500 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <div id="users-list" class="space-y-3">
+                        <div class="text-center py-8 text-gray-500 text-sm">Loading directory...</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div id="audit-view-container" class="hidden space-y-3">
+            <div id="audit-list" class="space-y-3">
+                <div class="glass rounded-xl p-6 text-center text-gray-400">Loading audit log...</div>
+            </div>
+        </div>
     </main>
 
     <!-- Overlay Loader -->
@@ -2719,9 +2726,26 @@ function renderCrmHTML() {
             }
         }
 
+        function switchMainTab(tabId) {
+            const tabs = ['users-view', 'audit-view'];
+            tabs.forEach(t => {
+                const el = document.getElementById(`main-tab-${t}`);
+                if (el) {
+                    if (t === tabId) {
+                        el.classList.add('border-brand-400', 'text-white');
+                        el.classList.remove('border-transparent', 'text-gray-400');
+                    } else {
+                        el.classList.add('border-transparent', 'text-gray-400');
+                        el.classList.remove('border-brand-400', 'text-white');
+                    }
+                }
+                document.getElementById(`${t}-container`).classList.toggle('hidden', t !== tabId);
+            });
+        }
+
         function switchTab(tab) {
             activeTab = tab;
-            const tabs = ['queue', 'admins', 'users', 'banned'];
+            const tabs = ['users', 'queue', 'banned', 'admins'];
             tabs.forEach(t => {
                 const el = document.getElementById(\`tab-\${t}\`);
                 if (el) {
@@ -2788,35 +2812,39 @@ function renderCrmHTML() {
                 const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800', 'rejected': 'text-red-400 border-red-400/20 bg-red-400/10' };
                 const roleStyle = roleColors[u.role] || roleColors['rejected'];
                 
-                return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative">
-                    \${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
-                    <div class="flex justify-between items-start mb-3 relative z-10">
-                        <div>
-                            <div class="font-medium flex items-center gap-2">
-                                <span class="text-sm font-semibold">\${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.chat_id})</span>
-                                \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>\` : ''}
-                            </div>
-                            <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
-                                <span>\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
-                                <span>•</span>
-                                <span>Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
-                            </div>
+                return `
+                <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">
+                    ${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
+                    
+                    <!-- Top Row: Name and View Items -->
+                    <div class="flex justify-between items-center mb-2 relative z-10">
+                        <div class="font-medium text-sm font-semibold truncate">
+                            ${u.first_name || 'User'} (${u.username ? '@' + u.username : u.chat_id})
                         </div>
-                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
+                        <button onclick="openDrawer('${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
                     </div>
+
+                    <!-- Second Row: Tags & Info -->
+                    <div class="flex items-center gap-2 mb-3 relative z-10">
+                        ${(u.role === 'admin' || u.role === 'root') ? `<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border ${roleStyle}">${u.role}</span>` : ''}
+                        <span class="text-xs text-gray-500">${u.active_items} / ${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
+                        <span class="text-xs text-gray-500">•</span>
+                        <span class="text-xs text-gray-500">Joined: ${new Date(u.created_at).toLocaleDateString()}</span>
+                    </div>
+
+                    <!-- Third Row: Actions -->
                     <div class="flex gap-2 relative z-10">
-                        \${u.role === 'rejected' ? 
-                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\`
+                        ${u.role === 'rejected' ? 
+                            `<button onclick="performAction('unban', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>`
                         :
-                            \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
-                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\`}
-                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
-                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
-                            \${u.role !== 'root' ? \`<button onclick="confirmRevoke('\${u.chat_id}')" class="w-8 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition flex items-center justify-center border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
+                            `<button onclick="messageUser('${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
+                            ${(u.role === 'admin' || u.role === 'root') ? '' : `<button onclick="changeLimit('${u.chat_id}', ${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>`}
+                            ${u.role === 'approved' ? `<button onclick="performAction('promote', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>` : ''}
+                            ${u.role === 'admin' ? `<button onclick="performAction('demote', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>` : ''}
+                            ${u.role !== 'root' ? `<button onclick="performAction('ban', '${u.chat_id}')" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition text-center border border-red-500/20">Delete</button>` : ''}`
                         }
                     </div>
-                </div>\`;
+                </div>`;
             }).join('');
         }
 
