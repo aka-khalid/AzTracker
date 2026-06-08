@@ -3172,7 +3172,6 @@ function renderCrmHTML() {
                         <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
                         <span class="text-xs text-gray-500">•</span>
                         <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
-                        <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
                     </div>
 
                     <!-- Third Row: Actions -->
