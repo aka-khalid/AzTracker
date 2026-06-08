@@ -353,7 +353,10 @@ export default {
             lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null
           },
           joinQueue: joinQueueRes || [],
-          users: mutableUsers
+          users: mutableUsers,
+          auth: {
+            isRootAdmin: auth.isRootAdmin
+          }
         };
         
         response = new Response(JSON.stringify(data), {
@@ -2879,7 +2882,7 @@ function renderCrmHTML() {
             </section>
 
             <!-- BROADCAST -->
-            <section>
+            <section id="broadcast-section">
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Broadcast</h2>
                 <div class="glass rounded-xl p-4">
                     <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="Enter message to blast to all approved users... (HTML allowed)"></textarea>
@@ -3006,6 +3009,10 @@ function renderCrmHTML() {
         }
 
         function renderTelemetry() {
+            if (appData.auth && !appData.auth.isRootAdmin) {
+                const el = document.getElementById('broadcast-section');
+                if (el) el.style.display = 'none';
+            }
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-stat').innerText = appData.systemStats.activeWatchPool || 0;
             const ms = appData.systemStats.lastRunMs;
