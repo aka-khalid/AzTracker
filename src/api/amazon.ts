@@ -43,15 +43,17 @@ export class AmazonEdgeParser {
   private accessToken: string;
   private partnerTag: string;
   private endpoint: string;
+  private endpointHost: string;
 
   constructor(
     accessToken: string,
     partnerTag: string, 
-    endpointHost: string = 'webservices.amazon.eg'
+    endpointHost: string = 'www.amazon.eg'
   ) {
     this.accessToken = accessToken;
     this.partnerTag = partnerTag;
-    this.endpoint = `https://${endpointHost}/paapi5/getitems`;
+    this.endpoint = `https://creatorsapi.amazon/catalog/v1/getItems`;
+    this.endpointHost = endpointHost;
   }
 
   /**
@@ -70,16 +72,16 @@ export class AmazonEdgeParser {
       
       const payload = {
         itemIds: batchAsins,
+        condition: 'Any',
         resources: [
-          'ItemInfo.Title',
-          'Offers.Listings.Price',
-          'Offers.Listings.Condition',
-          'Offers.Listings.MerchantInfo',
-          'Offers.Listings.DeliveryInfo.IsBuyBoxWinner'
+          'itemInfo.title',
+          'offersV2.listings.price',
+          'offersV2.listings.condition',
+          'offersV2.listings.merchantInfo',
+          'offersV2.listings.isBuyBoxWinner'
         ],
         partnerTag: this.partnerTag,
-        partnerType: 'Associates',
-        marketplace: 'www.amazon.eg'
+        partnerType: 'Associates'
       };
 
       try {
@@ -87,8 +89,9 @@ export class AmazonEdgeParser {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json, text/javascript',
             'Authorization': `Bearer ${this.accessToken}`,
-            'X-Amz-Target': 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems'
+            'X-Marketplace': this.endpointHost
           },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(10000)
@@ -115,6 +118,8 @@ export class AmazonEdgeParser {
       } catch (error) {
         console.error(`[AmazonEdgeParser] Fetch Exception for batch ${i}:`, error);
       }
+      // Delay to avoid rate limiting (match Python's 3-second sleep)
+      await new Promise(r => setTimeout(r, 3000));
     }
     
     return results;
@@ -134,17 +139,27 @@ export class AmazonEdgeParser {
     }
     
     // Retrieve AMZN_RETAIL_MID from global env if available, else fallback to Amazon.eg default
-    const defaultMid = 'A1ZVRGNO5AYLOV';
-    const amazonMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RETAIL_MID || defaultMid) : defaultMid;
+    const amazonEgMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RETAIL_MID || 'A1ZVRGNO5AYLOV') : 'A1ZVRGNO5AYLOV';
+    const amazonResaleMid = 'A2N2MP47XAP1MK';
 
-    const offers = rawItem.Offers || rawItem.offers;
+    const offers = rawItem.OffersV2 || rawItem.Offers || rawItem.offersV2 || rawItem.offers;
     const listings = offers?.Listings || offers?.listings;
+
+    let newIsBuybox = false;
 
     if (listings) {
       for (const listing of listings) {
         const condition = (listing.Condition?.Value || listing.condition?.value || '').toLowerCase();
-        const priceStr = listing.Price?.Amount || listing.price?.amount || 0;
+        const subcondition = (listing.Condition?.SubCondition?.Value || listing.condition?.subCondition?.value || '').toLowerCase();
+        
+        // Creators API uses price.money.amount (matching Python SDK: lst.price.money.amount)
+        const priceObj = listing.Price || listing.price;
+        const moneyObj = priceObj?.Money || priceObj?.money;
+        const priceStr = moneyObj?.Amount || moneyObj?.amount || priceObj?.Amount || priceObj?.amount;
         const price = Number(priceStr);
+        
+        // Skip listings with missing or invalid prices
+        if (!price || price <= 0 || !Number.isFinite(price)) continue;
         
         const merchantInfo = listing.MerchantInfo || listing.merchantInfo;
         const sellerName = merchantInfo?.Name || merchantInfo?.name || 'Unknown';
@@ -155,12 +170,17 @@ export class AmazonEdgeParser {
         const rawIsBuyBox = deliveryInfo?.IsBuyBoxWinner || deliveryInfo?.isBuyBoxWinner || listing.IsBuyBoxWinner || listing.isBuyBoxWinner;
         const isBuyBox = String(rawIsBuyBox).toLowerCase() === 'true';
 
-        // Fix: Check for Amazon or Amazon Resale
-        const isAmazon = sellerId === amazonMid || sellerName.toLowerCase().match(/^amazon(\.eg)?$/);
-        const isAmazonResale = sellerName.toLowerCase().match(/(amazon resale|amazon warehouse)/) || ['A2OAJ7377F756P', 'A8KICS1PHF7ZO'].includes(sellerId);
+        // Match Python's exact logic
+        const isAmazon = sellerId === amazonEgMid || sellerId === 'A2L6CS9TW1640Y' || sellerName.toLowerCase() === 'amazon' || sellerName.toLowerCase().includes('amazon.eg');
+        const isAmazonResale = sellerId === amazonResaleMid || sellerName.toLowerCase().includes('resale');
         
+        const isUsedLike = 
+            ['used', 'refurbished', 'renewed', 'collectible'].includes(condition) ||
+            ['likenew', 'verygood', 'good', 'acceptable', 'open box', 'oem'].includes(subcondition) ||
+            isAmazonResale;
+
         if (isAmazon) {
-            if (!parsed.amazonPrice || price < parsed.amazonPrice) {
+            if (!parsed.amazonPrice || isBuyBox || (price < parsed.amazonPrice && !parsed.amazonIsBuybox)) {
                 parsed.amazonPrice = price;
                 parsed.amazonSeller = sellerName;
                 parsed.amazonMid = sellerId;
@@ -168,13 +188,14 @@ export class AmazonEdgeParser {
             }
         }
 
-        if (condition === 'new') {
-            if (!parsed.newPrice || price < parsed.newPrice) {
+        if (!isUsedLike) {
+            if (!parsed.newPrice || isBuyBox || (price < parsed.newPrice && !newIsBuybox)) {
                 parsed.newPrice = price;
                 parsed.newSeller = sellerName;
                 parsed.newMid = sellerId;
+                newIsBuybox = isBuyBox;
             }
-        } else if (condition === 'used' || condition.includes('refurbished') || isAmazonResale) {
+        } else {
             if (!parsed.usedPrice || price < parsed.usedPrice) {
                 parsed.usedPrice = price;
                 parsed.usedSeller = sellerName;
