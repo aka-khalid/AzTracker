@@ -542,6 +542,36 @@ export default {
 
 // ── Interceptors ────────────────────────────────────────────────────────────
 
+const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
+const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function truncateName(name, maxLength = 60) {
+  if (!name) return "Unknown Product";
+  if (name.length <= maxLength) return name;
+  return name.substring(0, maxLength) + "...";
+}
+
+function formatEGP(price) {
+  if (price === null || price === undefined) return "";
+  return price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function getCairoTime(now) {
+  const formatter = new Intl.DateTimeFormat('en-GB', { 
+    timeZone: 'Africa/Cairo', 
+    year: 'numeric', month: '2-digit', day: '2-digit', 
+    hour: '2-digit', minute: '2-digit', second: '2-digit' 
+  });
+  const parts = formatter.formatToParts(new Date(now));
+  const p = {};
+  parts.forEach(part => { p[part.type] = part.value; });
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} EET`;
+}
+
 async function executeScrapeEngine(env, force = false) {
   const query = force 
     ? "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0"
@@ -583,8 +613,9 @@ async function executeScrapeEngine(env, force = false) {
   const queueBatch = [];
   const now = Date.now();
   
-  if (staleProducts.length > 0 && liveItems.length === 0) {
-    console.log("Global failsafe: 0 items returned. Assuming API Outage. Aborting.");
+  // Failsafe Fix: Require at least 10 items in stale list to assume an API outage
+  if (!force && staleProducts.length >= 10 && liveItems.length === 0) {
+    console.log("Global failsafe: 0 items returned for batch. Assuming API Outage. Aborting.");
     return;
   }
   
@@ -640,10 +671,11 @@ async function executeScrapeEngine(env, force = false) {
       
       const safe_name = escapeHtml(truncateName(liveItem.name || liveItem.asin));
       const safe_seller = escapeHtml(seller || "Unknown");
+      const sellerLower = (seller || "").toLowerCase();
       
       let historical_links = [];
-      const isAmznSeller = mid === AMAZON_EG_MERCHANT_ID || seller.toLowerCase() === 'amazon' || seller.toLowerCase().includes('amazon.eg');
-      const isResaleSeller = mid === AMAZON_RESALE_MERCHANT_ID || seller.toLowerCase().includes('resale');
+      const isAmznSeller = mid === AMAZON_EG_MERCHANT_ID || sellerLower === 'amazon' || sellerLower.includes('amazon.eg');
+      const isResaleSeller = mid === AMAZON_RESALE_MERCHANT_ID || sellerLower.includes('resale') || sellerLower.includes('warehouse') || sellerLower.includes('renewed');
       
       const amazon_seen_recently = seenAmazonAt && (now - seenAmazonAt) < (14 * 24 * 60 * 60 * 1000);
       const resale_seen_recently = seenResaleAt && (now - seenResaleAt) < (14 * 24 * 60 * 60 * 1000);
@@ -652,7 +684,7 @@ async function executeScrapeEngine(env, force = false) {
           let amzUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_EG_MERCHANT_ID}`;
           if (pTag) amzUrl += `&tag=${pTag}`;
           if (amznPrice !== null) {
-              historical_links.push(`└ 🛡️ <a href="${amzUrl}">Amazon.eg</a>: <b>${amznPrice} EGP</b>`);
+              historical_links.push(`└ 🛡️ <a href="${amzUrl}">Amazon.eg</a>: <b>${formatEGP(amznPrice)} EGP</b>`);
           } else if (amazon_seen_recently) {
               historical_links.push(`└ 🛡️ <a href="${amzUrl}">Amazon.eg</a> <i>(Check Stock)</i>`);
           }
@@ -662,7 +694,7 @@ async function executeScrapeEngine(env, force = false) {
           let resUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_RESALE_MERCHANT_ID}`;
           if (pTag) resUrl += `&tag=${pTag}`;
           if (usedPrice !== null) {
-              historical_links.push(`└ 📦 <a href="${resUrl}">Amazon Resale</a>: <b>${usedPrice} EGP</b> <i>(Used)</i>`);
+              historical_links.push(`└ 📦 <a href="${resUrl}">Amazon Resale</a>: <b>${formatEGP(usedPrice)} EGP</b> <i>(Used)</i>`);
           } else if (resale_seen_recently) {
               historical_links.push(`└ 📦 <a href="${resUrl}">Amazon Resale</a> <i>(Check Stock)</i>`);
           }
@@ -674,17 +706,17 @@ async function executeScrapeEngine(env, force = false) {
       }
       
       const atl_banner = isAtl ? "🔥 <b>ALL-TIME LOW</b>\n\n" : "";
-      const timeStr = new Date(now).toISOString().replace("T", " ").substring(0, 19) + " UTC";
+      const timeStr = getCairoTime(now);
       
       let msg = "";
       if (isTarget) {
           const diff = lastPrice ? (lastPrice - price) : 0;
-          const down_text = diff > 0 ? ` (Down ${diff.toFixed(2)} EGP)` : "";
+          const down_text = diff > 0 ? ` (Down ${formatEGP(diff)} EGP)` : "";
           msg = `${atl_banner}🎯 <b>TARGET MET! ${condLabel}</b>\n\n` +
                 `📦 <b>${safe_name}</b>\n` +
                 `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                `💰 <b>Current Price:</b> ${price.toFixed(2)} EGP\n` +
-                `📉 <b>Target:</b> ${targetPrice.toFixed(2)} EGP${down_text}\n` +
+                `💰 <b>Current Price:</b> ${formatEGP(price)} EGP\n` +
+                `📉 <b>Target:</b> ${formatEGP(targetPrice)} EGP${down_text}\n` +
                 `🏬 <b>Seller:</b> <i>${safe_seller}</i>` +
                 `${final_smart_alts}\n\n` +
                 `🕐 <i>${timeStr}</i>\n\n#ad`;
@@ -693,7 +725,7 @@ async function executeScrapeEngine(env, force = false) {
               msg = `${atl_banner}🚨 <b>RESTOCK ALERT ${condLabel}</b>\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
                     `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                    `💰 <b>Price:</b> ${price.toFixed(2)} EGP\n` +
+                    `💰 <b>Price:</b> ${formatEGP(price)} EGP\n` +
                     `🏬 <b>Seller:</b> <i>${safe_seller}</i>` +
                     `${final_smart_alts}\n\n` +
                     `🕐 <i>${timeStr}</i>\n\n#ad`;
@@ -703,9 +735,9 @@ async function executeScrapeEngine(env, force = false) {
               msg = `${atl_banner}🚨 <b>PRICE DROP ALERT ${condLabel}</b>\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
                     `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                    `💰 <b>New Price:</b> ${price.toFixed(2)} EGP\n` +
-                    `📉 <b>Dropped:</b> ${diff.toFixed(2)} EGP (${pct.toFixed(1)}% off)\n` +
-                    `🏷️ <b>Was:</b> ${lastPrice.toFixed(2)} EGP\n` +
+                    `💰 <b>New Price:</b> ${formatEGP(price)} EGP\n` +
+                    `📉 <b>Dropped:</b> ${formatEGP(diff)} EGP (${pct.toFixed(1)}% off)\n` +
+                    `🏷️ <b>Was:</b> ${formatEGP(lastPrice)} EGP\n` +
                     `🏬 <b>Seller:</b> <i>${safe_seller}</i>` +
                     `${final_smart_alts}\n\n` +
                     `🕐 <i>${timeStr}</i>\n\n#ad`;
@@ -729,7 +761,7 @@ async function executeScrapeEngine(env, force = false) {
     let usedMissingSince = oldItem.used_missing_since;
     let amazonMissingSince = oldItem.amazon_missing_since;
     
-    // Anti-Flap Timers (Fix: Only start if previously had a price)
+    // Anti-Flap Timers
     if (liveItem.newPrice === undefined || liveItem.newPrice === null) {
       if (!newMissingSince && oldItem.new_price !== null) newMissingSince = now;
     } else newMissingSince = null;
@@ -805,13 +837,15 @@ async function executeScrapeEngine(env, force = false) {
       ? oldItem.new_price !== finalNewPrice 
       : Math.abs(oldItem.new_price - finalNewPrice) >= 1;
 
-    if (!amznTargetBypass && !amznChanged && finalAmazonPrice !== null) finalAmazonPrice = oldItem.amazon_price;
-    if (!usedTargetBypass && !usedChanged && finalUsedPrice !== null) finalUsedPrice = oldItem.used_price;
-    if (!newTargetBypass && !newChanged && finalNewPrice !== null) finalNewPrice = oldItem.new_price;
-    
+    // Rollback completely (price AND seller/mid) if change < 1 EGP
     if (amznTargetBypass) amznChanged = oldItem.amazon_price !== finalAmazonPrice;
+    if (!amznChanged && finalAmazonPrice !== null) { finalAmazonPrice = oldItem.amazon_price; finalAmazonSeller = oldItem.amazon_seller; finalAmazonMid = oldItem.amazon_mid; finalAmazonIsBuybox = oldItem.amazon_is_buybox; }
+    
     if (usedTargetBypass) usedChanged = oldItem.used_price !== finalUsedPrice;
+    if (!usedChanged && finalUsedPrice !== null) { finalUsedPrice = oldItem.used_price; finalUsedSeller = oldItem.used_seller; finalUsedMid = oldItem.used_mid; }
+    
     if (newTargetBypass) newChanged = oldItem.new_price !== finalNewPrice;
+    if (!newChanged && finalNewPrice !== null) { finalNewPrice = oldItem.new_price; finalNewSeller = oldItem.new_seller; finalNewMid = oldItem.new_mid; }
 
     const priceDelta = force || amznChanged || usedChanged || newChanged;
 
@@ -824,6 +858,27 @@ async function executeScrapeEngine(env, force = false) {
     if (finalAmazonPrice !== null) seenAmazonEgAt = now;
     if (finalUsedPrice !== null) seenResaleAt = now;
 
+    // Stat math calculated BEFORE pushing new price to history (Parity with Python)
+    const historyKey = `history:${liveItem.asin}`;
+    let history = [];
+    if (dbNeedsUpdate = (amznChanged || newChanged || usedChanged)) {
+       history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
+       if (history.length >= 2) {
+           const newPrices = history.map(h => h.n).filter(n => n !== null);
+           if (newPrices.length >= 2) {
+               const sum = newPrices.reduce((a, b) => a + b, 0);
+               const mean = sum / newPrices.length;
+               const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (newPrices.length - 1);
+               const stdev = Math.sqrt(variance);
+               const atl = Math.min(...newPrices);
+               histMean = mean;
+               histStdev = stdev;
+               // Fix: ATL must be strictly < to count as a NEW All-Time Low
+               isAtlNew = (finalNewPrice && finalNewPrice < atl) ? 1 : 0;
+           }
+       }
+    }
+
     const MS_90_DAYS = 7776000000;
     for (const sub of subs) {
       if (sub.added_at && (now - sub.added_at > MS_90_DAYS)) {
@@ -834,54 +889,59 @@ async function executeScrapeEngine(env, force = false) {
 
       let alertSentNew = sub.alert_sent_new;
       let alertSentUsed = sub.alert_sent_used;
-      
       const targetPrice = sub.target_price;
       
-      // NEW & AMZN ALERTS (New Condition)
-      const primaryNewPrice = finalAmazonPrice !== null ? finalAmazonPrice : finalNewPrice;
-      const lastPrimaryNewPrice = oldItem.amazon_price !== null ? oldItem.amazon_price : oldItem.new_price;
-      const primaryNewSeller = finalAmazonPrice !== null ? finalAmazonSeller : finalNewSeller;
-      const primaryNewMid = finalAmazonPrice !== null ? finalAmazonMid : finalNewMid;
-      const newLabel = finalAmazonPrice !== null ? "(New)" : "(New)"; // Could differentiate if needed
+      let newAlertSentThisTick = false;
       
-      if (primaryNewPrice !== null) {
-          if (targetPrice && primaryNewPrice > targetPrice) {
-              if (alertSentNew) alertSentNew = 0;
+      // Decoupled New vs Amazon logic for Alerts
+      if (targetPrice) {
+          if (finalNewPrice !== null && finalNewPrice > targetPrice) { if (alertSentNew) alertSentNew = 0; }
+          if (finalAmazonPrice !== null && finalAmazonPrice > targetPrice) { if (alertSentNew) alertSentNew = 0; }
+          if (finalUsedPrice !== null && finalUsedPrice > targetPrice) { if (alertSentUsed) alertSentUsed = 0; }
+          
+          let targetHitNew = false;
+          let targetHitUsed = false;
+          
+          if (finalNewPrice !== null && finalNewPrice <= targetPrice && !alertSentNew) {
+              queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              targetHitNew = true;
+          } else if (finalAmazonPrice !== null && finalAmazonPrice <= targetPrice && !alertSentNew) {
+              queueAlert(sub.chat_id, "(Amazon.eg)", finalAmazonPrice, oldItem.amazon_price, finalAmazonSeller, finalAmazonMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              targetHitNew = true;
           }
-          if (targetPrice) {
-              if (primaryNewPrice <= targetPrice && !alertSentNew) {
-                  queueAlert(sub.chat_id, newLabel, primaryNewPrice, lastPrimaryNewPrice, primaryNewSeller, primaryNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-                  alertSentNew = 1;
-              }
-          } else {
-              if (lastPrimaryNewPrice === null && oldItem.last_updated) {
-                  queueAlert(sub.chat_id, "(New - Restocked)", primaryNewPrice, null, primaryNewSeller, primaryNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-              } else if (lastPrimaryNewPrice !== null && primaryNewPrice < lastPrimaryNewPrice) {
-                  queueAlert(sub.chat_id, newLabel, primaryNewPrice, lastPrimaryNewPrice, primaryNewSeller, primaryNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-              }
-          }
-      } else {
-          if (alertSentNew) alertSentNew = 0;
-      }
-
-      // USED ALERTS
-      if (finalUsedPrice !== null) {
-          if (targetPrice && finalUsedPrice > targetPrice) {
-              if (alertSentUsed) alertSentUsed = 0;
-          }
-          if (targetPrice) {
-              if (finalUsedPrice <= targetPrice && !alertSentUsed) {
+          
+          if (finalUsedPrice !== null && finalUsedPrice <= targetPrice && !alertSentUsed) {
+              if (targetHitNew) {
+                  // Target Grouping (Python Parity): Lock Used flag without spamming second message
+                  targetHitUsed = true;
+              } else {
                   queueAlert(sub.chat_id, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
-                  alertSentUsed = 1;
+                  targetHitUsed = true;
               }
           }
-          // The old python script DID NOT send non-target alerts for USED items natively unless they were subscribed without target.
-          // Wait, python did: if not is_target: if used_price < last_used_price... but the python only triggered if target_price existed? 
-          // Python: if target_price: if used_price <= target... ELSE: target_alert = queue_alert... wait, python's used section only had target_price logic?
-          // Let's look at python's used section: 
-          // `if target_price: if used_price <= target_price and not p.get("alert_sent_used") ... else: pass`. Python NEVER sent restock/drop alerts for USED items unless there was a target!
+          
+          if (targetHitNew) alertSentNew = 1;
+          if (targetHitUsed) alertSentUsed = 1;
+          
       } else {
-          if (alertSentUsed) alertSentUsed = 0;
+          // Drops without target
+          if (finalNewPrice !== null) {
+              if (oldItem.new_price === null && oldItem.last_updated) {
+                  queueAlert(sub.chat_id, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  newAlertSentThisTick = true;
+              } else if (oldItem.new_price !== null && finalNewPrice < oldItem.new_price) {
+                  queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  newAlertSentThisTick = true;
+              }
+          }
+          
+          if (!newAlertSentThisTick && finalAmazonPrice !== null) {
+              if (oldItem.amazon_price === null && oldItem.last_updated) {
+                  queueAlert(sub.chat_id, "(Amazon.eg - Restocked)", finalAmazonPrice, null, finalAmazonSeller, finalAmazonMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              } else if (oldItem.amazon_price !== null && finalAmazonPrice < oldItem.amazon_price) {
+                  queueAlert(sub.chat_id, "(Amazon.eg)", finalAmazonPrice, oldItem.amazon_price, finalAmazonSeller, finalAmazonMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              }
+          }
       }
 
       if (alertSentNew !== sub.alert_sent_new || alertSentUsed !== sub.alert_sent_used) {
@@ -892,6 +952,28 @@ async function executeScrapeEngine(env, force = false) {
     let dbNeedsUpdate = false;
 
     if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass || newMissingSince !== oldItem.new_missing_since || usedMissingSince !== oldItem.used_missing_since || amazonMissingSince !== oldItem.amazon_missing_since) {
+      dbNeedsUpdate = true;
+    }
+
+    if (dbNeedsUpdate && (amznChanged || newChanged || usedChanged)) {
+      history.push({ t: Math.floor(now / 1000), n: finalNewPrice, u: finalUsedPrice }); // Exclusively tracking NewPrice
+      if (history.length > 500) history = history.slice(-500);
+      kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
+
+      const globalKey = "global:history_all_new";
+      let globalHist = await env.AZTRACKER_DB.get(globalKey, "json") || [];
+      const currentMatrix = {};
+      if (finalNewPrice !== null) currentMatrix[liveItem.asin] = [finalNewPrice, 0];
+      
+      if (Object.keys(currentMatrix).length > 0) {
+          globalHist.push({t: Math.floor(now / 1000), p: currentMatrix});
+          if (globalHist.length > 150) globalHist = globalHist.slice(-150);
+          kvPromises.push(env.AZTRACKER_DB.put(globalKey, JSON.stringify(globalHist)));
+      }
+    }
+    
+    // Unified Single UPDATE D1 execution
+    if (dbNeedsUpdate) {
       d1Batch.push(
         env.DB.prepare(`
           UPDATE Global_Products 
@@ -912,7 +994,6 @@ async function executeScrapeEngine(env, force = false) {
           liveItem.asin
         )
       );
-      dbNeedsUpdate = true;
     } else {
       d1Batch.push(
         env.DB.prepare(`
@@ -920,55 +1001,17 @@ async function executeScrapeEngine(env, force = false) {
         `).bind(now, liveItem.asin)
       );
     }
-      
-    if (dbNeedsUpdate && (amznChanged || newChanged || usedChanged)) {
-      const historyKey = `history:${liveItem.asin}`;
-      let history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
-      
-      const nPrice = finalAmazonPrice !== null ? finalAmazonPrice : finalNewPrice;
-      history.push({ t: Math.floor(now / 1000), n: nPrice, u: finalUsedPrice });
-      
-      if (history.length > 500) history = history.slice(-500);
-      kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
-
-      const globalKey = "global:history_all_new";
-      let globalHist = await env.AZTRACKER_DB.get(globalKey, "json") || [];
-      const currentMatrix = {};
-      if (finalNewPrice !== null) currentMatrix[liveItem.asin] = [finalNewPrice, 0];
-      
-      if (Object.keys(currentMatrix).length > 0) {
-          globalHist.push({t: Math.floor(now / 1000), p: currentMatrix});
-          if (globalHist.length > 150) globalHist = globalHist.slice(-150); // Hard cap history ALL at 150 
-          kvPromises.push(env.AZTRACKER_DB.put(globalKey, JSON.stringify(globalHist)));
-      }
-      
-      // Update Z-Score Math using Sample Standard Deviation (N-1)
-      if (history.length >= 2) { // Changed from 10 to 2
-         const newPrices = history.map(h => h.n).filter(n => n !== null);
-         if (newPrices.length >= 2) {
-             const sum = newPrices.reduce((a, b) => a + b, 0);
-             const mean = sum / newPrices.length;
-             const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (newPrices.length - 1);
-             const stdev = Math.sqrt(variance);
-             const atl = Math.min(...newPrices);
-             histMean = mean;
-             histStdev = stdev;
-             isAtlNew = (finalNewPrice && finalNewPrice <= atl) ? 1 : 0;
-             d1Batch.push(env.DB.prepare("UPDATE Global_Products SET hist_mean = ?, hist_stdev = ?, is_atl_new = ? WHERE asin = ?").bind(histMean, histStdev, isAtlNew, liveItem.asin));
-         }
-      }
-    }
     
     // Broadcast Collection logic
-    const nPrice = finalAmazonPrice !== null ? finalAmazonPrice : finalNewPrice;
+    const broadcastPrice = finalAmazonPrice !== null ? finalAmazonPrice : finalNewPrice; // Allow either to trigger a broadcast
     const lPrice = oldItem.amazon_price !== null ? oldItem.amazon_price : oldItem.new_price;
-    if (env.TELEGRAM_PUBLIC_CHANNEL_ID && nPrice && lPrice && nPrice < lPrice) {
+    if (env.TELEGRAM_PUBLIC_CHANNEL_ID && broadcastPrice && lPrice && broadcastPrice < lPrice) {
         const last_broadcast_time = oldItem.last_broadcast_time_ms || 0;
         const last_broadcast_price = oldItem.last_broadcast_price || 0;
         
         let proceed = true;
         if ((now - last_broadcast_time) < 86400000) {
-             if (last_broadcast_price && nPrice >= last_broadcast_price) {
+             if (last_broadcast_price && broadcastPrice >= last_broadcast_price) {
                  proceed = false;
              }
         }
@@ -976,13 +1019,13 @@ async function executeScrapeEngine(env, force = false) {
         if (proceed) {
              let zScore = 0.0;
              if (histMean > 0 && histStdev > 0) {
-                 zScore = (nPrice - histMean) / histStdev;
+                 zScore = (broadcastPrice - histMean) / histStdev;
              } else if (histMean > 0 && histStdev === 0) {
-                 if (nPrice <= histMean * 0.85) zScore = -1.5;
+                 if (broadcastPrice <= histMean * 0.85) zScore = -1.5;
              }
              
              const displayLastPrice = histMean > 0 ? histMean : lPrice;
-             const dropPct = ((displayLastPrice - nPrice) / displayLastPrice) * 100;
+             const dropPct = ((displayLastPrice - broadcastPrice) / displayLastPrice) * 100;
              
              const isStandardDeal = (zScore <= -1.5) && (dropPct >= 15.0);
              const isAtlDeal = isAtlNew && (zScore <= -1.0) && (dropPct >= 10.0);
@@ -994,7 +1037,7 @@ async function executeScrapeEngine(env, force = false) {
                      bestDeal = {
                          asin: liveItem.asin,
                          name: liveItem.name,
-                         price: nPrice,
+                         price: broadcastPrice,
                          last_price: displayLastPrice,
                          drop_pct: dropPct,
                          is_atl: isAtlNew
@@ -1005,7 +1048,7 @@ async function executeScrapeEngine(env, force = false) {
     }
   }
 
-  // Final Broadcast (Single Max Z-Score deal)
+  // Final Broadcast
   if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
       const safe_name = escapeHtml(truncateName(bestDeal.name || bestDeal.asin));
       const drop_pct_str = `${bestDeal.drop_pct.toFixed(0)}%`;
@@ -1015,11 +1058,11 @@ async function executeScrapeEngine(env, force = false) {
       const qParams = new URLSearchParams();
       if (env.AMAZON_PARTNER_TAG || env.AMZN_ASSOCIATES_TAG) qParams.append("tag", env.AMAZON_PARTNER_TAG || env.AMZN_ASSOCIATES_TAG);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
-      const timeStr = new Date(now).toISOString().replace("T", " ").substring(0, 19) + " UTC";
+      const timeStr = getCairoTime(now);
       
       const broadcast_msg = `${header}\n\n` +
           `<b>${safe_name}</b>\n\n` +
-          `💵 <b>${bestDeal.price.toFixed(2)} EGP</b> <i>(usually ${bestDeal.last_price.toFixed(0)})</i>\n\n` +
+          `💵 <b>${formatEGP(bestDeal.price)} EGP</b> <i>(usually ${formatEGP(bestDeal.last_price)})</i>\n\n` +
           `👉 <b><a href="${broadcast_url}">Click here to grab the deal</a></b>\n` +
           `〰️〰️〰️〰️〰️〰️〰️〰️\n` +
           `🤖 <i>Find more exceptional deals on our bot: @AzTrackerr_bot</i>\n` +
