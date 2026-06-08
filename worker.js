@@ -343,7 +343,7 @@ export default {
         
         const data = {
           systemStats: {
-            totalUsers: mutableUsers.length,
+            totalUsers: mutableUsers.filter(u => u.role !== 'rejected').length,
             activeWatchPool: totalProductsRes ? totalProductsRes.activeWatchPool : 0,
             lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null
           },
@@ -2724,8 +2724,8 @@ function renderCrmHTML() {
             <section>
                 <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
                     <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">Approved</button>
-                    <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition relative whitespace-nowrap">
-                        Pending <span id="badge-queue" class="hidden absolute top-0 right-1 bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
+                    <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition flex items-center gap-1.5 whitespace-nowrap">
+                        Pending <span id="badge-queue" class="hidden bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
                     </button>
                     <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">Banned</button>
                     <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">Admins</button>
