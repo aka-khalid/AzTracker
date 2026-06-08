@@ -1,5 +1,3 @@
-import { AwsClient } from 'aws4fetch';
-
 export interface AmazonItem {
   asin: string;
   name?: string;
@@ -15,33 +13,49 @@ export interface AmazonItem {
   amazonIsBuybox?: boolean;
 }
 
+export async function getAmazonAccessToken(clientId: string, clientSecret: string): Promise<string> {
+  const url = 'https://api.amazon.com/auth/o2/token';
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret
+  });
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: body.toString()
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to get Amazon access token: ${res.status} - ${errorText}`);
+  }
+
+  const data = await res.json() as any;
+  return data.access_token;
+}
+
 export class AmazonEdgeParser {
-  private awsClient: AwsClient;
+  private accessToken: string;
   private partnerTag: string;
   private endpoint: string;
 
   constructor(
-    accessKeyId: string, 
-    secretAccessKey: string, 
+    accessToken: string,
     partnerTag: string, 
-    region: string = 'eu-south-1', 
     endpointHost: string = 'webservices.amazon.eg'
   ) {
+    this.accessToken = accessToken;
     this.partnerTag = partnerTag;
     this.endpoint = `https://${endpointHost}/paapi5/getitems`;
-    
-    // Natively implements AWS Signature Version 4 for Cloudflare Workers
-    this.awsClient = new AwsClient({
-      accessKeyId,
-      secretAccessKey,
-      service: 'ProductAdvertisingAPI',
-      region: region,
-    });
   }
 
   /**
    * Fetches the latest pricing data for a batch of ASINs.
-   * Handles PA-API's hard limit of 10 ASINs per request by batching internally.
+   * Handles Creators API limits by batching internally.
    */
   public async getItems(asins: string[]): Promise<AmazonItem[]> {
     if (asins.length === 0) return [];
@@ -49,29 +63,30 @@ export class AmazonEdgeParser {
     const batchSize = 10;
     const results: AmazonItem[] = [];
 
-    // Process ASINs in batches to respect PA-API limits
+    // Process ASINs in batches
     for (let i = 0; i < asins.length; i += batchSize) {
       const batchAsins = asins.slice(i, i + batchSize);
       
       const payload = {
-        ItemIds: batchAsins,
-        Resources: [
+        itemIds: batchAsins,
+        resources: [
           'ItemInfo.Title',
           'Offers.Listings.Price',
           'Offers.Listings.Condition',
           'Offers.Listings.MerchantInfo',
           'Offers.Listings.DeliveryInfo.IsBuyBoxWinner'
         ],
-        PartnerTag: this.partnerTag,
-        PartnerType: 'Associates',
-        Marketplace: 'www.amazon.eg'
+        partnerTag: this.partnerTag,
+        partnerType: 'Associates',
+        marketplace: 'www.amazon.eg'
       };
 
       try {
-        const response = await this.awsClient.fetch(this.endpoint, {
+        const response = await fetch(this.endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
+            'Authorization': `Bearer ${this.accessToken}`,
             'X-Amz-Target': 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems'
           },
           body: JSON.stringify(payload),
@@ -86,8 +101,13 @@ export class AmazonEdgeParser {
 
         const data = await response.json() as any;
         
-        if (data.ItemsResult && data.ItemsResult.Items) {
-          for (const item of data.ItemsResult.Items) {
+        // The response keys typically remain PascalCase or might be camelCase depending on the exact Creators API version.
+        // We handle both just in case:
+        const itemsResult = data.ItemsResult || data.itemsResult;
+        const items = itemsResult?.Items || itemsResult?.items;
+        
+        if (items) {
+          for (const item of items) {
             results.push(this.parseItem(item));
           }
         }
@@ -100,30 +120,38 @@ export class AmazonEdgeParser {
   }
 
   /**
-   * Transforms the bloated PA-API JSON response into our lean 15-column D1 schema format.
+   * Transforms the JSON response into our lean 15-column D1 schema format.
    */
   private parseItem(rawItem: any): AmazonItem {
-    const parsed: AmazonItem = { asin: rawItem.ASIN };
+    const parsed: AmazonItem = { asin: rawItem.ASIN || rawItem.asin };
     
-    if (rawItem.ItemInfo?.Title?.DisplayValue) {
-      parsed.name = rawItem.ItemInfo.Title.DisplayValue;
+    const itemInfo = rawItem.ItemInfo || rawItem.itemInfo;
+    if (itemInfo?.Title?.DisplayValue) {
+      parsed.name = itemInfo.Title.DisplayValue;
+    } else if (itemInfo?.title?.displayValue) {
+      parsed.name = itemInfo.title.displayValue;
     }
     
     // Retrieve AMZN_RETAIL_MID from global env if available, else fallback to Amazon.eg default
-    // We'll read it directly from globalThis if injected, otherwise fallback
     const defaultMid = 'A1ZVRGNO5AYLOV';
     const amazonMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RETAIL_MID || defaultMid) : defaultMid;
 
-    if (rawItem.Offers?.Listings) {
-      for (const listing of rawItem.Offers.Listings) {
-        const condition = listing.Condition?.Value?.toLowerCase() || '';
-        const priceStr = listing.Price?.Amount || 0;
+    const offers = rawItem.Offers || rawItem.offers;
+    const listings = offers?.Listings || offers?.listings;
+
+    if (listings) {
+      for (const listing of listings) {
+        const condition = (listing.Condition?.Value || listing.condition?.value || '').toLowerCase();
+        const priceStr = listing.Price?.Amount || listing.price?.amount || 0;
         const price = Number(priceStr);
-        const sellerName = listing.MerchantInfo?.Name || 'Unknown';
-        const sellerId = listing.MerchantInfo?.Id || '';
+        
+        const merchantInfo = listing.MerchantInfo || listing.merchantInfo;
+        const sellerName = merchantInfo?.Name || merchantInfo?.name || 'Unknown';
+        const sellerId = merchantInfo?.Id || merchantInfo?.id || '';
         
         // Fix: Use strictly boolean evaluation from the payload
-        const rawIsBuyBox = listing.DeliveryInfo?.IsBuyBoxWinner || listing.IsBuyBoxWinner;
+        const deliveryInfo = listing.DeliveryInfo || listing.deliveryInfo;
+        const rawIsBuyBox = deliveryInfo?.IsBuyBoxWinner || deliveryInfo?.isBuyBoxWinner || listing.IsBuyBoxWinner || listing.isBuyBoxWinner;
         const isBuyBox = String(rawIsBuyBox).toLowerCase() === 'true';
 
         // Fix: Check for Amazon or Amazon Resale
