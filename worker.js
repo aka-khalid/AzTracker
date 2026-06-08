@@ -542,13 +542,6 @@ export default {
 
 // ── Interceptors ────────────────────────────────────────────────────────────
 
-const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
-const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
-
-function escapeHtml(text) {
-  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 function truncateName(name, maxLength = 60) {
   if (!name) return "Unknown Product";
   if (name.length <= maxLength) return name;
