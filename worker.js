@@ -61,6 +61,13 @@ export default {
 
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/test_kv') {
+        const asin = url.searchParams.get("asin");
+        if (!asin) return new Response("Missing asin", {status: 400});
+        const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
+        const historyData = await env.AZTRACKER_DB.get("history:" + asin, "json");
+        return new Response(JSON.stringify({ item: itemData, history: historyData }, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
 
     if (url.pathname === "/scheduler") {
       return await handleScheduler(request, env, ctx);
