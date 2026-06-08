@@ -91,3 +91,19 @@ CREATE INDEX idx_users_role ON Users(role);
 CREATE INDEX idx_users_created_at ON Users(created_at DESC);
 -- Optimizes Watch Pool calculations ignoring paused items
 CREATE INDEX idx_subscriptions_is_paused ON User_Subscriptions(is_paused);
+
+-- ============================================================================
+-- 5. Audit Logging
+-- ============================================================================
+CREATE TABLE Audit_Logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    actor_id TEXT NOT NULL,
+    actor_name TEXT,
+    action TEXT NOT NULL,
+    target_id TEXT,
+    details TEXT
+);
+
+CREATE INDEX idx_audit_timestamp ON Audit_Logs(timestamp DESC);
+CREATE INDEX idx_audit_actor ON Audit_Logs(actor_id);

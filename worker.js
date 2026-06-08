@@ -163,16 +163,20 @@ export default {
       const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
       if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
 
-      const listRes = await env.AZTRACKER_DB.list({ prefix: "audit:" });
-      const logs = [];
-      for (const key of listRes.keys) {
-        const parts = key.name.split(":");
-        const ts = parseInt(parts[1]);
-        const adminId = parts[2];
-        const data = await env.AZTRACKER_DB.get(key.name, "json");
-        if(data) logs.push({ ts, adminId, ...data });
-      }
-      logs.sort((a, b) => b.ts - a.ts); 
+      const { results } = await env.DB.prepare("SELECT * FROM Audit_Logs ORDER BY timestamp DESC LIMIT 50").all();
+      const logs = results.map(row => {
+        const payload = row.details ? JSON.parse(row.details) : {};
+        return {
+          ts: row.timestamp,
+          adminId: row.actor_id,
+          adminHandle: row.actor_name,
+          action: row.action,
+          target: row.target_id,
+          targetHandle: payload.targetHandle,
+          details: payload.details
+        };
+      });
+      
       return new Response(JSON.stringify(logs), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -1777,6 +1781,13 @@ async function verifyInitData(telegramInitData, botToken) {
     const hexSignature = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
     
     if (hexSignature === hash) {
+      const authDate = parseInt(urlParams.get('auth_date') || '0', 10);
+      const now = Math.floor(Date.now() / 1000);
+      if (now - authDate > 86400) {
+        console.warn("InitData Verification Error: auth_date expired");
+        return null;
+      }
+      
       const userStr = urlParams.get('user');
       if (userStr) return JSON.parse(userStr);
     }
@@ -2123,10 +2134,9 @@ async function logAudit(env, adminId, action, target, details) {
     }
 
     const timestamp = Date.now();
-    const key = `audit:${timestamp}:${adminId}`;
-    const payload = { action, target, targetHandle, details, adminHandle };
-    // Exact 7-day TTL ensures automatic GC
-    await env.AZTRACKER_DB.put(key, JSON.stringify(payload), { expirationTtl: 604800 });
+    await env.DB.prepare(
+      "INSERT INTO Audit_Logs (timestamp, actor_id, actor_name, action, target_id, details) VALUES (?, ?, ?, ?, ?, ?)"
+    ).bind(timestamp, adminId.toString(), adminHandle, action, target ? target.toString() : null, JSON.stringify({ targetHandle, details })).run();
   } catch (e) {
     console.error("Audit log failed to write:", e);
   }
