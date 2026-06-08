@@ -403,6 +403,28 @@ export default {
       const { action, targetId, data } = body;
       const adminId = auth.user.id.toString();
       
+      if (action === "restore_kv") {
+        ctx.waitUntil((async () => {
+          const rejectedUsers = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'rejected'").all();
+          let count = 0;
+          const now = Date.now();
+          for (const row of rejectedUsers.results) {
+            const products = await env.AZTRACKER_DB.get("user:" + row.chat_id + ":products", "json");
+            if (products) {
+              for (const p of products) {
+                const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
+                const asin = asinMatch ? asinMatch[1] : `ASIN${Math.floor(Math.random()*1000)}`;
+                await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now).run();
+                await env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, 1, ?)").bind(row.chat_id, asin, p.target_price || null, now).run();
+                count++;
+              }
+            }
+          }
+          await sendTelegram(env, adminId, `✅ <b>Restoration Complete</b>\n\nRestored ${count} paused products for rejected users from KV.`);
+        })());
+        return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
+      }
+      
       if (action === "force_scrape") {
         ctx.waitUntil((async () => {
           try {
@@ -448,15 +470,18 @@ export default {
         } else if (action === "revoke") {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
         await env.DB.batch([
-          env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ?").bind(targetId),
+          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(targetId),
           env.DB.prepare("UPDATE Users SET role = 'rejected' WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil(sendTelegram(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
-        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and deleted subscriptions"));
+        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and froze subscriptions"));
       } else if (action === "unban") {
-        await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
+        await env.DB.batch([
+          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId),
+          env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId)
+        ]);
         ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access has been RESTORED.</b>"));
-        ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user"));
+        ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user and resumed subscriptions"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
           ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
@@ -2875,9 +2900,14 @@ function renderCrmHTML() {
                         <div class="text-gray-400 text-sm">Last Sync</div>
                         <div class="text-sm font-medium" id="stat-sync">--</div>
                     </div>
-                    <button onclick="triggerGlobalScrape()" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
-                    </button>
+                    <div class="flex gap-2">
+                        <button onclick="performAction('restore_kv', 'global')" class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Restore Products
+                        </button>
+                        <button onclick="triggerGlobalScrape()" class="bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
+                        </button>
+                    </div>
                 </div>
             </section>
 
