@@ -638,7 +638,7 @@ async function executeScrapeEngine(env, force = false) {
            queueBatch.push({
              type: 'telegram_alert',
              chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
-             text: `🔥 <b>DEAL ALERT!</b>\n📦 <b>${liveItem.name || liveItem.asin}</b>\n\n💰 Now: <b>${finalNewPrice} EGP</b> (🔽 ${dropPct.toFixed(1)}%)\n📉 Average: ${histMean.toFixed(1)} EGP\n\n🔗 <a href="https://www.amazon.eg/dp/${liveItem.asin}?tag=${env.AMZN_ASSOCIATES_TAG}">View on Amazon</a>`
+             text: `🔥 <b>DEAL ALERT!</b>\n📦 <b>${liveItem.name || liveItem.asin}</b>\n\n💰 Now: <b>${finalNewPrice} EGP</b> (🔽 ${dropPct.toFixed(1)}%)\n📉 Average: ${histMean.toFixed(1)} EGP\n\n🔗 <a href="https://www.amazon.eg/dp/${liveItem.asin}?tag=${env.AMAZON_PARTNER_TAG || env.AMZN_ASSOCIATES_TAG}">View on Amazon</a>`
            });
            
            d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_broadcast_time_ms = ?, last_broadcast_price = ? WHERE asin = ?").bind(now, finalNewPrice, liveItem.asin));
@@ -1579,7 +1579,8 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
   const queryParams = new URLSearchParams();
   if (targetMerchant) queryParams.set("m", targetMerchant);
-  if (env.AMZN_ASSOCIATES_TAG) queryParams.set("tag", env.AMZN_ASSOCIATES_TAG);
+  const partnerTag = env.AMAZON_PARTNER_TAG || env.AMZN_ASSOCIATES_TAG;
+  if (partnerTag) queryParams.set("tag", partnerTag);
   const queryString = queryParams.toString();
   if (queryString) productUrl += `?${queryString}`;
 
@@ -1831,7 +1832,8 @@ function buildProductUrl(pid, env, merchantId = null) {
   let productUrl = `https://www.amazon.eg/dp/${cleanPid}`;
   const queryParams = new URLSearchParams();
   if (merchantId) queryParams.set("m", merchantId);
-  if (env.AMZN_ASSOCIATES_TAG) queryParams.set("tag", env.AMZN_ASSOCIATES_TAG);
+  const partnerTag = env.AMAZON_PARTNER_TAG || env.AMZN_ASSOCIATES_TAG;
+  if (partnerTag) queryParams.set("tag", partnerTag);
   const queryString = queryParams.toString();
   if (queryString) productUrl += `?${queryString}`;
   return productUrl;
@@ -2845,39 +2847,39 @@ function renderCrmHTML() {
                 const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800', 'rejected': 'text-red-400 border-red-400/20 bg-red-400/10' };
                 const roleStyle = roleColors[u.role] || roleColors['rejected'];
                 
-                return \\\`
+                return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">
-                    \\\${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
+                    \${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
                     
                     <!-- Top Row: Name and View Items -->
                     <div class="flex justify-between items-center mb-2 relative z-10">
                         <div class="font-medium text-sm font-semibold truncate">
-                            \\\${u.first_name || 'User'} (\\\${u.username ? '@' + u.username : u.chat_id})
+                            \${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.chat_id})
                         </div>
-                        <button onclick="openDrawer('\\\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
+                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
                     </div>
 
                     <!-- Second Row: Tags & Info -->
                     <div class="flex items-center gap-2 mb-3 relative z-10">
-                        \\\${(u.role === 'admin' || u.role === 'root') ? \\\`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \\\${roleStyle}">\\\${u.role}</span>\\\` : ''}
-                        <span class="text-xs text-gray-500">\\\${u.active_items} / \\\${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
+                        \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>\` : ''}
+                        <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
                         <span class="text-xs text-gray-500">•</span>
-                        <span class="text-xs text-gray-500">Joined: \\\${new Date(u.created_at).toLocaleDateString()}</span>
+                        <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
                     </div>
 
                     <!-- Third Row: Actions -->
                     <div class="flex gap-2 relative z-10">
-                        \\\${u.role === 'rejected' ? 
-                            \\\`<button onclick="performAction('unban', '\\\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\\\`
+                        \${u.role === 'rejected' ? 
+                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\`
                         :
-                            \\\`<button onclick="messageUser('\\\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
-                            \\\${(u.role === 'admin' || u.role === 'root') ? '' : \\\`<button onclick="changeLimit('\\\${u.chat_id}', \\\${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\\\`}
-                            \\\${u.role === 'approved' ? \\\`<button onclick="performAction('promote', '\\\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\\\` : ''}
-                            \\\${u.role === 'admin' ? \\\`<button onclick="performAction('demote', '\\\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\\\` : ''}
-                            \\\${u.role !== 'root' ? \\\`<button onclick="performAction('ban', '\\\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition text-center border border-red-500/20">Delete</button>\\\` : ''}\\\`
+                            \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
+                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\`}
+                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
+                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
+                            \${u.role !== 'root' ? \`<button onclick="performAction('ban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition text-center border border-red-500/20">Delete</button>\` : ''}\`
                         }
                     </div>
-                </div>\\\`;
+                </div>\`;
             }).join('');
         }
 
