@@ -575,7 +575,7 @@ async function executeScrapeEngine(env, force = false) {
     }
 
     const { results: subs } = await env.DB.prepare(
-      "SELECT chat_id, target_price, alert_sent_new, alert_sent_used FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
+      "SELECT chat_id, target_price, alert_sent_new, alert_sent_used, added_at FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
     ).bind(liveItem.asin).all();
 
     let targetBypass = false;
@@ -628,6 +628,22 @@ async function executeScrapeEngine(env, force = false) {
       const isStandardDeal = (zScore <= -1.5) && (dropPct >= 15.0);
       const isAtlDeal = isAtlNew && (zScore <= -1.0) && (dropPct >= 10.0);
       if (isStandardDeal || isAtlDeal) vFlag = 1;
+      
+      if (vFlag === 1 && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
+        const lastTime = oldItem.last_broadcast_time_ms || 0;
+        const lastPrice = oldItem.last_broadcast_price || 0;
+        const lockExpired = now - lastTime > 86400000;
+        
+        if (lockExpired || (lastPrice > 0 && finalNewPrice <= lastPrice * 0.90)) {
+           queueBatch.push({
+             type: 'telegram_alert',
+             chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
+             text: `🔥 <b>DEAL ALERT!</b>\n📦 <b>${liveItem.name || liveItem.asin}</b>\n\n💰 Now: <b>${finalNewPrice} EGP</b> (🔽 ${dropPct.toFixed(1)}%)\n📉 Average: ${histMean.toFixed(1)} EGP\n\n🔗 <a href="https://www.amazon.eg/dp/${liveItem.asin}?tag=${env.AMZN_ASSOCIATES_TAG}">View on Amazon</a>`
+           });
+           
+           d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_broadcast_time_ms = ?, last_broadcast_price = ? WHERE asin = ?").bind(now, finalNewPrice, liveItem.asin));
+        }
+      }
     }
 
     let seenAmazonEgAt = oldItem.seen_amazon_eg_at;
@@ -706,16 +722,23 @@ async function executeScrapeEngine(env, force = false) {
       }
     }
       
+    const MS_90_DAYS = 7776000000; // 90 * 24 * 60 * 60 * 1000
     for (const sub of subs) {
+      if (sub.added_at && (now - sub.added_at > MS_90_DAYS)) {
+        d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
+        queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text: `⏰ <b>Tracking Expired</b>\nASIN <code>${liveItem.asin}</code> has been tracked for over 90 days. Tracking paused automatically to save limits.\n\nSend /manage to review your items.` });
+        continue;
+      }
+
       let alertSentNew = sub.alert_sent_new;
       let alertSentUsed = sub.alert_sent_used;
       
-      const isNewDrop = finalNewPrice !== null && (sub.target_price ? finalNewPrice <= sub.target_price : (oldItem.new_price && finalNewPrice < oldItem.new_price));
-      const isUsedDrop = finalUsedPrice !== null && (sub.target_price ? finalUsedPrice <= sub.target_price : (oldItem.used_price && finalUsedPrice < oldItem.used_price));
-      const isAmznDrop = finalAmazonPrice !== null && (sub.target_price ? finalAmazonPrice <= sub.target_price : (oldItem.amazon_price && finalAmazonPrice < oldItem.amazon_price));
+      const isNewDrop = finalNewPrice !== null && (sub.target_price ? finalNewPrice <= sub.target_price : (oldItem.new_price === null || finalNewPrice < oldItem.new_price));
+      const isUsedDrop = finalUsedPrice !== null && (sub.target_price ? finalUsedPrice <= sub.target_price : (oldItem.used_price === null || finalUsedPrice < oldItem.used_price));
+      const isAmznDrop = finalAmazonPrice !== null && (sub.target_price ? finalAmazonPrice <= sub.target_price : (oldItem.amazon_price === null || finalAmazonPrice < oldItem.amazon_price));
 
       if (isNewDrop || isAmznDrop) {
-        if (!alertSentNew || (oldItem.new_price && finalNewPrice < oldItem.new_price)) {
+        if (!alertSentNew || oldItem.new_price === null || finalNewPrice < oldItem.new_price) {
           alertSentNew = 1;
           const dropPct = oldItem.new_price ? Math.round(((oldItem.new_price - finalNewPrice) / oldItem.new_price) * 100) : 0;
           const pctStr = dropPct > 0 ? ` (🔽 ${dropPct}%)` : '';
@@ -738,7 +761,7 @@ async function executeScrapeEngine(env, force = false) {
       }
 
       if (isUsedDrop) {
-        if (!alertSentUsed || (oldItem.used_price && finalUsedPrice < oldItem.used_price)) {
+        if (!alertSentUsed || oldItem.used_price === null || finalUsedPrice < oldItem.used_price) {
           alertSentUsed = 1;
           const dropPct = oldItem.used_price ? Math.round(((oldItem.used_price - finalUsedPrice) / oldItem.used_price) * 100) : 0;
           const pctStr = dropPct > 0 ? ` (🔽 ${dropPct}%)` : '';
