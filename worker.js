@@ -428,23 +428,48 @@ export default {
                 
                 if (itemData) {
                   await env.DB.prepare(`
-                    INSERT OR REPLACE INTO Global_Products 
-                    (asin, name, new_price, used_price, amazon_price, history_new, history_used, history_amazon, last_updated, new_seller, used_seller, amazon_seller)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                  `).bind(
-                    asin, 
-                    p.name || itemData.name || "Unknown Product",
-                    itemData.new_price || null,
-                    itemData.used_price || null,
-                    itemData.amazon_price || null,
-                    itemData.history_new ? JSON.stringify(itemData.history_new) : "[]",
-                    itemData.history_used ? JSON.stringify(itemData.history_used) : "[]",
-                    itemData.history_amazon ? JSON.stringify(itemData.history_amazon) : "[]",
-                    itemData.last_updated || now,
-                    itemData.new_seller || null,
-                    itemData.used_seller || null,
-                    itemData.amazon_seller || null
-                  ).run();
+                    // Calculate derived stats from legacy history
+                    let histMean = 0;
+                    let histStdev = 0;
+                    let isAtlNew = 0;
+                    
+                    if (itemData.history_new && Array.isArray(itemData.history_new) && itemData.history_new.length >= 2) {
+                        const newPrices = itemData.history_new;
+                        const sum = newPrices.reduce((a, b) => a + b, 0);
+                        const mean = sum / newPrices.length;
+                        const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (newPrices.length - 1);
+                        histMean = mean;
+                        histStdev = Math.sqrt(variance);
+                        const atl = Math.min(...newPrices);
+                        isAtlNew = (itemData.new_price && itemData.new_price < atl) ? 1 : 0;
+                        
+                        // Migrate to new KV history format
+                        const migratedHistory = newPrices.map((price, idx) => ({
+                            t: Math.floor(now / 1000) - ((newPrices.length - idx) * 3600), // Fake hourly timestamps
+                            n: price,
+                            u: (itemData.history_used && itemData.history_used[idx]) ? itemData.history_used[idx] : null
+                        }));
+                        await env.AZTRACKER_DB.put("history:" + asin, JSON.stringify(migratedHistory));
+                    }
+                    
+                    await env.DB.prepare(`
+                      INSERT OR REPLACE INTO Global_Products 
+                      (asin, name, new_price, used_price, amazon_price, hist_mean, hist_stdev, is_atl_new, last_updated, new_seller, used_seller, amazon_seller)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `).bind(
+                      asin, 
+                      p.name || itemData.name || "Unknown Product",
+                      itemData.new_price || null,
+                      itemData.used_price || null,
+                      itemData.amazon_price || null,
+                      histMean,
+                      histStdev,
+                      isAtlNew,
+                      itemData.last_updated || now,
+                      itemData.new_seller || null,
+                      itemData.used_seller || null,
+                      itemData.amazon_seller || null
+                    ).run();
                 } else {
                   await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name || "Unknown Product", now).run();
                 }
