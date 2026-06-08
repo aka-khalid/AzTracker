@@ -253,10 +253,33 @@ export default {
              await env.DB.batch(stmts.slice(i, i + 50));
           }
         }
-        return new Response(`Successfully migrated \${migratedCount} subscriptions and \${approvedIds.length} users!`, { status: 200 });
+        return new Response(`Successfully migrated ${migratedCount} subscriptions and ${approvedIds.length} users!`, { status: 200 });
       } catch (err) {
-        return new Response(`Migration failed: \${err.message}`, { status: 500 });
+        return new Response(`Migration failed: ${err.message}\n${err.stack}`, { status: 500 });
       }
+    }
+
+    if (url.pathname === "/api/crm/audit" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const { results } = await env.DB.prepare("SELECT * FROM Audit_Logs ORDER BY timestamp DESC LIMIT 50").all();
+      const logs = results.map(row => {
+        const payload = row.details ? JSON.parse(row.details) : {};
+        return {
+          ts: row.timestamp,
+          adminId: row.actor_id,
+          adminHandle: row.actor_name,
+          action: row.action,
+          target: row.target_id,
+          targetHandle: payload.targetHandle,
+          details: payload.details
+        };
+      });
+      return new Response(JSON.stringify(logs), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     if (url.pathname === "/api/crm/data" && request.method === "GET") {
@@ -2827,6 +2850,47 @@ function renderCrmHTML() {
                 }
                 document.getElementById(t + '-container').classList.toggle('hidden', t !== tabId);
             });
+            
+            if (tabId === 'audit-view' && !appData.auditLoaded) {
+                loadAuditTab();
+            }
+        }
+        
+        async function loadAuditTab() {
+            const container = document.getElementById('audit-list');
+            container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-400">Loading audit log...</div>';
+            
+            const logs = await fetchAPI('/audit');
+            if (!logs) {
+                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-red-400">Failed to load audit logs</div>';
+                return;
+            }
+            appData.auditLoaded = true;
+            
+            if (logs.length === 0) {
+                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-500 border border-gray-800 border-dashed">No administrative actions logged in the past 7 days.</div>';
+                return;
+            }
+            
+            container.innerHTML = logs.map(log => {
+                const date = new Date(log.ts);
+                const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' + 
+                              date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                
+                const adminDisplay = log.adminHandle ? log.adminHandle + ' <span class="text-[10px] opacity-60">(' + log.adminId + ')</span>' : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + log.adminId + '</code>';
+                let targetDisplay = '<code class="bg-gray-800 px-1 py-0.5 rounded">' + log.target + '</code>';
+                if (log.targetHandle) targetDisplay = log.targetHandle + ' <span class="text-[10px] opacity-60">(' + log.target + ')</span>';
+                
+                return '<div class="glass rounded-xl p-4">' +
+                    '<div class="flex justify-between items-center text-xs opacity-80 border-b border-gray-700/50 pb-2 mb-2">' +
+                        '<span>🕒 ' + timeStr + '</span>' +
+                        '<span>' + adminDisplay + '</span>' +
+                    '</div>' +
+                    '<div class="text-brand-400 font-bold text-sm mb-2">' + log.action + '</div>' +
+                    '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold opacity-80 w-16">Target:</span><span class="break-all">' + targetDisplay + '</span></div>' +
+                    '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">Details:</span><span class="break-all">' + log.details + '</span></div>' +
+                '</div>';
+            }).join('');
         }
 
         function switchTab(tab) {
