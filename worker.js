@@ -216,13 +216,16 @@ export default {
         const now = Date.now();
         
         const adminIds = (await env.AZTRACKER_DB.get("global:admins", "json")) || [];
+        const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+        const rootAdminIds = rootAdminsRaw.split(",").filter(Boolean);
+        
         const approvedIds = (await env.AZTRACKER_DB.get("global:approved_users", "json")) || [];
         const bannedIds = (await env.AZTRACKER_DB.get("global:banned_users", "json")) || [];
         
-        const allValidUsers = Array.from(new Set([...approvedIds, ...adminIds]));
+        const allValidUsers = Array.from(new Set([...approvedIds, ...adminIds, ...rootAdminIds]));
 
         for (const uid of allValidUsers) {
-          const role = adminIds.includes(uid) ? 'admin' : 'approved';
+          const role = (adminIds.includes(uid) || rootAdminIds.includes(uid.toString())) ? 'admin' : 'approved';
           stmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uid, role, now));
         }
         for (const uid of bannedIds) {
