@@ -423,38 +423,37 @@ export default {
                 const asin = asinMatch ? asinMatch[1] : null;
                 if (!asin) continue;
                 
+                // Always overwrite Global_Products with pristine KV history to fix corrupted test data
+                const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
+                
+                if (itemData) {
+                  await env.DB.prepare(`
+                    INSERT OR REPLACE INTO Global_Products 
+                    (asin, name, new_price, used_price, amazon_price, history_new, history_used, history_amazon, last_updated, new_seller, used_seller, amazon_seller)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  `).bind(
+                    asin, 
+                    p.name || itemData.name || "Unknown Product",
+                    itemData.new_price || null,
+                    itemData.used_price || null,
+                    itemData.amazon_price || null,
+                    itemData.history_new ? JSON.stringify(itemData.history_new) : "[]",
+                    itemData.history_used ? JSON.stringify(itemData.history_used) : "[]",
+                    itemData.history_amazon ? JSON.stringify(itemData.history_amazon) : "[]",
+                    itemData.last_updated || now,
+                    itemData.new_seller || null,
+                    itemData.used_seller || null,
+                    itemData.amazon_seller || null
+                  ).run();
+                } else {
+                  await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name || "Unknown Product", now).run();
+                }
+                
                 if (!existingAsins.has(asin)) {
-                  // It's missing! Fetch its history from item:<asin>
-                  const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
-                  
-                  if (itemData) {
-                    await env.DB.prepare(`
-                      INSERT OR REPLACE INTO Global_Products 
-                      (asin, name, new_price, used_price, amazon_price, history_new, history_used, history_amazon, last_updated, new_seller, used_seller, amazon_seller)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `).bind(
-                      asin, 
-                      p.name || itemData.name || "Unknown Product",
-                      itemData.new_price || null,
-                      itemData.used_price || null,
-                      itemData.amazon_price || null,
-                      itemData.history_new ? JSON.stringify(itemData.history_new) : "[]",
-                      itemData.history_used ? JSON.stringify(itemData.history_used) : "[]",
-                      itemData.history_amazon ? JSON.stringify(itemData.history_amazon) : "[]",
-                      itemData.last_updated || now,
-                      itemData.new_seller || null,
-                      itemData.used_seller || null,
-                      itemData.amazon_seller || null
-                    ).run();
-                  } else {
-                    await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name || "Unknown Product", now).run();
-                  }
-                  
                   const isPaused = (row.role === 'rejected' || p.paused) ? 1 : 0;
                   await env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(
                     row.chat_id, asin, p.target_price || null, isPaused, now
                   ).run();
-                  
                   count++;
                 }
               }
