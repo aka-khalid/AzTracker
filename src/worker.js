@@ -47,9 +47,6 @@ export default {
   },
 
   async queue(batch, env, ctx) {
-    // FORCE KILL SWITCH: Immediately return to drain the queue and kill any active scraping chains.
-    return;
-    
     if (batch.queue === 'scraper-queue') {
       for (const msg of batch.messages) {
         try {
@@ -57,7 +54,7 @@ export default {
           const hasMore = await executeScrapeEngine(env, offset);
           if (hasMore) {
             // Recurse: Trigger the next batch with a 2-second linear delay
-            await env.SCRAPER_QUEUE.send({ offset: offset + 10 }, { delaySeconds: 2 });
+            await env.SCRAPER_QUEUE.send({ offset: offset + 10 }, { delaySeconds: 1 });
           }
           msg.ack();
         } catch (e) {
