@@ -88,7 +88,7 @@ export class AmazonEdgeParser {
         'Content-Type': 'application/json; charset=utf-8',
         'Accept': 'application/json, text/javascript',
         'Authorization': `Bearer ${this.accessToken}`,
-        'X-Marketplace': this.endpointHost === 'www.amazon.eg' ? 'EG' : 'US'
+        'X-Marketplace': this.endpointHost
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000)
@@ -97,7 +97,7 @@ export class AmazonEdgeParser {
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`[AmazonEdgeParser] Creators API HTTP Error: ${response.status}`, errorBody);
-      throw new Error(`Creators API Error: ${response.status}`);
+      throw new Error(`Creators API Error: ${response.status} - Body: ${errorBody}`);
     }
 
     const data = await response.json() as any;
