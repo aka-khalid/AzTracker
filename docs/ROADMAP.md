@@ -192,22 +192,107 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ---
 
-## 🚀 Phase 6: Core Engine Modernization
+## 🔁 Phase 5: Scheduler Resilience & Uptime Visibility (Circuit Breaker)
+
+- [x] **GitHub Actions Health Detection in `triggerWorkflow()`**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Make `triggerWorkflow()` return structured status information so the scheduler can detect GitHub API outages.<br>
+  **The Strategy:** Refactor `triggerWorkflow()` to return the raw `Response` object. Wrap the fetch in a `try/catch` to handle DNS/Timeout failures and return a synthetic `{ ok: false, status: 0 }` object.<br>
+  **🤖 AI Execution Prompt:** *"Refactor the `triggerWorkflow()` function to return the raw `Response` object instead of throwing an error. Wrap the `fetch` call in a `try/catch` block to handle DNS or timeout failures, returning a synthetic `{ ok: false, status: 0 }` object in the catch block."*
+  </details>
+- [x] **Colo-Local Circuit Breaker (Open / Half-Open / Closed)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Stop hammering a dead GitHub API during outages, naturally throttling via an Edge-based state machine.<br>
+  **The Strategy:** Utilize `caches.default` to create an `/_internal/circuit/open` flag. *Note: Because Cloudflare Cache is local to the specific datacenter, and cron-job.org routes through a consistent regional node, this acts as a perfect, zero-KV-read isolated circuit breaker.* It opens for 15 minutes upon a 5xx failure, probes once at the expiration (Half-Open), and fully closes upon a 2xx success.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js` inside `handleScheduler()`, implement an Edge-based circuit breaker using `caches.default`. If `triggerWorkflow()` returns a 5xx status, write a synthetic cache response to `/_internal/circuit/open` with a 15-minute TTL. While this cache key exists, instantly reject incoming cron pings with HTTP 503. After expiration, allow one single 'Half-Open' probe; if successful (2xx), clear the circuit and resume normal operations."*
+  </details>
+- [x] **Instant Alert & Auto-Recovery Notifications**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Notify the Root Admin instantly when the system degrades, and confirm when it self-heals.<br>
+  **The Strategy:** Introduce an `/_internal/circuit/alerted` cache key with a 2-hour TTL to suppress spam. Fire a Telegram alert on the initial break, and fire a "✅ System Recovered" alert when a successful 2xx response clears the circuit block.<br>
+  **🤖 AI Execution Prompt:** *"Extend the circuit breaker logic in `worker.js` to dispatch Telegram notifications to the Root Admins. When the circuit transitions to OPEN, check for an `/_internal/circuit/alerted` cache key. If absent, send a '🚨 GitHub Actions Outage' alert and set the alerted cache key with a 2-hour TTL. When the circuit successfully transitions from HALF-OPEN back to CLOSED, send a '✅ System Recovered' alert and delete the alerted cache key."*
+  </details>
+- [x] **Scheduler Status Endpoint (`/scheduler/status`)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Provide a lightweight authenticated endpoint to query the current circuit state.<br>
+  **The Strategy:** Guarded by `x-scheduler-key`, this endpoint returns a JSON object containing the circuit status, the alerted flag, and the upcoming trigger slots for the hour, requiring absolutely zero KV reads to execute.<br>
+  **🤖 AI Execution Prompt:** *"In `worker.js`, create a new route handler for `/scheduler/status` guarded by the `x-scheduler-key` header. It should return a JSON response containing the current circuit state (CLOSED, OPEN, or HALF-OPEN), the status of the `alerted` cache flag, and the array of calculated hourly trigger slots from `buildHourlySlots()`."*
+  </details>
+
+---
+
+## ⚙️ Phase 6.0-6.7: Operational Tooling & Platform Expansion (The Gaps)
+
+- [ ] **Interactive One-Command Setup Script (`setup.py`)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Reduce the full deployment process to one terminal command that requests standard credentials and auto-generates cryptographic secrets.<br>
+  **The Strategy:** Create `setup.py`. Programmatically generate `.gitignore` first to prevent secret leakage. Auto-generate `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` as 32-character secure strings. Validate all manual inputs via regex and pass them through to the automated provisioning functions.
+  </details>
+- [ ] **Cloudflare KV Namespace Auto-Creator**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Automatically provision the `AZTRACKER_DB` KV namespace and inject it into `wrangler.toml`.<br>
+  **The Strategy:** `POST` to the Cloudflare API to create the namespace. Parse the `result.id` from the response and use regex to overwrite the `id = "..."` line inside `wrangler.toml` in place.
+  </details>
+- [ ] **GitHub Repository Secrets Auto-Provisioner**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Push all repository secrets to GitHub programmatically using `PyNaCl` encryption.<br>
+  **The Strategy:** Fetch the repo's public key from the GitHub API. Encrypt each secret locally using `crypto_box_seal` and push them to the Actions Secrets endpoint.
+  </details>
+- [ ] **Cloudflare Worker Secrets Auto-Injector**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Automate the injection of production secrets into the deployed Cloudflare Worker environment.<br>
+  **The Strategy:** Read the worker name from `wrangler.toml`. Poll the GitHub Actions API to ensure the worker deployment pipeline succeeds, then `PUT` the secrets directly into the Cloudflare Worker via their REST API.
+  </details>
+- [ ] **Telegram Webhook Auto-Registrar & Health Gate**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Programmatically wire the Telegram API to the newly deployed Cloudflare Worker and run a full diagnostic probe.<br>
+  **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
+  </details>
+- [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+  
+  **The Goal:** Scale the bot beyond Egypt using the foundation built in Phase 4.<br>
+  **The Strategy:** Leverage the `productDomain` extraction implemented in the Phase 4 Geofence update. Inject `region: productDomain` into the `user:{chat_id}` KV object when a product is added. Move the `AMZN_ASSOCIATES_TAG` and `Country` hardcodes out of the global scope. Dynamically group `fetch_batch` execution queues by region in `price_tracker.py` rather than pooling all ASINs universally together.<br>
+  **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region rather than pooling all ASINs together."*
+  </details>
+
+---
+
+## 🚀 Phase 6.8 - 6.10: Core Engine Modernization
 
 - [x] **Phase 6.8: Native D1 Migration & UI Overhaul**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Eliminate legacy Cloudflare KV limits and build a unified Command Center.
-  **The Strategy:** Fully migrated the relational models (`Users`, `Subscriptions`, `Global_Products`) to Cloudflare D1 (SQLite). Converted the old `/manage` commands into an interactive Telegram Web App CRM Dashboard built with Tailwind and Chart.js.
+  **The Goal:** Eliminate legacy Cloudflare KV limits, establish relational data integrity, and build a unified interactive Command Center.
+  **The Strategy:** Fully migrated the relational models (`Users`, `Subscriptions`, `Global_Products`, `Audit_Logs`, and `Bot_States`) to Cloudflare D1 (SQLite) using a native schema. Converted the legacy `/manage` text commands into an interactive Telegram Web App CRM Dashboard built with Tailwind CSS. Integrated native Chart.js inline charts directly within the Web App, alongside a lazy history scrubber and security hardening.
   </details>
 
 - [x] **Phase 6.10: Monolith Decomposition & Async Queues**
   <details>
   <summary><b>View Execution Brief</b></summary>
   
-  **The Goal:** Break apart the `worker.js` monolith, implement pure ES6 modules, and secure the Two-Phase Commit using isolated Cloudflare Queues.
-  **The Strategy:** Decomposed the 2500+ line worker into `src/core`, `src/routes`, and `src/workers`. Shifted the PA-API scraping payload off the cron thread and into a `scraper-queue`. Shifted the Telegram dispatch payloads into a `telegram-outbox` queue to gracefully handle HTTP 429 rate limits without crashing the engine.
+  **The Goal:** Break apart the legacy monolithic worker, transition to pure ES6 modules, and secure execution limits using isolated Cloudflare Queues.
+  **The Strategy:** Decomposed the 2500+ line worker into a highly modular architecture (`src/core`, `src/routes`, `src/workers`, and `src/api`). Replaced the deprecated PA-API with the modern Creators API. Shifted the intensive Amazon scraping payload off the synchronous cron thread and into an asynchronous `scraper-queue`. Separated outbound Telegram notifications into a `telegram-outbox` queue to gracefully handle HTTP rate limits without crashing the main engine or violating the Two-Phase Commit boundary.
   </details>
 
 ---
