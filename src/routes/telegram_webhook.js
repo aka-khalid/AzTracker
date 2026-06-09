@@ -61,19 +61,9 @@ async function handleMessage(message, env, baseUrl, ctx) {
   const activeState = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(stateKey).first('value');
   
   // --- OVERRIDE BLOCK ---
-  if (text === "/start" || text === "/manage") {
+  if (text === "/start") {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
-    
-    if (text === "/manage" && isAdmin) {
-      await sendAppMessage(env, chatId, `👑 <b>AzTracker Command Center</b>\n\nClick below to launch the secure Serverless Web App.`, {
-        inline_keyboard: [
-          [{ text: "🚀 Launch Command Center", web_app: { url: `${baseUrl}/crm` } }],
-          [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
-        ]
-      });
-      return;
-    }
     
     await renderMainMenu(env, chatId, null, isAdmin, baseUrl);
     return;
