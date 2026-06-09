@@ -1068,12 +1068,23 @@ async function executeScrapeEngine(env, offset = 0) {
           if (targetHitUsed) alertSentUsed = 1;
           
       } else {
-          // Drops without target
+          // Drops without target — mirror Python's full no-target evaluation block
           if (finalNewPrice !== null) {
               if (oldItem.new_price === null && oldItem.last_updated) {
+                  // Gap 9.5: New restock (already existed)
                   queueAlert(sub.chat_id, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               } else if (oldItem.new_price !== null && finalNewPrice < oldItem.new_price) {
                   queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              }
+          }
+          
+          // Gap 9.5: Used restock alert — fires when used_price appears after being null
+          // Gap 9.6: Used drop alert — fires when used_price drops, even with no target set
+          if (finalUsedPrice !== null) {
+              if (oldItem.used_price === null && oldItem.last_updated) {
+                  queueAlert(sub.chat_id, "(Used - Amazon Resale - Restocked)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              } else if (oldItem.used_price !== null && finalUsedPrice < oldItem.used_price) {
+                  queueAlert(sub.chat_id, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               }
           }
       }
