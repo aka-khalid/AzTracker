@@ -1956,8 +1956,8 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
     const keyboard = {
     inline_keyboard: [
       [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
-      [{ text: product.paused ? "▶️ Resume Checking" : "⏸️ Pause Checking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
+        { text: product.paused ? "▶️ Resume Checking" : "⏸️ Pause Checking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` },
         targetBtn
       ],
       [
