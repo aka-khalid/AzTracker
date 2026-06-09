@@ -14,7 +14,7 @@ export async function queue(batch, env, ctx) {
           msg.ack();
         } catch (e) {
           console.error("Scraper Queue Error:", e);
-          msg.retry();
+          msg.retry({ delaySeconds: 30 });
         }
       }
       return;

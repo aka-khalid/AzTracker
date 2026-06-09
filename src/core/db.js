@@ -1,21 +1,24 @@
-// 💥 THE VULNERABILITY FIX 💥
-// Retains monolithic array backwards compatibility to fix UI crashes 
-// while introducing Cache-Busting fallback to fix the TOCTOU overwrite race condition.
 export async function getUserRoles(chatId, env, ctx) {
+  const cache = caches.default;
+  const cacheReq = new Request(`https://auth.internal/roles/${chatId}`);
+  const cached = await cache.match(cacheReq);
+  if (cached) {
+    return await cached.json();
+  }
+
   const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
   const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
   let isRootAdmin = rootAdmins.includes(chatId);
-  
-  // Query D1 directly for live state
+
   const { results: adminRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'admin' ORDER BY created_at ASC").all();
   const admins = adminRows.map(r => r.chat_id);
-  
+
   const { results: approvedRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
   const approvedUsers = approvedRows.map(r => r.chat_id);
-  
+
   const user = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
   let role = user ? user.role : null;
-  
+
   if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatId) {
       isRootAdmin = true;
   }
@@ -24,12 +27,17 @@ export async function getUserRoles(chatId, env, ctx) {
   const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
   const isRejected = role === "rejected";
 
-  return { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers };
+  const result = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers };
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(result), {
+      headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
+    })));
+  }
+  return result;
 }
 
 export async function resolveUserProfile(env, id, ctx) {
   const cache = caches.default;
-  // Use a synthetic internal URL as the cache key
   const cacheReq = new Request(`https://profile.internal/user/${id}`);
 
   const cached = await cache.match(cacheReq);
@@ -39,7 +47,6 @@ export async function resolveUserProfile(env, id, ctx) {
   }
 
   try {
-    // GET request enables native Cloudflare Edge caching
     const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat?chat_id=${id}`);
     const data = await res.json();
 
@@ -50,7 +57,6 @@ export async function resolveUserProfile(env, id, ctx) {
       const formatName = handle ? `${fullName} (${handle})` : fullName;
       const label = formatName || id;
 
-      // Cache the resolved name for 24 hours (86400 seconds)
       if (ctx && ctx.waitUntil) {
         ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify({ label, handle }), {
           headers: { "Cache-Control": "s-maxage=86400", "Content-Type": "application/json" }
@@ -67,13 +73,28 @@ export async function resolveUserProfile(env, id, ctx) {
 
 export async function logAudit(env, adminId, action, target, details) {
   try {
-    const adminProfile = await resolveUserProfile(env, adminId, null);
-    const adminHandle = adminProfile.handle || adminProfile.label;
+    let adminHandle = adminId.toString();
+    const { results: adminRows } = await env.DB.prepare(
+      "SELECT first_name, username FROM Users WHERE chat_id = ?"
+    ).bind(adminId.toString()).all();
+    if (adminRows && adminRows.length > 0) {
+      const admin = adminRows[0];
+      const fullName = admin.first_name || '';
+      const handle = admin.username ? `@${admin.username}` : null;
+      adminHandle = handle ? `${fullName} (${handle})` : fullName || adminId.toString();
+    }
 
     let targetHandle = null;
     if (/^\d{6,15}$/.test(target)) {
-      const targetProfile = await resolveUserProfile(env, target, null);
-      targetHandle = targetProfile.handle || targetProfile.label;
+      const { results: targetRows } = await env.DB.prepare(
+        "SELECT first_name, username FROM Users WHERE chat_id = ?"
+      ).bind(target.toString()).all();
+      if (targetRows && targetRows.length > 0) {
+        const tUser = targetRows[0];
+        const fullName = tUser.first_name || '';
+        const handle = tUser.username ? `@${tUser.username}` : null;
+        targetHandle = handle ? `${fullName} (${handle})` : fullName || null;
+      }
     }
 
     const timestamp = Date.now();

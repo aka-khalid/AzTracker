@@ -521,15 +521,13 @@ export async function fetchAPI(request, env, ctx) {
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-        } else if (action === "reject") {
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      } else if (action === "reject") {
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendTelegram(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-        } else if (action === "revoke") {
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      } else if (action === "revoke") {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
         await env.DB.batch([
           env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(targetId),
@@ -545,24 +543,20 @@ export async function fetchAPI(request, env, ctx) {
         ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access has been RESTORED.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user and resumed subscriptions"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-        } else if (action === "promote") {
+      } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendTelegram(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
         ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-        } else if (action === "demote") {
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      } else if (action === "demote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendTelegram(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
         ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-          ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-        } else if (action === "set_limit") {
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      } else if (action === "set_limit") {
         const newLimit = parseInt(data.limit);
         if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
         await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
@@ -987,7 +981,7 @@ export function renderCrmHTML() {
                 if (el) el.style.display = 'none';
             }
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
-            document.getElementById('stat-stat').innerText = appData.systemStats.activeWatchPool || 0;
+            document.getElementById('stat-pool').innerText = appData.systemStats.activeWatchPool || 0;
             const ms = appData.systemStats.lastRunMs;
             document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Never';
             
@@ -1455,7 +1449,6 @@ export function renderCrmHTML() {
         }
 
         // Init
-        document.getElementById('stat-pool').id = 'stat-stat'; // Fix id mapping
         refreshData();
     </script>
 </body>

@@ -1,5 +1,10 @@
 import { getUserRoles, logAudit, resolveUserProfile } from '../core/db.js';
 
+const QUEUE_MAX_DEPTH = 25;
+const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
+const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
+const ALT_SELLER_TTL_MS = 86400000;
+
 export async function handleTelegramWebhook(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -187,7 +192,6 @@ async function handleMessage(message, env, baseUrl, ctx) {
       VALUES (?, ?, ?)
       ON CONFLICT(chat_id, asin) DO NOTHING
     `).bind(chatId, pid, Date.now()).run();
-    if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "ADD_PRODUCT", chatId, `Added product ${pid}`));
     if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "ADD_PRODUCT", chatId, `Added product ${pid}`));
 
 
@@ -550,17 +554,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("confirmDel_")) {
       const pid = data.replace("confirmDel_", "");
       const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\n\n<i>This action cannot be undone.</i>`;
-      
-      await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [
-          [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
-          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
-        ]
-      });
-    }
-    else if (data.startsWith("confirmDel_")) {
-      const pid = data.replace("confirmDel_", "");
-      const text = `⚠️ <b>Confirm Deletion</b>\\n\\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\\n\\n<i>This action cannot be undone.</i>`;
       
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
