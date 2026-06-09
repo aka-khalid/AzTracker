@@ -534,28 +534,22 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
   }
 
-  // Final Broadcast (public channel — always English)
+  // Final Broadcast (public channel — organic Egyptian Arabic)
   if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
       const safe_name = escapeHtml(truncateName(bestDeal.name || bestDeal.asin));
-      const drop_pct_str = `${bestDeal.drop_pct.toFixed(0)}%`;
-
-      const header = bestDeal.is_atl
-          ? t('broadcast.atl_head', 'en') + ` (-${drop_pct_str} from average)`
-          : t('broadcast.exceptional_head', 'en') + ` (-${drop_pct_str} from average)`;
       const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
       const qParams = new URLSearchParams();
       const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
-      const timeStr = getCairoTime(now);
 
-      const broadcast_msg = `${header}\n\n` +
+      const broadcast_msg = `🚨 لقطة 🚨\n\n` +
           `<b>${safe_name}</b>\n\n` +
-          `💵 <b>${formatEGP(bestDeal.price)} EGP</b> <i>(usually ${formatEGP(bestDeal.last_price)})</i>\n\n` +
-          `👉 <b><a href="${broadcast_url}">${t('broadcast.cta_shop', 'en')}</a></b>\n` +
-          `〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-          `🤖 <i>${t('broadcast.cta_more', 'en')}: @AzTrackerr_bot</i>\n` +
-          `🕐 <i>${t('broadcast.price_as_of', 'en', { date: timeStr })}</i>\n\n#ad`;
+          `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n\n` +
+          `👉 <a href="${broadcast_url}">خد الصفقة دلوقتي ←</a>\n\n` +
+          `🤖 @AzTrackerr_bot\n\n` +
+          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">🔗 تابع صفقات أكتر</a>\n\n` +
+          `#ad`;
 
       queueBatch.push({
           type: 'telegram_alert',
@@ -564,8 +558,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           text: broadcast_msg,
           markup: {
               inline_keyboard: [
-                  [{ text: t('broadcast.btn_open', 'en'), url: broadcast_url }],
-                  [{ text: t('alert.btn_disclaimer', 'en'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
+                  [{ text: '🛒 خد الصفقة ←', url: broadcast_url }]
               ]
           }
       });
