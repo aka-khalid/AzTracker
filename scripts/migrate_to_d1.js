@@ -20,13 +20,16 @@ async function generateMigration() {
   // 1. Migrate Users
   const globalApproved = kvData.find(k => k.key === 'global:approved_users')?.value || [];
   const globalAdmins = kvData.find(k => k.key === 'global:admins')?.value || [];
+  const rootAdminId = globalAdmins[0] || 'ROOT_ADMIN'; // Fallback to your ID dynamically
   
   for (const userId of globalApproved) {
     const role = globalAdmins.includes(userId) ? 'admin' : 'approved';
     const limit = 5; // Default fallback
     // Try to find the approved_by sidecar key
     const approvedByKey = kvData.find(k => k.key === `approved_by:${userId}`)?.value || null;
-    const approvedByStr = approvedByKey ? `'${approvedByKey}'` : 'NULL';
+    
+    // If no explicit approver exists, assign it to you (the root admin) instead of NULL or "Legacy"
+    const approvedByStr = approvedByKey ? `'${approvedByKey}'` : `'${rootAdminId}'`;
 
     sqlStatements.push(`INSERT OR IGNORE INTO Users (chat_id, first_name, username, role, item_limit, approved_by, created_at) VALUES ('${userId}', NULL, NULL, '${role}', ${limit}, ${approvedByStr}, ${Date.now()});`);
   }
