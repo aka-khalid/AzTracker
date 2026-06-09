@@ -68,18 +68,19 @@ export class AmazonEdgeParser {
     const results: AmazonItem[] = [];
 
     const payload = {
-      ItemIds: asins,
-      Condition: 'Any',
-      Resources: [
-        'ItemInfo.Title',
-        'OffersV2.Listings.Price',
-        'OffersV2.Listings.Condition',
-        'OffersV2.Listings.MerchantInfo',
-        'OffersV2.Listings.DeliveryInfo.IsBuyBoxWinner'
+      itemIds: asins,
+      itemIdType: 'ASIN',
+      condition: 'Any',
+      resources: [
+        'itemInfo.title',
+        'offersV2.listings.price',
+        'offersV2.listings.condition',
+        'offersV2.listings.merchantInfo',
+        'offersV2.listings.deliveryInfo.isBuyBoxWinner'
       ],
-      PartnerTag: this.partnerTag,
-      PartnerType: 'Associates',
-      Marketplace: this.endpointHost
+      partnerTag: this.partnerTag,
+      partnerType: 'Associates',
+      marketplace: this.endpointHost
     };
 
     const response = await fetch(this.endpoint, {
