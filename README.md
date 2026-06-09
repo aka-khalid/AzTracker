@@ -95,8 +95,8 @@ The engine requires the following critical variables injected via `wrangler.toml
 | `TELEGRAM_BOT_TOKEN` | Your Telegram Bot API token. |
 | `TELEGRAM_WEBHOOK_SECRET` | Security token to validate incoming Telegram webhook requests. |
 | `TELEGRAM_ROOT_ADMIN_IDS` | Comma-separated list of root-level Telegram user IDs. |
-| `AMAZON_CLIENT_ID` | Amazon Creators API Access Key. |
-| `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret Key. |
+| `AMAZON_CLIENT_ID` | Amazon Creators API Credential ID. |
+| `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret. |
 | `AMAZON_PARTNER_TAG` | Your Amazon Associates Tracking ID for Product URLs. |
 | `AMZN_ASSOCIATES_TAG` | Your Amazon Associates Tracking ID for the Creators API Payload. |
 | `DEFAULT_USER_PRODUCT_LIMIT` | Global limit on concurrent tracks per user. |
