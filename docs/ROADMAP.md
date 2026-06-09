@@ -227,48 +227,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **🤖 AI Execution Prompt:** *"In `worker.js`, create a new route handler for `/scheduler/status` guarded by the `x-scheduler-key` header. It should return a JSON response containing the current circuit state (CLOSED, OPEN, or HALF-OPEN), the status of the `alerted` cache flag, and the array of calculated hourly trigger slots from `buildHourlySlots()`."*
   </details>
 
----
 
-## ⚙️ Phase 6.0-6.7: Operational Tooling & Platform Expansion (The Gaps)
-
-- [ ] **Interactive One-Command Setup Script (`setup.py`)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Reduce the full deployment process to one terminal command that requests standard credentials and auto-generates cryptographic secrets.<br>
-  **The Strategy:** Create `setup.py`. Programmatically generate `.gitignore` first to prevent secret leakage. Auto-generate `CRON_AUTH_KEY` and `TELEGRAM_WEBHOOK_SECRET` as 32-character secure strings. Validate all manual inputs via regex and pass them through to the automated provisioning functions.
-  </details>
-- [ ] **Cloudflare KV Namespace Auto-Creator**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Automatically provision the `AZTRACKER_DB` KV namespace and inject it into `wrangler.toml`.<br>
-  **The Strategy:** `POST` to the Cloudflare API to create the namespace. Parse the `result.id` from the response and use regex to overwrite the `id = "..."` line inside `wrangler.toml` in place.
-  </details>
-- [ ] **GitHub Repository Secrets Auto-Provisioner**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Push all repository secrets to GitHub programmatically using `PyNaCl` encryption.<br>
-  **The Strategy:** Fetch the repo's public key from the GitHub API. Encrypt each secret locally using `crypto_box_seal` and push them to the Actions Secrets endpoint.
-  </details>
-- [ ] **Cloudflare Worker Secrets Auto-Injector**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Automate the injection of production secrets into the deployed Cloudflare Worker environment.<br>
-  **The Strategy:** Read the worker name from `wrangler.toml`. Poll the GitHub Actions API to ensure the worker deployment pipeline succeeds, then `PUT` the secrets directly into the Cloudflare Worker via their REST API.
-  </details>
-- [ ] **Telegram Webhook Auto-Registrar & Health Gate**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Programmatically wire the Telegram API to the newly deployed Cloudflare Worker and run a full diagnostic probe.<br>
-  **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
-  </details>
-
-
----
 
 ## 🚀 Phase 6.8 - 6.10: Core Engine Modernization
 
@@ -292,6 +251,8 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## 🛑 Intentional Architectural Boundaries
 *Features explicitly rejected to preserve the core product vision.*
+
+- **Massive Interactive Setup Pipeline:** Rejected. We intentionally scrapped plans to build a complex, multi-stage provisioning suite (`setup.py`, KV auto-creators, GitHub secret auto-injectors). By consolidating the entire V2 migration into the streamlined `finalize_cutover.js` automation script, we drastically reduced deployment overhead and tooling complexity while achieving the exact same operational flow.
 
 - **Multi-Region Scaling (Amazon.ae / .sa):** Rejected. We intentionally scrapped plans to support multiple geographic Amazon marketplaces. Supporting multiple regions required managing distinct Creators API credentials, dynamic merchant IDs, and complex regional queues, which diluted the core focus. The engine is strictly hardcoded to dominate the Amazon Egypt (Amazon.eg) marketplace.
 - **Containerized Deployment (Docker/K8s):** Rejected. We intentionally avoided packaging the engine into a Docker container or Kubernetes cluster. By strictly leveraging Cloudflare Workers, D1, Queues, and KV, we maintain a true "Serverless Edge" architecture with zero infrastructure maintenance, zero idle server costs, and seamless deployment.
