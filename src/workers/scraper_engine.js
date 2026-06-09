@@ -98,17 +98,17 @@ export async function executeScrapeEngine(env, offset = 0) {
       if (pTag) qParams.append("tag", pTag);
 
       const alert_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
-      const btn_text = isUsed ? t('alert.btn_open_resale', 'ar') : t('alert.btn_open_new', 'ar');
+      const btn_text = isUsed ? t('alert.btn_open_resale', lang) : t('alert.btn_open_new', lang);
 
       const btn_markup = {
           inline_keyboard: [
               [{ text: btn_text, url: alert_url }],
-              [{ text: t('alert.btn_disclaimer', 'ar'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
+              [{ text: t('alert.btn_disclaimer', lang), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
           ]
       };
 
       const safe_name = escapeHtml(truncateName(liveItem.name || liveItem.asin));
-      const safe_seller = escapeHtml(seller || "غير معروف");
+      const safe_seller = escapeHtml(seller || "Unknown");
       const sellerLower = (seller || "").toLowerCase();
 
       let historical_links = [];
@@ -118,16 +118,13 @@ export async function executeScrapeEngine(env, offset = 0) {
       const amazon_seen_recently = seenAmazonAt && (now - seenAmazonAt) < (14 * 24 * 60 * 60 * 1000);
       const resale_seen_recently = seenResaleAt && (now - seenResaleAt) < (14 * 24 * 60 * 60 * 1000);
 
-      // Force Arabic for all omnichannel messages
-      const _ar = 'ar';
-
       if (!isAmznSeller) {
           let amzUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_EG_MERCHANT_ID}`;
           if (pTag) amzUrl += `&tag=${pTag}`;
           if (amznPrice !== null) {
-              historical_links.push(`└ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', _ar)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', _ar)}</b>`);
+              historical_links.push(`└ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', lang)}</b>`);
           } else if (amazon_seen_recently) {
-              historical_links.push(`└ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', _ar)}</a> <i>${t('product.check_stock', _ar)}</i>`);
+              historical_links.push(`└ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
           }
       }
 
@@ -135,50 +132,52 @@ export async function executeScrapeEngine(env, offset = 0) {
           let resUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_RESALE_MERCHANT_ID}`;
           if (pTag) resUrl += `&tag=${pTag}`;
           if (usedPrice !== null) {
-              historical_links.push(`└ 📦 <a href="${resUrl}">${t('product.resale_label', _ar)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', _ar)}</b> <i>${t('product.used_tag', _ar)}</i>`);
+              historical_links.push(`└ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
           } else if (resale_seen_recently) {
-              historical_links.push(`└ 📦 <a href="${resUrl}">${t('product.resale_label', _ar)}</a> <i>${t('product.check_stock', _ar)}</i>`);
+              historical_links.push(`└ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
           }
       }
 
       let final_smart_alts = "";
       if (historical_links.length > 0) {
-          final_smart_alts = `\n\n${t('product.other_options_head', _ar)}\n` + historical_links.join("\n");
+          final_smart_alts = `\n\n${t('product.other_options_head', lang)}\n` + historical_links.join("\n");
       }
 
-      const atl_banner = isAtl ? t('broadcast.atl_head', 'ar') + "\n\n" : "";
+      const atl_banner = isAtl ? t('broadcast.atl_head', lang) + "\n\n" : "";
       const timeStr = getCairoTime(now);
+      const currency = t('chrome.currency_egp', lang);
+
       let msg = "";
       if (isTarget) {
           const diff = lastPrice ? (lastPrice - price) : 0;
-          const down_text = diff > 0 ? ` (${t('alert.price_drop_dropped', _ar, { diff: formatEGP(diff) })})` : "";
-          msg = `${t('alert.target_met_head', _ar)} ${condLabel}\n\n` +
+          const down_text = diff > 0 ? ` (${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })})` : "";
+          msg = `${atl_banner}${t('alert.target_met_head', lang)} ${condLabel}\n\n` +
                 `📦 <b>${safe_name}</b>\n` +
                 `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                `${t('alert.target_met_current', _ar, { price: formatEGP(price) })}\n` +
-                `${t('alert.target_met_seller', _ar, { seller: safe_seller })}\n` +
-                `${t('alert.target_met_target', _ar, { price: formatEGP(targetPrice) })}${down_text}` +
+                `${t('alert.target_met_current', lang, { price: formatEGP(price) })}\n` +
+                `${t('alert.target_met_target', lang, { price: formatEGP(targetPrice) })}${down_text}\n` +
+                `${t('alert.target_met_seller', lang, { seller: safe_seller })}` +
                 `${final_smart_alts}\n\n` +
                 `🕐 <i>${timeStr}</i>\n\n#ad`;
       } else {
           if (lastPrice === null) {
-              msg = `${t('alert.restock_head', _ar)} ${condLabel}\n\n` +
+              msg = `${atl_banner}${t('alert.restock_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
                     `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                    `${t('alert.restock_price', _ar, { price: formatEGP(price) })}\n` +
-                    `${t('alert.restock_seller', _ar, { seller: safe_seller })}` +
+                    `${t('alert.restock_price', lang, { price: formatEGP(price) })}\n` +
+                    `${t('alert.restock_seller', lang, { seller: safe_seller })}` +
                     `${final_smart_alts}\n\n` +
                     `🕐 <i>${timeStr}</i>\n\n#ad`;
           } else {
               const diff = lastPrice - price;
               const pct = lastPrice ? (diff / lastPrice * 100) : 0;
-              msg = `${t('alert.price_drop_head', _ar)} ${condLabel}\n\n` +
+              msg = `${atl_banner}${t('alert.price_drop_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
                     `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                    `${t('alert.price_drop_new', _ar, { price: formatEGP(price) })}\n` +
-                    `${t('alert.price_drop_seller', _ar, { seller: safe_seller })}\n` +
-                    `${t('alert.price_drop_dropped', _ar, { diff: formatEGP(diff) })} (${pct.toFixed(1)}% off)\n` +
-                    `${t('alert.price_drop_was', _ar, { price: formatEGP(lastPrice) })}` +
+                    `${t('alert.price_drop_new', lang, { price: formatEGP(price) })}\n` +
+                    `${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })} (${pct.toFixed(1)}% off)\n` +
+                    `${t('alert.price_drop_was', lang, { price: formatEGP(lastPrice) })}\n` +
+                    `${t('alert.price_drop_seller', lang, { seller: safe_seller })}` +
                     `${final_smart_alts}\n\n` +
                     `🕐 <i>${timeStr}</i>\n\n#ad`;
           }
@@ -314,21 +313,20 @@ export async function executeScrapeEngine(env, offset = 0) {
         
         // Gap 9.4: Python-parity rich message — differentiate target-price vs general expiry
         const safeProductName = escapeHtml(truncateName(liveItem.name || liveItem.asin));
-        // Force Arabic for all omnichannel messages
-        const expiryMsgLang = 'ar';
+        const subLang = sub.lang || 'en';
         let expiryMsg;
         if (sub.target_price) {
           expiryMsg =
-            t('alert.stale_target_head', expiryMsgLang) + `\n\n` +
+            t('alert.stale_target_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
             `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-            t('alert.stale_target_with_price', expiryMsgLang, { target: Number(sub.target_price).toLocaleString(), days: 90 });
+            t('alert.stale_target_with_price', subLang, { target: Number(sub.target_price).toLocaleString(), days: 90 });
         } else {
           expiryMsg =
-            t('alert.tracking_expired_head', expiryMsgLang) + `\n\n` +
+            t('alert.tracking_expired_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
             `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-            t('alert.tracking_expired_body', expiryMsgLang, { asin: liveItem.asin, days: 90 });
+            t('alert.tracking_expired_body', subLang, { asin: liveItem.asin, days: 90 });
         }
 
         queueBatch.push({ type: 'telegram_alert', asin: liveItem.asin, chatId: sub.chat_id, text: expiryMsg });
@@ -350,7 +348,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           let targetHitUsed = false;
           
           if (finalNewPrice !== null && finalNewPrice <= targetPrice && !alertSentNew) {
-              queueAlert(sub.chat_id, sub.lang, "(جديد)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
+              queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
               targetHitNew = true;
           }
           
@@ -359,7 +357,7 @@ export async function executeScrapeEngine(env, offset = 0) {
                   // Target Grouping (Python Parity): Lock Used flag without spamming second message
                   targetHitUsed = true;
               } else {
-                  queueAlert(sub.chat_id, sub.lang, "(مستعمل - أمازون ريسايل)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
                   targetHitUsed = true;
               }
           }
@@ -372,9 +370,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           if (finalNewPrice !== null) {
               if (oldItem.new_price === null && oldItem.last_updated) {
                   // Gap 9.5: New restock (already existed)
-                  queueAlert(sub.chat_id, sub.lang, "(جديد - رجع المخزون)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
+                  queueAlert(sub.chat_id, sub.lang, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
               } else if (oldItem.new_price !== null && finalNewPrice < oldItem.new_price) {
-                  queueAlert(sub.chat_id, sub.lang, "(جديد)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
+                  queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
               }
           }
           
@@ -382,9 +380,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           // Gap 9.6: Used drop alert — fires when used_price drops, even with no target set
           if (finalUsedPrice !== null) {
               if (oldItem.used_price === null && oldItem.last_updated) {
-                  queueAlert(sub.chat_id, sub.lang, "(مستعمل - أمازون ريسايل - رجع المخزون)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale - Restocked)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
               } else if (oldItem.used_price !== null && finalUsedPrice < oldItem.used_price) {
-                  queueAlert(sub.chat_id, sub.lang, "(مستعمل - أمازون ريسايل)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
               }
           }
       }
@@ -482,7 +480,9 @@ export async function executeScrapeEngine(env, offset = 0) {
                          price: broadcastPrice,
                          last_price: displayLastPrice,
                          drop_pct: dropPct,
-                         is_atl: isAtlNew
+                         is_atl: isAtlNew,
+                         seller: finalNewSeller,
+                         mid: finalNewMid
                      };
                  }
              }
@@ -499,9 +499,12 @@ export async function executeScrapeEngine(env, offset = 0) {
       if (pTag) qParams.append("tag", pTag);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
 
+      const safe_broadcast_seller = escapeHtml(bestDeal.seller || "غير معروف");
+
       const broadcast_msg = `🚨 لقطة 🚨\n\n` +
           `<b>${safe_name}</b>\n\n` +
-          `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n\n` +
+          `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n` +
+          `🏬 ${safe_broadcast_seller}\n\n` +
           `👉 <a href="${broadcast_url}">خد الصفقة دلوقتي ←</a>\n\n` +
           `🤖 @AzTrackerr_bot\n\n` +
           `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">🔗 تابع صفقات أكتر</a>\n\n` +
