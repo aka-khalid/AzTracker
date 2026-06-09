@@ -144,8 +144,8 @@ export class AmazonEdgeParser {
 
     if (listings) {
       for (const listing of listings) {
-        const rawCond = listing.Condition?.Value || listing.condition?.value || '';
-        const rawSub = listing.Condition?.SubCondition?.Value || listing.condition?.subCondition?.value || '';
+        const rawCond = typeof listing.Condition === 'string' ? listing.Condition : (typeof listing.condition === 'string' ? listing.condition : (listing.Condition?.Value || listing.condition?.value || ''));
+        const rawSub = typeof listing.SubCondition === 'string' ? listing.SubCondition : (typeof listing.subCondition === 'string' ? listing.subCondition : (listing.Condition?.SubCondition?.Value || listing.condition?.subCondition?.value || ''));
         const condition = normalizeLabel(rawCond);
         const subcondition = normalizeLabel(rawSub);
         
