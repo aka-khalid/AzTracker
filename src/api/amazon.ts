@@ -52,7 +52,7 @@ export class AmazonEdgeParser {
   ) {
     this.accessToken = accessToken;
     this.partnerTag = partnerTag;
-    this.endpoint = `https://creatorsapi.amazon/paapi5/getitems`;
+    this.endpoint = `https://creatorsapi.amazon/catalog/v1/getItems`;
     this.endpointHost = endpointHost;
   }
 
