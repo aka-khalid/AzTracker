@@ -95,7 +95,6 @@ export async function executeScrapeEngine(env, offset = 0) {
         
         d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, dead.asin));
         const { results: subs } = await env.DB.prepare("SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0").bind(dead.asin).all();
-        d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE asin = ?").bind(dead.asin));
         for (const sub of subs) {
           queueBatch.push({
             type: 'telegram_alert',
@@ -264,9 +263,8 @@ export async function executeScrapeEngine(env, offset = 0) {
         usedMissingSince && (now - usedMissingSince > MS_24_HOURS) && 
         amazonMissingSince && (now - amazonMissingSince > MS_24_HOURS)) {
       d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, liveItem.asin));
-      
+
       const { results: subs } = await env.DB.prepare("SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0").bind(liveItem.asin).all();
-      d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE asin = ?").bind(liveItem.asin));
       for (const sub of subs) {
         queueBatch.push({
           type: 'telegram_alert',
