@@ -123,12 +123,7 @@ export default {
 
       let historyData = await env.AZTRACKER_DB.get(`history:${asin}`, "json") || [];
       
-      // Clean Remaining "Price Drop" Gaps
-      const originalLength = historyData.length;
-      historyData = historyData.filter(h => h.t !== 1780859708 && h.t !== 1780936963 && !(h.t >= 1780859400 && h.t <= 1780859760));
-      if (historyData.length !== originalLength) {
-        ctx.waitUntil(env.AZTRACKER_DB.put(`history:${asin}`, JSON.stringify(historyData)));
-      }
+
       
       return new Response(JSON.stringify(historyData), {
         status: 200,
@@ -213,6 +208,8 @@ export default {
         headers: { "Content-Type": "text/html;charset=UTF-8" }
       });
     }
+
+
 
     if (url.pathname === "/api/migrate-kv" && request.method === "GET") {
       const auth = await authAdmin(request, env);
