@@ -174,13 +174,18 @@ export class AmazonEdgeParser {
         const isAmazonResale = sellerId === amazonResaleMid || sellerLower.includes('resale') || sellerLower.includes('warehouse') || sellerLower.includes('renewed');
         
         const usedTokens = ['used', 'refurbished', 'renewed', 'collectible'];
-        const subTokens = ['like new', 'very good', 'good', 'acceptable', 'open box', 'oem', 'likenew', 'verygood', 'openbox'];
+        // Gap 9.2: Full subcondition token list mirroring Python's is_used_like_offer()
+        const subTokens = ['like new', 'very good', 'good', 'acceptable', 'open box', 'oem', 'likenew', 'verygood', 'openbox', 'refurbished'];
         
         const isUsedLike = 
             usedTokens.some(t => condition.includes(t)) ||
             subTokens.some(t => subcondition.includes(t)) ||
             isAmazonResale;
 
+        // Gap 9.3: Track amazon_price even when Amazon.eg IS the BuyBox winner.
+        // Python always stamps seen_amazon_eg_at whenever Amazon.eg has any listing.
+        // If Amazon.eg is the buybox winner, store their price as amazonPrice so
+        // executeScrapeEngine can stamp seenAmazonEgAt = now.
         if (isAmazon) {
             if (!parsed.amazonPrice || isBuyBox || (price < parsed.amazonPrice && !parsed.amazonIsBuybox)) {
                 parsed.amazonPrice = price;
