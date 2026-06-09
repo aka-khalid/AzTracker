@@ -47,6 +47,7 @@ export default {
   },
 
   async queue(batch, env, ctx) {
+    return; // FORCE KILL SWITCH
     if (batch.queue === 'scraper-queue') {
       for (const msg of batch.messages) {
         try {
