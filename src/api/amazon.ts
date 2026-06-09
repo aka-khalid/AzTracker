@@ -75,7 +75,7 @@ export class AmazonEdgeParser {
         'offersV2.listings.price',
         'offersV2.listings.condition',
         'offersV2.listings.merchantInfo',
-        'offersV2.listings.deliveryInfo.isBuyBoxWinner'
+        'offersV2.listings.isBuyBoxWinner'
       ],
       partnerTag: this.partnerTag
     };
