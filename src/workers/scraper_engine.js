@@ -1,4 +1,5 @@
 import { AmazonEdgeParser, getAmazonAccessToken } from '../api/amazon.js';
+import { t } from '../core/i18n.js';
 
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
@@ -93,14 +94,14 @@ export async function executeScrapeEngine(env, offset = 0) {
           (now - dead.amazon_missing_since > MS_24_HOURS)) {
         
         d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, dead.asin));
-        const { results: subs } = await env.DB.prepare("SELECT chat_id FROM User_Subscriptions WHERE asin = ? AND is_paused = 0").bind(dead.asin).all();
+        const { results: subs } = await env.DB.prepare("SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0").bind(dead.asin).all();
         d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE asin = ?").bind(dead.asin));
         for (const sub of subs) {
           queueBatch.push({
             type: 'telegram_alert',
             asin: dead.asin,
             chatId: sub.chat_id,
-            text: `🚨 <b>Item Missing!</b>\nASIN <code>${dead.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
+            text: t('alert.missing_head', sub.lang) + `\nASIN <code>${dead.asin}</code> ` + t('alert.missing_body', sub.lang)
           });
         }
       } else {
@@ -112,105 +113,107 @@ export async function executeScrapeEngine(env, offset = 0) {
   let bestDeal = null;
   let maxZScore = 0.0;
   
-  function queueAlert(chatId, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice) {
+  function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice) {
       const base_url = `https://www.amazon.eg/dp/${liveItem.asin}`;
-      const primary_mid = condLabel.includes("(Used") ? AMAZON_RESALE_MERCHANT_ID : mid;
-      
+      const isUsed = condLabel.includes("(Used");
+      const primary_mid = isUsed ? AMAZON_RESALE_MERCHANT_ID : mid;
+
       const qParams = new URLSearchParams();
       if (primary_mid) qParams.append("m", primary_mid);
       const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
-      
+
       const alert_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
-      const btn_text = condLabel.includes("(Used") ? "📦 Open Amazon Resale" : "🛒 Open in Amazon.eg";
-      
+      const btn_text = isUsed ? t('alert.btn_open_resale', lang) : t('alert.btn_open_new', lang);
+
       const btn_markup = {
           inline_keyboard: [
               [{ text: btn_text, url: alert_url }],
-              [{ text: "⚖️ Price Disclaimer", url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
+              [{ text: t('alert.btn_disclaimer', lang), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
           ]
       };
-      
+
       const safe_name = escapeHtml(truncateName(liveItem.name || liveItem.asin));
       const safe_seller = escapeHtml(seller || "Unknown");
       const sellerLower = (seller || "").toLowerCase();
-      
+
       let historical_links = [];
       const isAmznSeller = mid === AMAZON_EG_MERCHANT_ID || sellerLower === 'amazon' || sellerLower.includes('amazon.eg');
       const isResaleSeller = mid === AMAZON_RESALE_MERCHANT_ID || sellerLower.includes('resale') || sellerLower.includes('warehouse') || sellerLower.includes('renewed');
-      
+
       const amazon_seen_recently = seenAmazonAt && (now - seenAmazonAt) < (14 * 24 * 60 * 60 * 1000);
       const resale_seen_recently = seenResaleAt && (now - seenResaleAt) < (14 * 24 * 60 * 60 * 1000);
-      
+
       if (!isAmznSeller) {
           let amzUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_EG_MERCHANT_ID}`;
           if (pTag) amzUrl += `&tag=${pTag}`;
           if (amznPrice !== null) {
-              historical_links.push(`└ 🛡️ <a href="${amzUrl}">Amazon.eg</a>: <b>${formatEGP(amznPrice)} EGP</b>`);
+              historical_links.push(`└ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', lang)}</b>`);
           } else if (amazon_seen_recently) {
-              historical_links.push(`└ 🛡️ <a href="${amzUrl}">Amazon.eg</a> <i>(Check Stock)</i>`);
+              historical_links.push(`└ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
           }
       }
-      
+
       if (!isResaleSeller) {
           let resUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_RESALE_MERCHANT_ID}`;
           if (pTag) resUrl += `&tag=${pTag}`;
           if (usedPrice !== null) {
-              historical_links.push(`└ 📦 <a href="${resUrl}">Amazon Resale</a>: <b>${formatEGP(usedPrice)} EGP</b> <i>(Used)</i>`);
+              historical_links.push(`└ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
           } else if (resale_seen_recently) {
-              historical_links.push(`└ 📦 <a href="${resUrl}">Amazon Resale</a> <i>(Check Stock)</i>`);
+              historical_links.push(`└ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
           }
       }
-      
+
       let final_smart_alts = "";
       if (historical_links.length > 0) {
-          final_smart_alts = "\n\n💡 <b>Other Options:</b>\n" + historical_links.join("\n");
+          final_smart_alts = `\n\n${t('product.other_options_head', lang)}\n` + historical_links.join("\n");
       }
-      
-      const atl_banner = isAtl ? "🔥 <b>ALL-TIME LOW</b>\n\n" : "";
+
+      const atl_banner = isAtl ? t('broadcast.atl_head', lang) + "\n\n" : "";
       const timeStr = getCairoTime(now);
-      
+      const currency = t('chrome.currency_egp', lang);
+
       let msg = "";
       if (isTarget) {
           const diff = lastPrice ? (lastPrice - price) : 0;
-          const down_text = diff > 0 ? ` (Down ${formatEGP(diff)} EGP)` : "";
-          msg = `${atl_banner}🎯 <b>TARGET MET! ${condLabel}</b>\n\n` +
+          const down_text = diff > 0 ? ` (${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })})` : "";
+          msg = `${atl_banner}${t('alert.target_met_head', lang)} ${condLabel}\n\n` +
                 `📦 <b>${safe_name}</b>\n` +
                 `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                `💰 <b>Current Price:</b> ${formatEGP(price)} EGP\n` +
-                `📉 <b>Target:</b> ${formatEGP(targetPrice)} EGP${down_text}\n` +
-                `🏬 <b>Seller:</b> <i>${safe_seller}</i>` +
+                `${t('alert.target_met_current', lang, { price: formatEGP(price) })}\n` +
+                `${t('alert.target_met_target', lang, { price: formatEGP(targetPrice) })}${down_text}\n` +
+                `${t('alert.target_met_seller', lang, { seller: safe_seller })}` +
                 `${final_smart_alts}\n\n` +
                 `🕐 <i>${timeStr}</i>\n\n#ad`;
       } else {
           if (lastPrice === null) {
-              msg = `${atl_banner}🚨 <b>RESTOCK ALERT ${condLabel}</b>\n\n` +
+              msg = `${atl_banner}${t('alert.restock_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
                     `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                    `💰 <b>Price:</b> ${formatEGP(price)} EGP\n` +
-                    `🏬 <b>Seller:</b> <i>${safe_seller}</i>` +
+                    `${t('alert.restock_price', lang, { price: formatEGP(price) })}\n` +
+                    `${t('alert.restock_seller', lang, { seller: safe_seller })}` +
                     `${final_smart_alts}\n\n` +
                     `🕐 <i>${timeStr}</i>\n\n#ad`;
           } else {
               const diff = lastPrice - price;
               const pct = lastPrice ? (diff / lastPrice * 100) : 0;
-              msg = `${atl_banner}🚨 <b>PRICE DROP ALERT ${condLabel}</b>\n\n` +
+              msg = `${atl_banner}${t('alert.price_drop_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
                     `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-                    `💰 <b>New Price:</b> ${formatEGP(price)} EGP\n` +
-                    `📉 <b>Dropped:</b> ${formatEGP(diff)} EGP (${pct.toFixed(1)}% off)\n` +
-                    `🏷️ <b>Was:</b> ${formatEGP(lastPrice)} EGP\n` +
-                    `🏬 <b>Seller:</b> <i>${safe_seller}</i>` +
+                    `${t('alert.price_drop_new', lang, { price: formatEGP(price) })}\n` +
+                    `${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })} (${pct.toFixed(1)}% off)\n` +
+                    `${t('alert.price_drop_was', lang, { price: formatEGP(lastPrice) })}\n` +
+                    `${t('alert.price_drop_seller', lang, { seller: safe_seller })}` +
                     `${final_smart_alts}\n\n` +
                     `🕐 <i>${timeStr}</i>\n\n#ad`;
           }
       }
-      
+
       let alertType = 'telegram_alert';
       if (isTarget) {
-          alertType = condLabel.includes("Used") ? 'telegram_alert_used' : 'telegram_alert_new';
+          alertType = isUsed ? 'telegram_alert_used' : 'telegram_alert_new';
       }
-      
+
       queueBatch.push({
           type: alertType,
           asin: liveItem.asin,
@@ -263,21 +266,21 @@ export async function executeScrapeEngine(env, offset = 0) {
         amazonMissingSince && (now - amazonMissingSince > MS_24_HOURS)) {
       d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, liveItem.asin));
       
-      const { results: subs } = await env.DB.prepare("SELECT chat_id FROM User_Subscriptions WHERE asin = ? AND is_paused = 0").bind(liveItem.asin).all();
+      const { results: subs } = await env.DB.prepare("SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0").bind(liveItem.asin).all();
       d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE asin = ?").bind(liveItem.asin));
       for (const sub of subs) {
         queueBatch.push({
           type: 'telegram_alert',
           asin: liveItem.asin,
           chatId: sub.chat_id,
-          text: `🚨 <b>Item Missing!</b>\nASIN <code>${liveItem.asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.`
+          text: t('alert.missing_head', sub.lang) + `\nASIN <code>${liveItem.asin}</code> ` + t('alert.missing_body', sub.lang)
         });
       }
       continue;
     }
 
     const { results: subs } = await env.DB.prepare(
-      "SELECT chat_id, target_price, alert_sent_new, alert_sent_used, added_at FROM User_Subscriptions WHERE asin = ? AND is_paused = 0"
+      "SELECT s.chat_id, s.target_price, s.alert_sent_new, s.alert_sent_used, s.added_at, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0"
     ).bind(liveItem.asin).all();
 
     // Isolated target bypass checks
@@ -355,23 +358,22 @@ export async function executeScrapeEngine(env, offset = 0) {
         
         // Gap 9.4: Python-parity rich message — differentiate target-price vs general expiry
         const safeProductName = escapeHtml(truncateName(liveItem.name || liveItem.asin));
+        const subLang = sub.lang || 'en';
         let expiryMsg;
         if (sub.target_price) {
           expiryMsg =
-            `⏰ <b>STALE TARGET RETIRED</b>\n\n` +
+            t('alert.stale_target_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
             `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-            `Your target price of <b>${Number(sub.target_price).toLocaleString()} EGP</b> has been active for over 90 days without being met.\n\n` +
-            `<i>To conserve system resources, checking for this item has been automatically paused. You can resume it from your dashboard anytime.</i>`;
+            t('alert.stale_target_with_price', subLang, { target: Number(sub.target_price).toLocaleString(), days: 90 });
         } else {
           expiryMsg =
-            `⏰ <b>TRACKING EXPIRED</b>\n\n` +
+            t('alert.tracking_expired_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
             `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
-            `This item has been tracked for over 90 days. Tracking has been automatically paused to conserve system resources.\n\n` +
-            `<i>You can resume it anytime from your dashboard.</i>`;
+            t('alert.tracking_expired_body', subLang, { asin: liveItem.asin, days: 90 });
         }
-        
+
         queueBatch.push({ type: 'telegram_alert', asin: liveItem.asin, chatId: sub.chat_id, text: expiryMsg });
         continue;
       }
@@ -391,7 +393,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           let targetHitUsed = false;
           
           if (finalNewPrice !== null && finalNewPrice <= targetPrice && !alertSentNew) {
-              queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               targetHitNew = true;
           }
           
@@ -400,7 +402,7 @@ export async function executeScrapeEngine(env, offset = 0) {
                   // Target Grouping (Python Parity): Lock Used flag without spamming second message
                   targetHitUsed = true;
               } else {
-                  queueAlert(sub.chat_id, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
                   targetHitUsed = true;
               }
           }
@@ -413,9 +415,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           if (finalNewPrice !== null) {
               if (oldItem.new_price === null && oldItem.last_updated) {
                   // Gap 9.5: New restock (already existed)
-                  queueAlert(sub.chat_id, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               } else if (oldItem.new_price !== null && finalNewPrice < oldItem.new_price) {
-                  queueAlert(sub.chat_id, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               }
           }
           
@@ -423,9 +425,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           // Gap 9.6: Used drop alert — fires when used_price drops, even with no target set
           if (finalUsedPrice !== null) {
               if (oldItem.used_price === null && oldItem.last_updated) {
-                  queueAlert(sub.chat_id, "(Used - Amazon Resale - Restocked)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale - Restocked)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               } else if (oldItem.used_price !== null && finalUsedPrice < oldItem.used_price) {
-                  queueAlert(sub.chat_id, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
               }
           }
       }
@@ -533,27 +535,29 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
   }
 
-  // Final Broadcast
+  // Final Broadcast (public channel — always English)
   if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
       const safe_name = escapeHtml(truncateName(bestDeal.name || bestDeal.asin));
       const drop_pct_str = `${bestDeal.drop_pct.toFixed(0)}%`;
-      
-      const header = bestDeal.is_atl ? `🔥 <b>ALL-TIME LOW (-${drop_pct_str} from average)</b>` : `🚨 <b>EXCEPTIONAL DEAL (-${drop_pct_str} from average)</b>`;
+
+      const header = bestDeal.is_atl
+          ? t('broadcast.atl_head', 'en') + ` (-${drop_pct_str} from average)`
+          : t('broadcast.exceptional_head', 'en') + ` (-${drop_pct_str} from average)`;
       const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
       const qParams = new URLSearchParams();
       const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
       const timeStr = getCairoTime(now);
-      
+
       const broadcast_msg = `${header}\n\n` +
           `<b>${safe_name}</b>\n\n` +
           `💵 <b>${formatEGP(bestDeal.price)} EGP</b> <i>(usually ${formatEGP(bestDeal.last_price)})</i>\n\n` +
-          `👉 <b><a href="${broadcast_url}">Click here to grab the deal</a></b>\n` +
+          `👉 <b><a href="${broadcast_url}">${t('broadcast.cta_shop', 'en')}</a></b>\n` +
           `〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-          `🤖 <i>Find more exceptional deals on our bot: @AzTrackerr_bot</i>\n` +
-          `🕐 <i>Price as of ${timeStr}</i>\n\n#ad`;
-          
+          `🤖 <i>${t('broadcast.cta_more', 'en')}: @AzTrackerr_bot</i>\n` +
+          `🕐 <i>${t('broadcast.price_as_of', 'en', { date: timeStr })}</i>\n\n#ad`;
+
       queueBatch.push({
           type: 'telegram_alert',
           asin: bestDeal.asin,
@@ -561,8 +565,8 @@ export async function executeScrapeEngine(env, offset = 0) {
           text: broadcast_msg,
           markup: {
               inline_keyboard: [
-                  [{ text: "🛒 Open in Amazon.eg", url: broadcast_url }],
-                  [{ text: "⚖️ Price Disclaimer", url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
+                  [{ text: t('broadcast.btn_open', 'en'), url: broadcast_url }],
+                  [{ text: t('alert.btn_disclaimer', 'en'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
               ]
           }
       });
