@@ -1,0 +1,10 @@
+{
+  "name": "d1-gdrive-backup",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "googleapis": "^128.0.0",
+    "node-fetch": "^3.3.2"
+  }
+}

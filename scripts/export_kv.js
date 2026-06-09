@@ -20,7 +20,7 @@ try {
   for (const item of keys) {
     const key = item.name;
     // Skip audit logs and ephemeral states, we only need user and product data for D1
-    if (key.startsWith('audit:') || key.startsWith('state:') || key === 'global:join_queue') {
+    if (key.startsWith('audit:') || key.startsWith('state:')) {
       continue;
     }
     

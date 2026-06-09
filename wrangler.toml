@@ -1,5 +1,5 @@
 name = "aztracker-v2"
-main = "src/worker.js"
+main = "src/index.js"
 compatibility_date = "2026-05-23"
 
 [[kv_namespaces]]
@@ -39,3 +39,44 @@ GLOBAL_POOL_LIMIT = "450"
 
 [triggers]
 # crons = ["* * * * *", "0 0 * * *"]
+
+[env.production]
+name = "aztracker-v2-prod"
+
+[env.production.vars]
+GITHUB_OWNER = "aka-khalid"
+GITHUB_REPO = "AzTracker"
+DEFAULT_USER_PRODUCT_LIMIT = "3"
+GLOBAL_POOL_LIMIT = "450"
+
+[[env.production.kv_namespaces]]
+binding = "AZTRACKER_DB"
+id = "90fcfcb742fe4d7299087c076bd1ba4d"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "aztracker-prod-db"
+database_id = "7998ba93-e8ef-42c5-b37b-580e233a2d6a"
+
+[[env.production.queues.producers]]
+binding = "MESSAGE_QUEUE"
+queue = "telegram-outbox"
+
+[[env.production.queues.consumers]]
+queue = "telegram-outbox"
+max_batch_size = 30
+max_batch_timeout = 1
+max_retries = 3
+
+[[env.production.queues.producers]]
+binding = "SCRAPER_QUEUE"
+queue = "scraper-queue"
+
+[[env.production.queues.consumers]]
+queue = "scraper-queue"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+
+[env.production.triggers]
+crons = ["* * * * *", "0 0 * * *"]

@@ -34,6 +34,14 @@ async function generateMigration() {
     sqlStatements.push(`INSERT OR IGNORE INTO Users (chat_id, first_name, username, role, item_limit, approved_by, created_at) VALUES ('${userId}', NULL, NULL, '${role}', ${limit}, ${approvedByStr}, ${Date.now()});`);
   }
 
+  // Migrate Pending Users from the old join queue
+  const globalJoinQueue = kvData.find(k => k.key === 'global:join_queue')?.value || [];
+  for (const userId of globalJoinQueue) {
+    // If somehow they are in the queue but already approved, ignore
+    if (globalApproved.includes(userId)) continue;
+    sqlStatements.push(`INSERT OR IGNORE INTO Users (chat_id, first_name, username, role, item_limit, approved_by, created_at) VALUES ('${userId}', NULL, NULL, 'pending', 0, NULL, ${Date.now()});`);
+  }
+
   // Helper to safely escape SQL strings
   const esc = (str) => {
       if (str === null || str === undefined) return 'NULL';

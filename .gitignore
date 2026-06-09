@@ -15,3 +15,6 @@ pnpm-debug.log*
 .vscode/
 .idea/
 .claude/
+
+kv_export.json
+d1_seed.sql
