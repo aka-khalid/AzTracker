@@ -16,15 +16,55 @@ import { AmazonEdgeParser, getAmazonAccessToken } from './src/api/amazon';
 
 export default {
   async scheduled(event, env, ctx) {
-    console.log("Cron tick:", event.cron);
-    try {
-      await executeScrapeEngine(env, false);
-    } catch (e) {
-      console.error("Scheduled execution failed:", e);
+    if (event.cron === "* * * * *") {
+      try {
+        const now = Date.now();
+        // 1. D1 Garbage Collection for Bot_States
+        await env.DB.prepare("DELETE FROM Bot_States WHERE expires_at < ?").bind(now).run();
+
+        // 2. Dynamic Governor Logic
+        const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');
+        const lastRunMs = lastRunStr ? parseInt(lastRunStr, 10) : 0;
+        
+        const poolSizeRes = await env.DB.prepare("SELECT COUNT(DISTINCT asin) as c FROM User_Subscriptions WHERE is_paused = 0").first();
+        const poolSize = poolSizeRes ? poolSizeRes.c : 0;
+        
+        if (poolSize === 0) return;
+        
+        const batches = Math.ceil(poolSize / 10);
+        const maxRuns = Math.floor(8640 / batches);
+        const intervalMs = Math.floor(86400000 / maxRuns);
+
+        if ((now - lastRunMs) >= intervalMs) {
+          // Update lock and trigger the recursive chain reaction
+          await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('last_run_time', ?, ?)").bind(now.toString(), now + 86400000).run();
+          await env.SCRAPER_QUEUE.send({ offset: 0 });
+        }
+      } catch (e) {
+        console.error("Scheduled execution failed:", e);
+      }
     }
   },
 
   async queue(batch, env, ctx) {
+    if (batch.queue === 'scraper-queue') {
+      for (const msg of batch.messages) {
+        try {
+          const offset = msg.body.offset || 0;
+          const hasMore = await executeScrapeEngine(env, offset);
+          if (hasMore) {
+            // Recurse: Trigger the next batch with a 2-second linear delay
+            await env.SCRAPER_QUEUE.send({ offset: offset + 10 }, { delaySeconds: 2 });
+          }
+          msg.ack();
+        } catch (e) {
+          console.error("Scraper Queue Error:", e);
+          msg.retry();
+        }
+      }
+      return;
+    }
+
     let rateLimited = false;
     let retryDelay = 5;
     for (const msg of batch.messages) {
@@ -34,7 +74,7 @@ export default {
       }
       try {
         const payload = msg.body;
-        if (payload.type === 'telegram_alert') {
+        if (payload.type === 'telegram_alert' || payload.type === 'telegram_alert_new' || payload.type === 'telegram_alert_used') {
           const res = await sendTelegram(env, payload.chatId, payload.text, payload.markup);
           if (res && !res.ok) {
             if (res.error_code === 429) {
@@ -49,6 +89,14 @@ export default {
               continue;
             }
             throw new Error(res.description || "Telegram API Error");
+          } else {
+            // Atomic 2PC: Update D1 lock ONLY on successful delivery
+            if (payload.asin && payload.type === 'telegram_alert_new') {
+               await env.DB.prepare("UPDATE User_Subscriptions SET alert_sent_new = 1 WHERE chat_id = ? AND asin = ?").bind(payload.chatId, payload.asin).run();
+            }
+            if (payload.asin && payload.type === 'telegram_alert_used') {
+               await env.DB.prepare("UPDATE User_Subscriptions SET alert_sent_used = 1 WHERE chat_id = ? AND asin = ?").bind(payload.chatId, payload.asin).run();
+            }
           }
         }
         msg.ack();
@@ -63,37 +111,6 @@ export default {
     const url = new URL(request.url);
 
     // Validate HMAC for /crm routes
-    if (url.pathname === "/scheduler") {
-      return await handleScheduler(request, env, ctx);
-    }
-    
-    if (url.pathname === "/scheduler/status" && request.method === "GET") {
-      const providedKey = request.headers.get("x-scheduler-key");
-      if (!env.CRON_AUTH_KEY || providedKey !== env.CRON_AUTH_KEY) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      
-      const now = getCairoParts(new Date());
-      const hourKey = `${now.year}-${now.month}-${now.day}-${now.hour}`;
-      const scheduleReq = new Request(`${url.origin}/schedule/${hourKey}`);
-      const circuitOpenReq = new Request(`${url.origin}/_internal/circuit/open`);
-      const circuitAlertedReq = new Request(`${url.origin}/_internal/circuit/alerted`);
-      
-      const [cachedSchedule, isOpen, isAlerted] = await Promise.all([
-        caches.default.match(scheduleReq),
-        caches.default.match(circuitOpenReq),
-        caches.default.match(circuitAlertedReq)
-      ]);
-      
-      let slots = [];
-      if (cachedSchedule) slots = await cachedSchedule.json();
-      
-      return new Response(JSON.stringify({
-        circuit_state: isOpen ? "OPEN" : "CLOSED",
-        alerted: !!isAlerted,
-        hourly_slots: slots
-      }), { status: 200, headers: { "Content-Type": "application/json" }});
-    }
     
     if (url.pathname.startsWith("/api/history/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
@@ -101,19 +118,17 @@ export default {
         return new Response(JSON.stringify({ error: "Invalid ASIN" }), { status: 400 });
       }
 
-      const exp = url.searchParams.get("exp");
-      const sig = url.searchParams.get("sig");
-      
-      if (!exp || !sig || Date.now() > parseInt(exp)) {
-        return new Response(JSON.stringify({ error: "Unauthorized or Expired Token" }), { status: 401 });
-      }
-      
-      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, asin, exp);
-      if (sig !== expectedSig) {
-        return new Response(JSON.stringify({ error: "Invalid Signature" }), { status: 401 });
-      }
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
 
-      const historyData = await env.AZTRACKER_DB.get(`history:${asin}`, "json") || [];
+      let historyData = await env.AZTRACKER_DB.get(`history:${asin}`, "json") || [];
+      
+      // Clean Remaining "Price Drop" Gaps
+      const originalLength = historyData.length;
+      historyData = historyData.filter(h => h.t !== 1780859708 && h.t !== 1780936963);
+      if (historyData.length !== originalLength) {
+        ctx.waitUntil(env.AZTRACKER_DB.put(`history:${asin}`, JSON.stringify(historyData)));
+      }
       
       return new Response(JSON.stringify(historyData), {
         status: 200,
@@ -124,22 +139,7 @@ export default {
       });
     }
 
-    if (url.pathname.startsWith("/chart/") && request.method === "GET") {
-      const asin = url.pathname.split("/").pop();
-      if (!asin || !/^[A-Z0-9]{10}$/i.test(asin)) {
-        return new Response("Invalid ASIN", { status: 400 });
-      }
-      const safeAsin = asin.toUpperCase();
-      
-      const exp = Date.now() + (2 * 60 * 60 * 1000); // 2-hour TTL
-      const sig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, safeAsin, exp);
-      
-      const html = renderChartHTML(safeAsin, exp, sig);
-      return new Response(html, {
-        status: 200,
-        headers: { "Content-Type": "text/html;charset=UTF-8" }
-      });
-    }
+
     
     // --- SIEM AUDIT ENDPOINTS ---
     if (url.pathname === "/audit" && request.method === "GET") {
@@ -215,6 +215,9 @@ export default {
     }
 
     if (url.pathname === "/api/migrate-kv" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      
       try {
         let migratedCount = 0;
         let cursor = null;
@@ -661,14 +664,13 @@ function getCairoTime(now) {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} EET`;
 }
 
-async function executeScrapeEngine(env, force = false) {
-  const query = force 
-    ? "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0"
-    : "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE g.last_updated < ? AND u.is_paused = 0";
-  const bindParams = force ? [] : [Date.now() - 300000];
+async function executeScrapeEngine(env, offset = 0) {
+  // Use stable ordering for pagination. 
+  // No need for 'force' or time checks since the Governor handles intervals.
+  const query = "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0 ORDER BY g.asin LIMIT 10 OFFSET ?";
   
-  const { results: staleProducts } = await env.DB.prepare(query).bind(...bindParams).all();
-  if (!staleProducts || staleProducts.length === 0) return;
+  const { results: staleProducts } = await env.DB.prepare(query).bind(offset).all();
+  if (!staleProducts || staleProducts.length === 0) return false;
 
   const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
   const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
@@ -680,8 +682,7 @@ async function executeScrapeEngine(env, force = false) {
       await env.AZTRACKER_DB.put('amazon_access_token', accessToken, { expirationTtl: 3300 }); // 55 minutes
     } catch (e) {
       console.error("Failed to acquire Amazon Access Token:", e);
-      if (force) throw e;
-      return;
+      return false; // Abort chain on auth failure
     }
   }
 
@@ -693,8 +694,7 @@ async function executeScrapeEngine(env, force = false) {
     liveItems = await parser.getItems(asins);
   } catch (error) {
     console.error("Creators API error in executeScrapeEngine:", error);
-    if (force) throw error;
-    return;
+    throw error; // Throw so the queue retries this specific offset
   }
 
   const d1Batch = [];
@@ -702,10 +702,10 @@ async function executeScrapeEngine(env, force = false) {
   const queueBatch = [];
   const now = Date.now();
   
-  // Failsafe Fix: Require at least 10 items in stale list to assume an API outage
-  if (!force && staleProducts.length >= 10 && liveItems.length === 0) {
-    console.log("Global failsafe: 0 items returned for batch. Assuming API Outage. Aborting.");
-    return;
+  // Failsafe Fix: Avoid 0-items returned outage trap
+  if (staleProducts.length >= 5 && liveItems.length === 0) {
+    console.log(`Global failsafe: 0 items returned for batch at offset ${offset}. Assuming API Outage. Throwing to retry.`);
+    throw new Error("0 items returned from Amazon");
   }
   
   const liveAsins = new Set(liveItems.map(i => i.asin));
@@ -1182,6 +1182,8 @@ async function executeScrapeEngine(env, force = false) {
       await env.MESSAGE_QUEUE.sendBatch(batchBody);
     }
   }
+  
+  return staleProducts.length === 10;
 }
 
 async function handleMessage(message, env, baseUrl, ctx) {
@@ -1215,11 +1217,11 @@ async function handleMessage(message, env, baseUrl, ctx) {
   }
 
   const stateKey = `state:${chatId}`;
-  const activeState = await env.AZTRACKER_DB.get(stateKey);
+  const activeState = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(stateKey).first('value');
   
   // --- OVERRIDE BLOCK ---
   if (text === "/start" || text === "/manage") {
-    if (activeState) await env.AZTRACKER_DB.delete(stateKey);
+    if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
     
     if (text === "/manage" && isAdmin) {
@@ -1235,7 +1237,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
     await renderMainMenu(env, chatId, null, isAdmin, baseUrl);
     return;
   } else if (text.startsWith('/')) {
-    if (activeState) await env.AZTRACKER_DB.delete(stateKey);
+    if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
     return;
   }
@@ -1257,7 +1259,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(num, chatId, pid).run();
     
-    await env.AZTRACKER_DB.delete(stateKey);
+    await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
     
     await sendAppMessage(env, chatId, `🎯 <b>Target Price Set!</b>\n\nYou will only be notified when ASIN <code>${pid}</code> drops to or below <b>${num.toLocaleString()} EGP</b>.`, {
@@ -1667,11 +1669,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       ctx.waitUntil(logAudit(env, chatId, "DEMOTE_ADMIN", targetId, "Demoted to standard access tier"));
     }
     else if (data === "main_menu") {
-      await env.AZTRACKER_DB.delete(`state:${chatId}`);
+      await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
       await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl);
     }
     else if (data.startsWith("list_products_")) {
-      await env.AZTRACKER_DB.delete(`state:${chatId}`);
+      await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
       const page = parseInt(data.replace("list_products_", "")) || 0;
       await renderProductList(env, chatId, messageId, page);
     }
@@ -1688,7 +1690,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("settarget_")) {
       const pid = data.replace("settarget_", "");
-      await env.AZTRACKER_DB.put(`state:${chatId}`, pid, { expirationTtl: 300 });
+      await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES (?, ?, ?)").bind(`state:${chatId}`, pid, Date.now() + 300000).run();
       const text = `🎯 <b>Set Target Price</b>\n\nASIN: <code>${pid}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).`;
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [[{ text: "❌ Cancel", callback_data: `view_${pid}` }]]
@@ -1702,7 +1704,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("view_")) {
       const pid = data.replace("view_", "");
-      await env.AZTRACKER_DB.delete(`state:${chatId}`); 
+      await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
       await renderProductView(env, chatId, messageId, pid, baseUrl);
     }
     else if (data.startsWith("pause_") || data.startsWith("resume_")) {
@@ -1956,8 +1958,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
       [{ text: product.paused ? "▶️ Resume Checking" : "⏸️ Pause Checking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` }],
       [
-        targetBtn,
-        { text: "📊 Stats & History", web_app: { url: `${baseUrl}/chart/${pid}` } }
+        targetBtn
       ],
       [
         { text: "🗑️ Delete Product", callback_data: `confirmDel_${pid}` }
@@ -1973,137 +1974,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 }
 
 
-// ── Scheduler Endpoint ──────────────────────────────────────────────────────
 
-async function handleScheduler(request, env, ctx) {
-  const url = new URL(request.url);
-  const providedKey = request.headers.get("x-scheduler-key");
-
-  if (!env.CRON_AUTH_KEY || providedKey !== env.CRON_AUTH_KEY) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  const now = getCairoParts(new Date());
-  const hourKey = `${now.year}-${now.month}-${now.day}-${now.hour}`;
-  const currentMinute = parseInt(now.minute, 10);
-
-  const cache = caches.default;
-  const scheduleReq = new Request(`${url.origin}/schedule/${hourKey}`);
-  const lockReq = new Request(`${url.origin}/lock/${hourKey}/${currentMinute}`); 
-  const circuitOpenReq = new Request(`${url.origin}/_internal/circuit/open`);
-  const circuitAlertedReq = new Request(`${url.origin}/_internal/circuit/alerted`);
-
-  if (await cache.match(circuitOpenReq)) {
-    return new Response("Circuit OPEN: Temporarily rejecting pings.", { status: 503 });
-  }
-
-  if (await cache.match(lockReq)) {
-    return new Response("Already executed", { status: 200 });
-  }
-  let slots = [];
-  const cachedSchedule = await cache.match(scheduleReq);
-  
-  if (cachedSchedule) {
-    slots = await cachedSchedule.json();
-  } else {
-    slots = buildHourlySlots();
-    const res = new Response(JSON.stringify(slots), {
-      headers: { "Cache-Control": "s-maxage=3600", "Content-Type": "application/json" }
-    });
-    ctx.waitUntil(cache.put(scheduleReq, res));
-  }
-
-  if (slots.includes(currentMinute)) {
-    try {
-      const runRes = await triggerWorkflow(env);
-      
-      if (runRes.ok) {
-        if (await cache.match(circuitAlertedReq)) {
-           const rootAdmin = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : null;
-           if (rootAdmin) ctx.waitUntil(sendTelegram(env, rootAdmin, "✅ <b>System Recovered</b>\n\nGitHub Actions API is back online. Circuit closed."));
-           ctx.waitUntil(cache.delete(circuitAlertedReq));
-        }
-        const lockRes = new Response("1", { headers: { "Cache-Control": "s-maxage=3600" } });
-        ctx.waitUntil(cache.put(lockReq, lockRes));
-        return new Response(`Workflow triggered at minute ${currentMinute}`, { status: 200 });
-      } else {
-        const openRes = new Response("OPEN", { headers: { "Cache-Control": "s-maxage=900" } }); 
-        ctx.waitUntil(cache.put(circuitOpenReq, openRes));
-        
-        if (!(await cache.match(circuitAlertedReq))) {
-           const alertRes = new Response("ALERTED", { headers: { "Cache-Control": "s-maxage=7200" } }); 
-           ctx.waitUntil(cache.put(circuitAlertedReq, alertRes));
-           const rootAdmin = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : null;
-           if (rootAdmin) {
-             ctx.waitUntil(sendTelegram(env, rootAdmin, `🚨 <b>GitHub Actions Outage</b>\n\nAPI returned status ${runRes.status}. Circuit breaker is now OPEN for 15 minutes.`));
-           }
-        }
-        return new Response(`Trigger failed: Status ${runRes.status}`, { status: 502 });
-      }
-    } catch (e) {
-      return new Response(`Execution error: ${e.message}`, { status: 500 });
-    }
-  }
-  return new Response(`No run this minute (${currentMinute})`, { status: 200 });
-}
-
-function buildHourlySlots() {
-  // Sliced into 12 buckets (5 minutes each)
-  const bounds = [
-    [0, 4], [5, 9], [10, 14], [15, 19],
-    [20, 24], [25, 29], [30, 34], [35, 39],
-    [40, 44], [45, 49], [50, 54], [55, 59]
-  ];
-  
-  const runMinutes = [];
-
-  for (let i = 0; i < bounds.length; i++) {
-    let min = bounds[i][0];
-    const max = bounds[i][1];
-
-    if (i > 0) {
-      const prevRun = runMinutes[i - 1];
-      // 2-minute safety buffer to prevent GH Actions concurrency collisions
-      if (min - prevRun < 2) {
-        min = prevRun + 2;
-      }
-    }
-
-    if (min > max) min = max;
-    runMinutes.push(randInt(min, max));
-  }
-
-  return runMinutes;
-}
-
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function getCairoParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-
-  const map = {};
-  for (const part of parts) {
-    if (part.type !== "literal") map[part.type] = part.value;
-  }
-
-  return {
-    year: map.year,
-    month: map.month,
-    day: map.day,
-    hour: map.hour,
-    minute: map.minute,
-  };
-}
 
 // ── Core Helpers ────────────────────────────────────────────────────────────
 
@@ -2246,68 +2117,29 @@ function convertHindiToArabic(text) {
 // Retains monolithic array backwards compatibility to fix UI crashes 
 // while introducing Cache-Busting fallback to fix the TOCTOU overwrite race condition.
 async function getUserRoles(chatId, env, ctx) {
-  const cache = caches.default;
-  const cacheReq = new Request(`https://auth.internal/user/${chatId}`);
+  const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+  const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
+  let isRootAdmin = rootAdmins.includes(chatId);
   
-  let roles;
-  const cached = await cache.match(cacheReq);
+  // Query D1 directly for live state
+  const { results: adminRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'admin' ORDER BY created_at ASC").all();
+  const admins = adminRows.map(r => r.chat_id);
   
-  if (cached) {
-    roles = await cached.json();
-    
-    // CACHE BUSTING: Fixes the 60s trap vulnerability.
-    if (!roles.isApproved) {
-      const user = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
-      if (user) {
-        const freshRole = user.role;
-        if (freshRole === "admin" || freshRole === "approved") {
-          roles.isApproved = true;
-          if (freshRole === "admin") roles.isAdmin = true;
-        } else if (freshRole === "rejected") {
-          roles.isRejected = true;
-        }
-        
-        if (ctx && ctx.waitUntil) {
-          ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
-            headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
-          })));
-        }
-      }
-    }
-  } else {
-    const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
-    const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
-    let isRootAdmin = rootAdmins.includes(chatId);
-    
-    // Query D1 instead of KV for global arrays
-    const { results: adminRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'admin' ORDER BY created_at ASC").all();
-    const admins = adminRows.map(r => r.chat_id);
-    
-    const { results: approvedRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
-    const approvedUsers = approvedRows.map(r => r.chat_id);
-    
-    const user = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
-    let role = user ? user.role : null;
-    
-    if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatId) {
-        isRootAdmin = true;
-    }
-
-    const isAdmin = isRootAdmin || role === "admin" || admins.includes(chatId);
-    const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
-    const isRejected = role === "rejected";
-
-    // Provide exactly the object shape the UI needs, preventing Promise.all array crashes.
-    roles = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers };
-    
-    if (ctx && ctx.waitUntil) {
-      ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(roles), {
-        headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
-      })));
-    }
+  const { results: approvedRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
+  const approvedUsers = approvedRows.map(r => r.chat_id);
+  
+  const user = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
+  let role = user ? user.role : null;
+  
+  if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatId) {
+      isRootAdmin = true;
   }
-  
-  return roles;
+
+  const isAdmin = isRootAdmin || role === "admin" || admins.includes(chatId);
+  const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
+  const isRejected = role === "rejected";
+
+  return { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers };
 }
 
 async function resolveUserProfile(env, id, ctx) {
@@ -2489,13 +2321,13 @@ function extractNameFromUrl(url) {
 
 async function sendAppMessage(env, chatId, text, replyMarkup = null) {
   const key = `ui:${chatId}`;
-  const oldMsgId = await env.AZTRACKER_DB.get(key);
-  if (oldMsgId) {
-    await deleteTelegramMessage(env, chatId, oldMsgId);
+  const oldMsgStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(key).first('value');
+  if (oldMsgStr) {
+    await deleteTelegramMessage(env, chatId, parseInt(oldMsgStr, 10));
   }
   const res = await sendTelegram(env, chatId, text, replyMarkup);
   if (res?.result?.message_id) {
-    await env.AZTRACKER_DB.put(key, res.result.message_id.toString(), { expirationTtl: 172800 });
+    await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES (?, ?, ?)").bind(key, res.result.message_id.toString(), Date.now() + 172800000).run();
   }
   return res;
 }
@@ -2524,242 +2356,7 @@ async function logAudit(env, adminId, action, target, details) {
 
 // ── Web App HTML Renderer ───────────────────────────────────────────────────
 
-function renderChartHTML(asin, exp, sig) {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Price History - ${asin}</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        #chart-container {
-            width: 100%;
-            max-width: 600px;
-            position: relative;
-            margin-top: 20px;
-        }
-        .loading { text-align: center; margin-top: 50px; font-size: 16px; opacity: 0.7; }
-        .header-title { margin-bottom: 5px; text-align: center; font-weight: 600; font-size: 20px; }
-        .header-sub { font-size: 14px; opacity: 0.7; margin-bottom: 20px; text-align: center; }
-        .metrics-container {
-            display: flex;
-            justify-content: space-between;
-            width: 100%;
-            max-width: 600px;
-            margin-top: 15px;
-            gap: 10px;
-        }
-        .metric-card {
-            flex: 1;
-            background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
-            padding: 12px 5px;
-            border-radius: 8px;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-        .metric-title {
-            font-size: 11px;
-            opacity: 0.7;
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-        .metric-value {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--tg-theme-text-color, #000000);
-        }
-    </style>
-</head>
-<body>
-    <div class="header-title">Price Trend</div>
-    <div class="header-sub">ASIN: ${asin}</div>
-    
-    <div id="metrics-container" class="metrics-container" style="display: none;">
-        <div class="metric-card">
-            <div class="metric-title">All-Time High</div>
-            <div id="metric-ath" class="metric-value">--</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-title">Average</div>
-            <div id="metric-avg" class="metric-value">--</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-title">All-Time Low</div>
-            <div id="metric-atl" class="metric-value">--</div>
-        </div>
-    </div>
 
-    <div id="chart-container">
-        <div id="loading" class="loading">Fetching database...</div>
-        <canvas id="priceChart" style="display: none;"></canvas>
-    </div>
-
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand(); 
-        tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
-
-        async function loadData() {
-            try {
-                // 1. INJECT EXPIRY AND SIGNATURE PARAMS INTO THE FETCH URL
-                const response = await fetch('/api/history/${asin}?exp=${exp}&sig=${sig}');
-                
-                // 2. CATCH UNAUTHORIZED REQUESTS (e.g. expired tokens)
-                if (!response.ok) {
-                    throw new Error('Authentication failed or token expired.');
-                }
-                
-                const data = await response.json();
-                
-                document.getElementById('loading').style.display = 'none';
-                
-                if (!data || data.length === 0) {
-                    document.getElementById('chart-container').innerHTML = '<div class="loading">No price history available yet.<br><br>Check back after the next scan!</div>';
-                    return;
-                }
-
-                const currentUnix = Math.floor(Date.now() / 1000);
-                const lastPoint = data[data.length - 1];
-                const lastTime = lastPoint.t !== undefined ? lastPoint.t : lastPoint.timestamp;
-                if (lastTime < currentUnix - 60) {
-                    data.push({ ...lastPoint, t: currentUnix });
-                }
-
-                document.getElementById('priceChart').style.display = 'block';
-
-                const labels = data.map(point => {
-                    const t = point.t !== undefined ? point.t : point.timestamp;
-                    const date = new Date(t * 1000);
-                    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + 
-                           date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                });
-                
-                // Normalizes legacy {"p": X} formats into the new structure on the fly
-                const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
-                const usedPrices = data.map(point => point.u !== undefined ? point.u : null);
-
-                const validPrices = newPrices.filter(p => p !== null);
-                if (validPrices.length > 0) {
-                    const ath = Math.max(...validPrices);
-                    const atl = Math.min(...validPrices);
-                    const avg = Math.round(validPrices.reduce((sum, val) => sum + val, 0) / validPrices.length);
-                    
-                    document.getElementById('metric-ath').innerText = ath.toLocaleString() + ' EGP';
-                    document.getElementById('metric-atl').innerText = atl.toLocaleString() + ' EGP';
-                    document.getElementById('metric-avg').innerText = avg.toLocaleString() + ' EGP';
-                    document.getElementById('metrics-container').style.display = 'flex';
-                }
-
-                const ctx = document.getElementById('priceChart').getContext('2d');
-                
-                const gridColor = tg.themeParams.hint_color ? tg.themeParams.hint_color + '40' : '#cccccc40';
-                const textColor = tg.themeParams.text_color || '#000000';
-                const lineColor = tg.themeParams.button_color || '#2481cc';
-
-                new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            {
-                                label: 'New (EGP)',
-                                data: newPrices,
-                                borderColor: lineColor,
-                                backgroundColor: lineColor + '20',
-                                borderWidth: 2,
-                                pointBackgroundColor: lineColor,
-                                pointRadius: function(ctx) {
-                                    const index = ctx.dataIndex;
-                                    const data = ctx.dataset.data;
-                                    if (data[index] === null) return 0;
-                                    const prev = index > 0 ? data[index - 1] : null;
-                                    const next = index < data.length - 1 ? data[index + 1] : null;
-                                    return (prev === null || next === null) ? 4 : 0;
-                                },
-                                stepped: true,
-                                spanGaps: false,
-                                fill: true
-                            },
-                            {
-                                label: 'Lowest Used Offer (EGP)',
-                                data: usedPrices,
-                                borderColor: '#4caf50',
-                                borderDash: [5, 5],
-                                borderWidth: 2,
-                                pointBackgroundColor: '#4caf50',
-                                pointRadius: function(ctx) {
-                                    const index = ctx.dataIndex;
-                                    const data = ctx.dataset.data;
-                                    if (data[index] === null) return 0;
-                                    const prev = index > 0 ? data[index - 1] : null;
-                                    const next = index < data.length - 1 ? data[index + 1] : null;
-                                    return (prev === null || next === null) ? 4 : 0;
-                                },
-                                stepped: true,
-                                spanGaps: false,
-                                fill: false
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        interaction: {
-                            intersect: false,
-                            mode: 'index',
-                        },
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        if (context.parsed.y === null) return context.dataset.label + ': Out of Stock';
-                                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' EGP';
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            y: {
-                                ticks: { color: textColor },
-                                grid: { color: gridColor }
-                            },
-                            x: {
-                                ticks: { color: textColor, maxRotation: 45, minRotation: 45, maxTicksLimit: 6 },
-                                grid: { display: false }
-                            }
-                        }
-                    }
-                });
-            } catch (err) {
-                // 3. DISPLAY ERROR TO USER IF TOKEN FAILS
-                document.getElementById('loading').innerText = 'Failed to load chart data.';
-            }
-        }
-        
-        loadData();
-    </script>
-</body>
-</html>
-  `;
-}
 
 function renderAuditHTML(exp, sig) {
   return `
@@ -2898,6 +2495,7 @@ function renderCrmHTML() {
     <title>AzTracker Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
@@ -3052,6 +2650,39 @@ function renderCrmHTML() {
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
                 <div class="text-center py-8 text-gray-500 text-sm">Loading items...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Modal -->
+    <div id="chart-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeChartModal()"></div>
+        <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-lg">Price History</h3>
+                <button onclick="closeChartModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="flex gap-4 mb-4" id="chart-metrics" style="display: none;">
+                <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
+                    <div class="text-[10px] text-gray-400 uppercase">ATH</div>
+                    <div class="font-bold text-red-400 text-sm" id="chart-ath">--</div>
+                </div>
+                <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
+                    <div class="text-[10px] text-gray-400 uppercase">Avg</div>
+                    <div class="font-bold text-gray-200 text-sm" id="chart-avg">--</div>
+                </div>
+                <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
+                    <div class="text-[10px] text-gray-400 uppercase">ATL</div>
+                    <div class="font-bold text-green-400 text-sm" id="chart-atl">--</div>
+                </div>
+            </div>
+
+            <div id="chart-loading" class="text-center py-8 text-gray-500 text-sm">Loading chart data...</div>
+            <div class="w-full relative flex-1 min-h-[300px]">
+                <canvas id="crmPriceChart" style="display: none;"></canvas>
             </div>
         </div>
     </div>
@@ -3336,8 +2967,9 @@ function renderCrmHTML() {
                         \${p.target_price ? \`<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: \${p.target_price}</div>\` : ''}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ Resume' : '⏸️ Pause'}</button>
-                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ Delete</button>
+                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ Res' : '⏸️ Paws'}</button>
+                        <button onclick="openChartModal('\${p.asin}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 Chart</button>
+                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ Del</button>
                     </div>
                 </div>\`;
             }).join('');
@@ -3349,6 +2981,130 @@ function renderCrmHTML() {
             setTimeout(() => {
                 document.getElementById('drawer').classList.add('hidden');
             }, 300);
+        }
+
+        let crmChartInstance = null;
+
+        function closeChartModal() {
+            document.getElementById('chart-modal').classList.add('hidden');
+            if (crmChartInstance) {
+                crmChartInstance.destroy();
+                crmChartInstance = null;
+            }
+        }
+
+        async function openChartModal(asin) {
+            document.getElementById('chart-modal').classList.remove('hidden');
+            document.getElementById('chart-loading').style.display = 'block';
+            document.getElementById('crmPriceChart').style.display = 'none';
+            document.getElementById('chart-metrics').style.display = 'none';
+            document.getElementById('chart-loading').innerText = 'Loading chart data...';
+            
+            const data = await fetchAPI('/history/' + asin); // This actually maps to /api/crm/history/ASIN due to fetchAPI prefix
+            document.getElementById('chart-loading').style.display = 'none';
+            
+            if (!data || data.length === 0) {
+                document.getElementById('chart-loading').innerText = 'No price history available yet.';
+                document.getElementById('chart-loading').style.display = 'block';
+                return;
+            }
+            
+            const currentUnix = Math.floor(Date.now() / 1000);
+            const lastPoint = data[data.length - 1];
+            const lastTime = lastPoint.t !== undefined ? lastPoint.t : lastPoint.timestamp;
+            if (lastTime < currentUnix - 60) {
+                data.push({ ...lastPoint, t: currentUnix });
+            }
+
+            document.getElementById('crmPriceChart').style.display = 'block';
+
+            const labels = data.map(point => {
+                const t = point.t !== undefined ? point.t : point.timestamp;
+                const date = new Date(t * 1000);
+                return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + 
+                       date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            });
+            
+            const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
+            const usedPrices = data.map(point => point.u !== undefined ? point.u : null);
+
+            const validPrices = newPrices.filter(p => p !== null);
+            if (validPrices.length > 0) {
+                const ath = Math.max(...validPrices);
+                const atl = Math.min(...validPrices);
+                const avg = Math.round(validPrices.reduce((sum, val) => sum + val, 0) / validPrices.length);
+                
+                document.getElementById('chart-ath').innerText = ath.toLocaleString() + ' EGP';
+                document.getElementById('chart-atl').innerText = atl.toLocaleString() + ' EGP';
+                document.getElementById('chart-avg').innerText = avg.toLocaleString() + ' EGP';
+                document.getElementById('chart-metrics').style.display = 'flex';
+            }
+
+            const ctx = document.getElementById('crmPriceChart').getContext('2d');
+            const lineColor = '#38bdf8';
+
+            crmChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'New (EGP)',
+                            data: newPrices,
+                            borderColor: lineColor,
+                            backgroundColor: lineColor + '20',
+                            borderWidth: 2,
+                            pointBackgroundColor: lineColor,
+                            pointRadius: function(ctx) {
+                                const index = ctx.dataIndex;
+                                const data = ctx.dataset.data;
+                                if (data[index] === null) return 0;
+                                const prev = index > 0 ? data[index - 1] : null;
+                                const next = index < data.length - 1 ? data[index + 1] : null;
+                                return (prev === null || next === null) ? 4 : 0;
+                            },
+                            stepped: true,
+                            spanGaps: false,
+                            fill: true
+                        },
+                        {
+                            label: 'Used (EGP)',
+                            data: usedPrices,
+                            borderColor: '#4caf50',
+                            borderDash: [5, 5],
+                            borderWidth: 2,
+                            pointBackgroundColor: '#4caf50',
+                            pointRadius: function(ctx) {
+                                const index = ctx.dataIndex;
+                                const data = ctx.dataset.data;
+                                if (data[index] === null) return 0;
+                                const prev = index > 0 ? data[index - 1] : null;
+                                const next = index < data.length - 1 ? data[index + 1] : null;
+                                return (prev === null || next === null) ? 4 : 0;
+                            },
+                            stepped: true,
+                            spanGaps: false,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: '#f3f4f6' } },
+                        tooltip: { backgroundColor: 'rgba(31, 41, 55, 0.9)', titleColor: '#fff', bodyColor: '#fff' }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            grid: { color: '#374151', drawBorder: false },
+                            ticks: { color: '#9ca3af', callback: function(value) { return value.toLocaleString(); } }
+                        }
+                    }
+                }
+            });
         }
 
         async function performAction(action, targetId, data = null) {

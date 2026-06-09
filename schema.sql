@@ -107,3 +107,14 @@ CREATE TABLE Audit_Logs (
 
 CREATE INDEX idx_audit_timestamp ON Audit_Logs(timestamp DESC);
 CREATE INDEX idx_audit_actor ON Audit_Logs(actor_id);
+
+-- ============================================================================
+-- 6. Bot Conversational State (D1 Offload)
+-- ============================================================================
+CREATE TABLE Bot_States (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_bot_states_expires ON Bot_States(expires_at);

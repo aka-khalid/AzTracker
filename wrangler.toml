@@ -1,5 +1,5 @@
 name = "aztracker-v2"
-main = "worker.js"
+main = "src/worker.js"
 compatibility_date = "2026-05-23"
 
 [[kv_namespaces]]
@@ -21,6 +21,16 @@ max_batch_size = 30
 max_batch_timeout = 1
 max_retries = 3
 
+[[queues.producers]]
+binding = "SCRAPER_QUEUE"
+queue = "scraper-queue"
+
+[[queues.consumers]]
+queue = "scraper-queue"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+
 [vars]
 GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"
@@ -28,4 +38,4 @@ DEFAULT_USER_PRODUCT_LIMIT = "3"
 GLOBAL_POOL_LIMIT = "450"
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["* * * * *", "0 0 * * *"]

@@ -52,74 +52,63 @@ export class AmazonEdgeParser {
   ) {
     this.accessToken = accessToken;
     this.partnerTag = partnerTag;
-    this.endpoint = `https://creatorsapi.amazon/catalog/v1/getItems`;
+    this.endpoint = `https://creatorsapi.amazon.com/paapi5/getitems`;
     this.endpointHost = endpointHost;
   }
 
   /**
-   * Fetches the latest pricing data for a batch of ASINs.
-   * Handles Creators API limits by batching internally.
+   * Fetches the latest pricing data for a batch of ASINs (Max 10).
+   * Note: This function no longer loops or delays. Throttling is handled
+   * strictly by the Cloudflare Queue Consumer.
    */
   public async getItems(asins: string[]): Promise<AmazonItem[]> {
     if (asins.length === 0) return [];
+    if (asins.length > 10) throw new Error("Batch size exceeds 10 ASINs limit.");
     
-    const batchSize = 10;
     const results: AmazonItem[] = [];
 
-    // Process ASINs in batches
-    for (let i = 0; i < asins.length; i += batchSize) {
-      const batchAsins = asins.slice(i, i + batchSize);
-      
-      const payload = {
-        itemIds: batchAsins,
-        condition: 'Any',
-        resources: [
-          'itemInfo.title',
-          'offersV2.listings.price',
-          'offersV2.listings.condition',
-          'offersV2.listings.merchantInfo',
-          'offersV2.listings.isBuyBoxWinner'
-        ],
-        partnerTag: this.partnerTag,
-        partnerType: 'Associates'
-      };
+    const payload = {
+      ItemIds: asins,
+      Condition: 'Any',
+      Resources: [
+        'ItemInfo.Title',
+        'OffersV2.Listings.Price',
+        'OffersV2.Listings.Condition',
+        'OffersV2.Listings.MerchantInfo',
+        'OffersV2.Listings.DeliveryInfo.IsBuyBoxWinner'
+      ],
+      PartnerTag: this.partnerTag,
+      PartnerType: 'Associates',
+      Marketplace: this.endpointHost
+    };
 
-      try {
-        const response = await fetch(this.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Accept': 'application/json, text/javascript',
-            'Authorization': `Bearer ${this.accessToken}`,
-            'X-Marketplace': this.endpointHost
-          },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(10000)
-        });
+    const response = await fetch(this.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json, text/javascript',
+        'Authorization': `Bearer ${this.accessToken}`,
+        'X-Marketplace': this.endpointHost === 'www.amazon.eg' ? 'EG' : 'US'
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000)
+    });
 
-        if (!response.ok) {
-          const errorBody = await response.text();
-          console.error(`[AmazonEdgeParser] PA-API HTTP Error: ${response.status}`, errorBody);
-          continue; // Skip this batch but continue processing others
-        }
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[AmazonEdgeParser] PA-API HTTP Error: ${response.status}`, errorBody);
+      throw new Error(`PA-API Error: ${response.status}`);
+    }
 
-        const data = await response.json() as any;
-        
-        // The response keys typically remain PascalCase or might be camelCase depending on the exact Creators API version.
-        // We handle both just in case:
-        const itemsResult = data.ItemsResult || data.itemsResult;
-        const items = itemsResult?.Items || itemsResult?.items;
-        
-        if (items) {
-          for (const item of items) {
-            results.push(this.parseItem(item));
-          }
-        }
-      } catch (error) {
-        console.error(`[AmazonEdgeParser] Fetch Exception for batch ${i}:`, error);
+    const data = await response.json() as any;
+    
+    const itemsResult = data.ItemsResult || data.itemsResult;
+    const items = itemsResult?.Items || itemsResult?.items;
+    
+    if (items) {
+      for (const item of items) {
+        results.push(this.parseItem(item));
       }
-      // Delay to avoid rate limiting (match Python's 3-second sleep)
-      await new Promise(r => setTimeout(r, 3000));
     }
     
     return results;
