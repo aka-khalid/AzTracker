@@ -1,4 +1,5 @@
 import { getUserRoles, logAudit } from '../core/db.js';
+import { t, resolveLanguageCode } from '../core/i18n.js';
 
 async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();
@@ -102,7 +103,9 @@ export async function fetchAPI(request, env, ctx) {
         return new Response("Invalid Signature", { status: 401 });
       }
 
-      const html = renderAuditHTML(exp, sig);
+      const langParam = url.searchParams.get("lang");
+      const lang = langParam === 'ar' ? 'ar' : 'en';
+      const html = renderAuditHTML(exp, sig, lang);
       return new Response(html, {
         status: 200,
         headers: { "Content-Type": "text/html;charset=UTF-8" }
@@ -156,7 +159,10 @@ export async function fetchAPI(request, env, ctx) {
     }
     
     if (url.pathname === "/crm" && request.method === "GET") {
-      return new Response(renderCrmHTML(), {
+      // Detect language from query param or default to English
+      const langParam = url.searchParams.get("lang");
+      const lang = langParam === 'ar' ? 'ar' : 'en';
+      return new Response(renderCrmHTML(lang), {
         status: 200,
         headers: { "Content-Type": "text/html;charset=UTF-8" }
       });
@@ -598,14 +604,14 @@ export async function fetchAPI(request, env, ctx) {
   return new Response("Not Found", { status: 404 });
 }
 
-export function renderAuditHTML(exp, sig) {
+export function renderAuditHTML(exp, sig, lang = 'en') {
   return `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Security Audit Log</title>
+    <title>${t('crm.security_audit', lang)}</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -653,10 +659,10 @@ export function renderAuditHTML(exp, sig) {
     </style>
 </head>
 <body>
-    <div class="header-title">Security Audit Log</div>
-    <div class="header-sub">7-Day Rolling Retention</div>
-    
-    <div id="loading" class="loading">Compiling forensic ledger...</div>
+    <div class="header-title">${t('crm.security_audit', lang)}</div>
+    <div class="header-sub">${t('crm.rolling_retention', lang)}</div>
+
+    <div id="loading" class="loading">${t('crm.compiling_ledger', lang)}</div>
     <div id="audit-container"></div>
 
     <script>
@@ -675,7 +681,7 @@ export function renderAuditHTML(exp, sig) {
                 const container = document.getElementById('audit-container');
                 
                 if (logs.length === 0) {
-                    container.innerHTML = '<div class="empty-state">No administrative actions logged in the past 7 days.</div>';
+                    container.innerHTML = '<div class="empty-state">${t("crm.no_audit", lang)}</div>';
                     return;
                 }
 
@@ -713,7 +719,7 @@ export function renderAuditHTML(exp, sig) {
                         container.appendChild(card);
                     });
                 } catch (err) {
-                    document.getElementById('loading').innerText = 'Failed to compile audit logs. Invalid or expired token.';
+                    document.getElementById('loading').innerText = '${t("crm.toast_network_error", lang)}';
                 }
             }
             
@@ -724,13 +730,13 @@ export function renderAuditHTML(exp, sig) {
   `;
 }
 
-export function renderCrmHTML() {
+export function renderCrmHTML(lang = 'en') {
   return `<!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AzTracker Command Center</title>
+    <title>${t('crm.hub_title', lang)}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -770,7 +776,7 @@ export function renderCrmHTML() {
     <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
         <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center font-bold text-white shadow-lg">A</div>
-            <h1 class="font-bold text-lg tracking-tight">AzTracker <span class="text-brand-400">Hub</span></h1>
+            <h1 class="font-bold text-lg tracking-tight">${t('crm.hub_title', lang)}</h1>
         </div>
         <button onclick="refreshData()" class="p-2 rounded-full hover:bg-gray-800 transition text-gray-400 hover:text-white">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -781,35 +787,35 @@ export function renderCrmHTML() {
         
         <!-- MAIN TABS -->
         <div class="flex space-x-6 border-b border-gray-800 mb-6" id="main-tabs">
-            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">Users</button>
-            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">Audit Log</button>
+            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">${t('crm.users_title', lang)}</button>
+            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">${t('crm.security_audit', lang)}</button>
         </div>
 
         <div id="users-view-container" class="space-y-6">
             <!-- TELEMETRY -->
             <section>
-                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Overview</h2>
+                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_overview', lang)}</h2>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="glass rounded-xl p-4 flex flex-col justify-center">
-                        <div class="text-gray-400 text-sm mb-1">Users</div>
+                        <div class="text-gray-400 text-sm mb-1">${t('crm.users_title', lang)}</div>
                         <div class="text-2xl font-bold" id="stat-users">--</div>
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center">
-                        <div class="text-gray-400 text-sm mb-1">Active Tracked Products</div>
+                        <div class="text-gray-400 text-sm mb-1">${t('crm.products_title', lang)}</div>
                         <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                     </div>
                 </div>
                 <div class="mt-3 glass rounded-xl p-4 flex flex-col gap-3">
                     <div class="text-center w-full">
-                        <span class="text-gray-400 text-sm">Last Sync: </span>
+                        <span class="text-gray-400 text-sm">${t('crm.last_sync', lang)}: </span>
                         <span class="text-sm font-medium" id="stat-sync">--</span>
                     </div>
                     <div class="flex gap-2 w-full">
                         <button onclick="performAction('restore_kv', 'global')" class="flex-1 justify-center bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Restore Products
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> ${t('crm.restore_products', lang)}
                         </button>
                         <button onclick="triggerGlobalScrape()" class="flex-1 justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> ${t('crm.force_check', lang)}
                         </button>
                     </div>
                 </div>
@@ -817,12 +823,12 @@ export function renderCrmHTML() {
 
             <!-- BROADCAST -->
             <section id="broadcast-section">
-                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">System Broadcast</h2>
+                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_broadcast', lang)}</h2>
                 <div class="glass rounded-xl p-4">
-                    <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="Enter message to blast to all approved users... (HTML allowed)"></textarea>
+                    <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="${t('crm.broadcast_placeholder', lang)}"></textarea>
                     <div class="flex justify-end mt-3">
                         <button onclick="sendBroadcast()" class="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-brand-500/20 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> Send Broadcast
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> ${t('crm.send_broadcast', lang)}
                         </button>
                     </div>
                 </div>
@@ -831,27 +837,27 @@ export function renderCrmHTML() {
             <!-- DIRECTORY NAVIGATION -->
             <section>
                 <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
-                    <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">Approved</button>
+                    <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">${t('crm.tab_approved', lang)}</button>
                     <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition flex items-center gap-1.5 whitespace-nowrap">
-                        Pending <span id="badge-queue" class="hidden bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
+                        ${t('crm.tab_pending', lang)} <span id="badge-queue" class="hidden bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
                     </button>
-                    <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">Banned</button>
-                    <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">Admins</button>
+                    <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">${t('crm.tab_banned', lang)}</button>
+                    <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">${t('crm.tab_admins', lang)}</button>
                 </div>
 
                 <!-- Queue View -->
                 <div id="view-queue" class="hidden space-y-3">
-                    <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">Loading queue...</div>
+                    <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
                 </div>
 
                 <!-- Users View -->
                 <div id="view-users" class="space-y-3">
                     <div class="relative">
-                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="Search Name, @username or ID..." class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${t('crm.search_placeholder', lang)}" class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
                         <svg class="w-4 h-4 text-gray-500 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
                     <div id="users-list" class="space-y-3">
-                        <div class="text-center py-8 text-gray-500 text-sm">Loading directory...</div>
+                        <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
                     </div>
                 </div>
             </section>
@@ -859,7 +865,7 @@ export function renderCrmHTML() {
 
         <div id="audit-view-container" class="hidden space-y-3">
             <div id="audit-list" class="space-y-3">
-                <div class="glass rounded-xl p-6 text-center text-gray-400">Loading audit log...</div>
+                <div class="glass rounded-xl p-6 text-center text-gray-400">${t('crm.compiling_ledger', lang)}</div>
             </div>
         </div>
     </main>
@@ -868,7 +874,7 @@ export function renderCrmHTML() {
     <div id="overlay" class="fixed inset-0 bg-gray-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
         <div class="glass rounded-2xl p-6 flex flex-col items-center shadow-2xl border-gray-700">
             <div class="w-10 h-10 border-4 border-gray-700 border-t-brand-500 rounded-full animate-spin mb-4"></div>
-            <p class="text-sm font-medium" id="overlay-text">Processing...</p>
+            <p class="text-sm font-medium" id="overlay-text">${t('crm.toast_processing', lang)}</p>
         </div>
     </div>
 
@@ -879,15 +885,15 @@ export function renderCrmHTML() {
             <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
             <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
                 <div>
-                    <h3 class="font-bold text-lg" id="drawer-title">User Products</h3>
-                    <p class="text-xs text-gray-400" id="drawer-subtitle">ID: --</p>
+                    <h3 class="font-bold text-lg" id="drawer-title">${t('crm.user_products', lang)}</h3>
+                    <p class="text-xs text-gray-400" id="drawer-subtitle">${t('crm.user_id_label', lang)} --</p>
                 </div>
                 <button onclick="closeDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
-                <div class="text-center py-8 text-gray-500 text-sm">Loading items...</div>
+                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
@@ -897,7 +903,7 @@ export function renderCrmHTML() {
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeChartModal()"></div>
         <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh]">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg">Price History</h3>
+                <h3 class="font-bold text-lg">${t('crm.price_history', lang)}</h3>
                 <button onclick="closeChartModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
@@ -905,20 +911,20 @@ export function renderCrmHTML() {
             
             <div class="flex gap-4 mb-4" id="chart-metrics" style="display: none;">
                 <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
-                    <div class="text-[10px] text-gray-400 uppercase">ATH</div>
+                    <div class="text-[10px] text-gray-400 uppercase">${t('crm.ath', lang)}</div>
                     <div class="font-bold text-red-400 text-sm" id="chart-ath">--</div>
                 </div>
                 <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
-                    <div class="text-[10px] text-gray-400 uppercase">Avg</div>
+                    <div class="text-[10px] text-gray-400 uppercase">${t('crm.avg', lang)}</div>
                     <div class="font-bold text-gray-200 text-sm" id="chart-avg">--</div>
                 </div>
                 <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
-                    <div class="text-[10px] text-gray-400 uppercase">ATL</div>
+                    <div class="text-[10px] text-gray-400 uppercase">${t('crm.atl', lang)}</div>
                     <div class="font-bold text-green-400 text-sm" id="chart-atl">--</div>
                 </div>
             </div>
 
-            <div id="chart-loading" class="text-center py-8 text-gray-500 text-sm">Loading chart data...</div>
+            <div id="chart-loading" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_chart', lang)}</div>
             <div class="w-full relative flex-1 min-h-[300px]">
                 <canvas id="crmPriceChart" style="display: none;"></canvas>
             </div>
@@ -958,20 +964,20 @@ export function renderCrmHTML() {
                 return json;
             } catch (err) {
                 console.error(err);
-                showToast(\`Network Error: \${err.message}\`, 'error');
+                showToast(\`${t('crm.toast_network_error', lang)}: \${err.message}\`, 'error');
                 return null;
             }
         }
 
         async function refreshData() {
-            showLoader("Syncing...");
+            showLoader("${t('crm.toast_syncing', lang)}");
             const data = await fetchAPI('/data');
             hideLoader();
             if (data) {
                 appData = data;
                 renderTelemetry();
                 renderTabs();
-                showToast("Data synchronized", "success");
+                showToast("${t('crm.toast_synced', lang)}", "success");
             }
         }
 
@@ -1021,13 +1027,13 @@ export function renderCrmHTML() {
             
             const logs = await fetchAPI('/audit');
             if (!logs) {
-                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-red-400">Failed to load audit logs</div>';
+                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-red-400">${t("crm.toast_network_error", lang)}</div>';
                 return;
             }
             appData.auditLoaded = true;
             
             if (logs.length === 0) {
-                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-500 border border-gray-800 border-dashed">No administrative actions logged in the past 7 days.</div>';
+                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-500 border border-gray-800 border-dashed">${t("crm.no_audit", lang)}</div>';
                 return;
             }
             
@@ -1073,7 +1079,7 @@ export function renderCrmHTML() {
             if (activeTab === 'queue') {
                 const list = document.getElementById('queue-list');
                 if (!appData.joinQueue || appData.joinQueue.length === 0) {
-                    list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No pending requests</div>';
+                    list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">${t("crm.no_pending", lang)}</div>';
                     return;
                 }
                 
@@ -1113,7 +1119,7 @@ export function renderCrmHTML() {
             filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)));
             
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No users found</div>';
+                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">${t("crm.no_users_found", lang)}</div>';
                 return;
             }
             
@@ -1130,13 +1136,13 @@ export function renderCrmHTML() {
                         <div class="font-medium text-sm font-semibold truncate">
                             \${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.chat_id})
                         </div>
-                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">View Items</button>
+                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">${t('crm.btn_view_items', lang)}</button>
                     </div>
 
                     <!-- Second Row: Tags & Info -->
                     <div class="flex items-center gap-2 mb-3 relative z-10">
                         \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>\` : ''}
-                        <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} Items</span>
+                        <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} items</span>
                         <span class="text-xs text-gray-500">•</span>
                         <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
                     </div>
@@ -1144,12 +1150,12 @@ export function renderCrmHTML() {
                     <!-- Third Row: Actions -->
                     <div class="flex gap-2 relative z-10">
                         \${u.role === 'rejected' ? 
-                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">Unban User</button>\`
+                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">${t('crm.btn_unban', lang)}</button>\`
                         :
-                            \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Message</button>
-                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">Edit</button>\`}
-                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">Promote</button>\` : ''}
-                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">Demote</button>\` : ''}
+                            \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_message', lang)}</button>
+                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">${t('crm.btn_edit', lang)}</button>\`}
+                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_promote', lang)}</button>\` : ''}
+                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">${t('crm.btn_demote_drawer', lang)}</button>\` : ''}
                             \${u.role !== 'root' ? \`<button onclick="performAction('revoke', '\${u.chat_id}')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
                         }
                     </div>
@@ -1158,7 +1164,7 @@ export function renderCrmHTML() {
         }
 
         function messageUser(userId) {
-            const msg = prompt("Enter message to send to user " + userId + ":");
+            const msg = prompt("${t('crm.btn_message', lang)} — " + userId + ":");
             if (msg) {
                 performAction('direct_message', userId, { message: msg });
             }
@@ -1180,16 +1186,16 @@ export function renderCrmHTML() {
             const products = await fetchAPI(\`/user/\${userId}/products\`);
             
             if (!products || products.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">No saved products</div>';
+                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">${t("crm.no_saved_products", lang)}</div>';
                 return;
             }
             
             itemsCont.innerHTML = products.map(p => {
                 const isPaused = p.is_paused === 1;
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
-                const statusText = isPaused ? 'Paused' : 'Active';
+                const statusText = isPaused ? '${t("crm.user_paused", lang)}' : '${t("crm.user_active", lang)}';
                 const name = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
-                const price = p.new_price ? \`\${p.new_price} EGP\` : (p.used_price ? 'Used Only' : 'Out of Stock');
+                const price = p.new_price ? \`\${p.new_price} EGP\` : (p.used_price ? '${t("crm.user_used_only", lang)}' : '${t("crm.user_out_of_stock", lang)}');
                 
                 return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">
@@ -1205,9 +1211,9 @@ export function renderCrmHTML() {
                         \${p.target_price ? \`<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: \${p.target_price}</div>\` : ''}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ Resume' : '⏸️ Pause'}</button>
-                        <button onclick="openChartModal('\${p.asin}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 Chart</button>
-                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ Delete</button>
+                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ ${t("crm.btn_resume", lang)}' : '⏸️ ${t("crm.btn_pause_drawer", lang)}'}</button>
+                        <button onclick="openChartModal('\${p.asin}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ${t('crm.btn_chart', lang)}</button>
+                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ${t('crm.btn_delete_drawer', lang)}</button>
                     </div>
                 </div>\`;
             }).join('');
@@ -1242,7 +1248,7 @@ export function renderCrmHTML() {
             document.getElementById('chart-loading').style.display = 'none';
             
             if (!data || data.length === 0) {
-                document.getElementById('chart-loading').innerText = 'No price history available yet.';
+                document.getElementById('chart-loading').innerText = '${t("crm.no_price_history", lang)}';
                 document.getElementById('chart-loading').style.display = 'block';
                 return;
             }
@@ -1287,7 +1293,7 @@ export function renderCrmHTML() {
                     labels: labels,
                     datasets: [
                         {
-                            label: 'New (EGP)',
+                            label: '${t("crm.new_price", lang)}',
                             data: newPrices,
                             borderColor: lineColor,
                             backgroundColor: lineColor + '20',
@@ -1306,7 +1312,7 @@ export function renderCrmHTML() {
                             fill: true
                         },
                         {
-                            label: 'Used (EGP)',
+                            label: '${t("crm.used_price", lang)}',
                             data: usedPrices,
                             borderColor: '#4caf50',
                             borderDash: [5, 5],
@@ -1353,9 +1359,9 @@ export function renderCrmHTML() {
             
             if (res) {
                 if (res.status === 'queued') {
-                    showToast("Action queued in background", "success");
+                    showToast("${t('crm.toast_action_queued', lang)}", "success");
                 } else {
-                    showToast("Success", "success");
+                    showToast("${t('crm.toast_success', lang)}", "success");
                     if(action.includes('_product')) {
                         openDrawer(targetId); // refresh drawer
                     }
@@ -1365,15 +1371,15 @@ export function renderCrmHTML() {
         }
 
         function triggerGlobalScrape() {
-            tg.showConfirm("Trigger global force check? This will execute the scraper for all active items immediately.", (ok) => {
+            tg.showConfirm("${t('crm.force_check', lang)}?", (ok) => {
                 if(ok) performAction("force_scrape", null);
             });
         }
 
         function sendBroadcast() {
             const msg = document.getElementById('broadcast-msg').value.trim();
-            if(!msg) return showToast("Message is empty", "error");
-            tg.showConfirm("Send this broadcast to all users?", (ok) => {
+            if(!msg) return showToast("${t('crm.toast_msg_empty', lang)}", "error");
+            tg.showConfirm("${t('crm.send_broadcast', lang)}?", (ok) => {
                 if(ok) {
                     performAction("broadcast", null, { message: msg });
                     document.getElementById('broadcast-msg').value = '';
@@ -1383,27 +1389,27 @@ export function renderCrmHTML() {
 
         function changeLimit(userId, currentLimit) {
             // Use native prompt since tg.showPopup doesn't support input fields
-            const limit = prompt(\`Enter new limit for \${userId}:\`, currentLimit);
+            const limit = prompt(\`${t('crm.btn_edit', lang)} — \${userId}:\`, currentLimit);
             if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
                 performAction('set_limit', userId, { limit: parseInt(limit) });
             }
         }
 
         function changeTarget(userId, asin) {
-            const target = prompt(\`Enter new target price (EGP) for \${asin}:\`);
+            const target = prompt(\`${t('crm.btn_edit', lang)} (${t('crm.new_price', lang)}) — \${asin}:\`);
             if (target !== null && target !== "" && !isNaN(target) && target > 0) {
                 performAction('set_target', userId, { asin, target: parseFloat(target) });
             }
         }
 
         function confirmRevoke(userId) {
-            tg.showConfirm(\`Are you sure you want to REVOKE \${userId}? This will delete all their saved products.\`, (ok) => {
+            tg.showConfirm(\`${t('crm.btn_demote_drawer', lang)} — \${userId}?\`, (ok) => {
                 if(ok) performAction('revoke', userId);
             });
         }
 
         // --- Helpers ---
-        function showLoader(text = "Processing...") {
+        function showLoader(text = "${t('crm.toast_processing', lang)}") {
             const overlay = document.getElementById('overlay');
             document.getElementById('overlay-text').innerText = text;
             if (loaderTimeout) clearTimeout(loaderTimeout);

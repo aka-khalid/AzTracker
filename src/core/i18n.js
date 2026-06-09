@@ -926,6 +926,10 @@ const dict = {
     en: "Processing...",
     ar: "بنجهز..."
   },
+  "crm.toast_msg_empty": {
+    en: "Message is empty",
+    ar: "الرسالة فاضية"
+  },
   "crm.action_approved": {
     en: "Your access request has been <b>APPROVED</b>!",
     ar: "طلب الوصول بتاعك اتوافق عليه!"
