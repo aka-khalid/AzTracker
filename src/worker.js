@@ -933,7 +933,7 @@ async function executeScrapeEngine(env, offset = 0) {
     if (newTargetBypass) newChanged = oldItem.new_price !== finalNewPrice;
     if (!newChanged && finalNewPrice !== null) { finalNewPrice = oldItem.new_price; finalNewSeller = oldItem.new_seller; finalNewMid = oldItem.new_mid; }
 
-    const priceDelta = force || amznChanged || usedChanged || newChanged;
+    const priceDelta = amznChanged || usedChanged || newChanged;
 
     let histMean = oldItem.hist_mean || 0;
     let histStdev = oldItem.hist_stdev || 0;
