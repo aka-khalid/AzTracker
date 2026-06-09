@@ -16,7 +16,7 @@ export default {
     const url = new URL(request.url);
 
     // Route: Telegram Webhook
-    if (request.method === 'POST' && url.pathname.startsWith('/webhook/')) {
+    if (request.method === 'POST' && (url.pathname === '/webhook' || url.pathname.startsWith('/webhook/'))) {
       return handleTelegramWebhook(request, env, ctx);
     }
 

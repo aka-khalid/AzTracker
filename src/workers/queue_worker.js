@@ -3,6 +3,7 @@ import { sendTelegramMessage } from '../core/telegram.js';
 
 export async function queue(batch, env, ctx) {
     if (batch.queue === 'scraper-queue') {
+      return; // Kill switch to manual trigger for scraper engine to avoid infinite loops during development
       for (const msg of batch.messages) {
         try {
           const offset = msg.body.offset || 0;

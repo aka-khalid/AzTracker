@@ -79,4 +79,4 @@ max_batch_timeout = 1
 max_retries = 3
 
 [env.production.triggers]
-crons = ["* * * * *", "0 0 * * *"]
+# crons = ["* * * * *", "0 0 * * *"]

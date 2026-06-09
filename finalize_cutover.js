@@ -65,7 +65,7 @@ async function main() {
   console.log("\n💾 Initiating Legacy Data Migration...");
   try {
     console.log("Step 1: Exporting KV Data...");
-    execSync('node scripts/export_kv.js', execOpts);
+    //execSync('node scripts/export_kv.js', execOpts); // STDERR: X [ERROR] write EOF - DO NOT UNCOMMENT
     
     console.log("\nStep 2: Generating D1 SQL Seed...");
     execSync('node scripts/migrate_to_d1.js', execOpts);

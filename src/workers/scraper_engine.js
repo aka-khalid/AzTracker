@@ -82,32 +82,8 @@ export async function executeScrapeEngine(env, offset = 0) {
   }
   
   const liveAsins = new Set(liveItems.map(i => i.asin));
-  const deadAsins = staleProducts.filter(p => !liveAsins.has(p.asin));
-  for (const dead of deadAsins) {
-      if (!dead.new_missing_since) dead.new_missing_since = now;
-      if (!dead.used_missing_since) dead.used_missing_since = now;
-      if (!dead.amazon_missing_since) dead.amazon_missing_since = now;
-      
-      const MS_24_HOURS = 86400000;
-      if ((now - dead.new_missing_since > MS_24_HOURS) && 
-          (now - dead.used_missing_since > MS_24_HOURS) && 
-          (now - dead.amazon_missing_since > MS_24_HOURS)) {
-        
-        d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, dead.asin));
-        const { results: subs } = await env.DB.prepare("SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0").bind(dead.asin).all();
-        for (const sub of subs) {
-          queueBatch.push({
-            type: 'telegram_alert',
-            asin: dead.asin,
-            chatId: sub.chat_id,
-            text: t('alert.missing_head', sub.lang) + `\nASIN <code>${dead.asin}</code> ` + t('alert.missing_body', sub.lang)
-          });
-        }
-      } else {
-        d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_updated = ?, new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ? WHERE asin = ?")
-          .bind(now, dead.new_missing_since, dead.used_missing_since, dead.amazon_missing_since, dead.asin));
-      }
-  }
+  // Note: Dead product detection (24h missing → delisted) has been removed.
+  // Products no longer auto-pause or get delisted when absent from a scrape batch.
 
   let bestDeal = null;
   let maxZScore = 0.0;
@@ -226,22 +202,20 @@ export async function executeScrapeEngine(env, offset = 0) {
     const oldItem = staleProducts.find(p => p.asin === liveItem.asin);
     if (!oldItem) continue;
 
-    let newMissingSince = oldItem.new_missing_since;
-    let usedMissingSince = oldItem.used_missing_since;
-    let amazonMissingSince = oldItem.amazon_missing_since;
-    
-    // Anti-Flap Timers
-    if (liveItem.newPrice === undefined || liveItem.newPrice === null) {
-      if (!newMissingSince && oldItem.new_price !== null) newMissingSince = now;
-    } else newMissingSince = null;
-    
-    if (liveItem.usedPrice === undefined || liveItem.usedPrice === null) {
-      if (!usedMissingSince && oldItem.used_price !== null) usedMissingSince = now;
-    } else usedMissingSince = null;
+    // Anti-Flap Timers (in-memory only — no DB persistence)
+    let newMissingSince = null;
+    let usedMissingSince = null;
+    let amazonMissingSince = null;
 
+    if (liveItem.newPrice === undefined || liveItem.newPrice === null) {
+      if (oldItem.new_price !== null) newMissingSince = now;
+    }
+    if (liveItem.usedPrice === undefined || liveItem.usedPrice === null) {
+      if (oldItem.used_price !== null) usedMissingSince = now;
+    }
     if (liveItem.amazonPrice === undefined || liveItem.amazonPrice === null) {
-      if (!amazonMissingSince && oldItem.amazon_price !== null) amazonMissingSince = now;
-    } else amazonMissingSince = null;
+      if (oldItem.amazon_price !== null) amazonMissingSince = now;
+    }
 
     const MS_2_5_HOURS = 9000000;
     const MS_1_HOUR = 3600000;
@@ -258,23 +232,7 @@ export async function executeScrapeEngine(env, offset = 0) {
     let finalAmazonMid = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_mid : (liveItem.amazonMid ?? null);
     let finalAmazonIsBuybox = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_is_buybox : (liveItem.amazonIsBuybox ? 1 : 0);
 
-    const MS_24_HOURS = 86400000;
-    if (newMissingSince && (now - newMissingSince > MS_24_HOURS) && 
-        usedMissingSince && (now - usedMissingSince > MS_24_HOURS) && 
-        amazonMissingSince && (now - amazonMissingSince > MS_24_HOURS)) {
-      d1Batch.push(env.DB.prepare("UPDATE Global_Products SET delisted = 1, last_updated = ? WHERE asin = ?").bind(now, liveItem.asin));
-
-      const { results: subs } = await env.DB.prepare("SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0").bind(liveItem.asin).all();
-      for (const sub of subs) {
-        queueBatch.push({
-          type: 'telegram_alert',
-          asin: liveItem.asin,
-          chatId: sub.chat_id,
-          text: t('alert.missing_head', sub.lang) + `\nASIN <code>${liveItem.asin}</code> ` + t('alert.missing_body', sub.lang)
-        });
-      }
-      continue;
-    }
+    // Note: 24h missing → delisted check removed. Anti-flap timers above are in-memory only.
 
     const { results: subs } = await env.DB.prepare(
       "SELECT s.chat_id, s.target_price, s.alert_sent_new, s.alert_sent_used, s.added_at, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0"
@@ -435,7 +393,7 @@ export async function executeScrapeEngine(env, offset = 0) {
 
     let dbNeedsUpdate = false;
 
-    if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass || newMissingSince !== oldItem.new_missing_since || usedMissingSince !== oldItem.used_missing_since || amazonMissingSince !== oldItem.amazon_missing_since) {
+    if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass) {
       dbNeedsUpdate = true;
     }
 
@@ -460,17 +418,15 @@ export async function executeScrapeEngine(env, offset = 0) {
     if (dbNeedsUpdate) {
       d1Batch.push(
         env.DB.prepare(`
-          UPDATE Global_Products 
-          SET amazon_price = ?, used_price = ?, new_price = ?, last_updated = ?, 
-              new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ?,
+          UPDATE Global_Products
+          SET amazon_price = ?, used_price = ?, new_price = ?, last_updated = ?,
               seen_amazon_eg_at = ?, seen_resale_at = ?,
               new_seller = ?, new_mid = ?, used_seller = ?, used_mid = ?,
               amazon_seller = ?, amazon_mid = ?, amazon_is_buybox = ?,
               hist_mean = ?, hist_stdev = ?, is_atl_new = ?
           WHERE asin = ?
         `).bind(
-          finalAmazonPrice, finalUsedPrice, finalNewPrice, now, 
-          newMissingSince, usedMissingSince, amazonMissingSince,
+          finalAmazonPrice, finalUsedPrice, finalNewPrice, now,
           seenAmazonEgAt, seenResaleAt,
           finalNewSeller, finalNewMid, finalUsedSeller, finalUsedMid,
           finalAmazonSeller, finalAmazonMid, finalAmazonIsBuybox,

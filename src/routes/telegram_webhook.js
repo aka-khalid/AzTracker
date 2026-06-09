@@ -656,7 +656,7 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
   };
 
   if (isAdmin) {
-    keyboard.inline_keyboard.splice(2, 0, [{ text: t('menu.btn_admin_panel', lang), web_app: { url: `${baseUrl}/crm` } }]);
+    keyboard.inline_keyboard.splice(2, 0, [{ text: t('menu.btn_admin_panel', lang), web_app: { url: `${baseUrl}/crm?lang=${lang}` } }]);
   }
 
   if (messageId) {

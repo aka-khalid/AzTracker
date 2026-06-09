@@ -65,6 +65,7 @@ async function verifyInitData(telegramInitData, botToken) {
 }
 
 export async function fetchAPI(request, env, ctx) {
+    const url = new URL(request.url);
     
     if (url.pathname.startsWith("/api/crm/history/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
