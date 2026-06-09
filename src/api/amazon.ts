@@ -77,7 +77,8 @@ export class AmazonEdgeParser {
         'offersV2.listings.merchantInfo',
         'offersV2.listings.isBuyBoxWinner'
       ],
-      partnerTag: this.partnerTag
+      partnerTag: this.partnerTag,
+      condition: 'Any'
     };
 
     const response = await fetch(this.endpoint, {

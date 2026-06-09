@@ -212,6 +212,47 @@ export default {
 
 
 
+    if (url.pathname === "/api/test-asin") {
+      try {
+        const asin = url.searchParams.get("asin") || "B094HJ4JSH";
+        let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
+        if (!accessToken) {
+          const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+          const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+          accessToken = await getAmazonAccessToken(clientId, clientSecret);
+        }
+        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG);
+        const items = await parser.getItems([asin]);
+        const response2 = await fetch(parser.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json, text/javascript',
+            'Authorization': `Bearer ${accessToken}`,
+            'X-Marketplace': parser.endpointHost
+          },
+          body: JSON.stringify({
+            itemIds: [asin],
+            itemIdType: 'ASIN',
+            resources: [
+              'itemInfo.title',
+              'offersV2.listings.price',
+              'offersV2.listings.condition',
+              'offersV2.listings.merchantInfo',
+              'offersV2.listings.isBuyBoxWinner'
+            ],
+            partnerTag: parser.partnerTag,
+            condition: 'Any',
+            offerCount: 10
+          })
+        });
+        const data = await response2.json();
+        return new Response(JSON.stringify({ parsed: items, raw: data }, null, 2), { headers: { "Content-Type": "application/json" } });
+      } catch (e) {
+        return new Response(e.stack || e.message, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/migrate-kv" && request.method === "GET") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
@@ -1861,14 +1902,29 @@ async function renderProductList(env, chatId, messageId, page = 0) {
 async function renderProductView(env, chatId, messageId, pid, baseUrl) {
   const product = await env.DB.prepare(
     `SELECT s.asin, s.is_paused as paused, s.target_price, p.name as name, 
-            p.amazon_price, p.used_price, p.new_price, p.last_updated 
+            p.amazon_price, p.used_price, p.new_price, p.last_updated,
+            p.new_seller, p.new_mid, p.used_seller, p.used_mid,
+            p.amazon_seller, p.amazon_mid, p.seen_amazon_eg_at, p.seen_resale_at
      FROM User_Subscriptions s 
      JOIN Global_Products p ON s.asin = p.asin 
      WHERE s.chat_id = ? AND s.asin = ?`
   ).bind(chatId, pid).first();
 
   if (!product) return;
-  const prices = { [pid]: { new_price: product.new_price, used_price: product.used_price, name: product.name } };
+  const prices = { [pid]: {
+    new_price: product.new_price,
+    used_price: product.used_price,
+    amazon_price: product.amazon_price,
+    name: product.name,
+    new_seller: product.new_seller,
+    new_mid: product.new_mid,
+    used_seller: product.used_seller,
+    used_mid: product.used_mid,
+    amazon_seller: product.amazon_seller,
+    amazon_mid: product.amazon_mid,
+    seen_amazon_eg_at: product.seen_amazon_eg_at,
+    seen_resale_at: product.seen_resale_at
+  } };
 
   const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
   let lastPrice = "⏳ Waiting for next automated check...";
@@ -1890,8 +1946,10 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
         lastPrice = newPrice.toLocaleString() + " EGP";
         if (newSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(newSeller)}</i>`;
       } else if (usedPrice !== undefined && usedPrice !== null) {
-        lastPrice = "❌ Out of Stock (New)";
-        sellerInfo = "";
+        // Gap 9.8 fix: show used price + used seller when new stock is unavailable
+        const usedSeller = pData.used_seller;
+        lastPrice = `${usedPrice.toLocaleString()} EGP <i>(Used)</i>`;
+        if (usedSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(usedSeller)}</i>`;
       } else {
         lastPrice = "❌ Out of Stock";
         sellerInfo = "";
