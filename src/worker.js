@@ -1011,7 +1011,27 @@ async function executeScrapeEngine(env, offset = 0) {
     for (const sub of subs) {
       if (sub.added_at && (now - sub.added_at > MS_90_DAYS)) {
         d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
-        queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text: `⏰ <b>Tracking Expired</b>\nASIN <code>${liveItem.asin}</code> has been tracked for over 90 days. Tracking paused automatically to save limits.\n\nSend /manage to review your items.` });
+        
+        // Gap 9.4: Python-parity rich message — differentiate target-price vs general expiry
+        const safeProductName = escapeHtml(truncateName(liveItem.name || liveItem.asin));
+        let expiryMsg;
+        if (sub.target_price) {
+          expiryMsg =
+            `⏰ <b>STALE TARGET RETIRED</b>\n\n` +
+            `📦 <b>${safeProductName}</b>\n` +
+            `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+            `Your target price of <b>${Number(sub.target_price).toLocaleString()} EGP</b> has been active for over 90 days without being met.\n\n` +
+            `<i>To conserve system resources, checking for this item has been automatically paused. You can resume it from your dashboard anytime.</i>`;
+        } else {
+          expiryMsg =
+            `⏰ <b>TRACKING EXPIRED</b>\n\n` +
+            `📦 <b>${safeProductName}</b>\n` +
+            `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+            `This item has been tracked for over 90 days. Tracking has been automatically paused to conserve system resources.\n\n` +
+            `<i>You can resume it anytime from your dashboard.</i>`;
+        }
+        
+        queueBatch.push({ type: 'telegram_alert', chatId: sub.chat_id, text: expiryMsg });
         continue;
       }
 
