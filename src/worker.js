@@ -2338,26 +2338,6 @@ function getAsinFromUrl(url) {
   return null;
 }
 
-async function triggerWorkflow(env) {
-  const url = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/price_tracker.yml/dispatches`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${env.GH_WORKFLOW_TOKEN}`,
-        "User-Agent": "Agent/AzTrackerBot",
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ ref: GITHUB_BRANCH })
-    });
-    return res;
-  } catch (e) {
-    console.error("GitHub Actions dispatch fetch failed (Timeout/DNS):", e);
-    return { ok: false, status: 0 };
-  }
-}
-
 async function sendTelegram(env, chatId, text, replyMarkup = null) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
   const body = { chat_id: chatId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
@@ -3055,9 +3035,9 @@ function renderCrmHTML() {
                         \${p.target_price ? \`<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: \${p.target_price}</div>\` : ''}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ Res' : '⏸️ Paws'}</button>
+                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ Resume' : '⏸️ Pause'}</button>
                         <button onclick="openChartModal('\${p.asin}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 Chart</button>
-                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ Del</button>
+                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ Delete</button>
                     </div>
                 </div>\`;
             }).join('');
