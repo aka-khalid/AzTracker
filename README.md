@@ -23,13 +23,13 @@
 ## 🚀 Key Engineering Achievements
 
 ### 🛡️ The Time-Based Hysteresis "Anti-Flap" Engine
-Amazon's PA-API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a D1-backed time-based Hysteresis buffer. It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam.
+Amazon's Creators API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a D1-backed time-based Hysteresis buffer. It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam.
 
 ### ⚛️ Decoupled Async Message Delivery
 To prevent race conditions and ensure optimal reliability, Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The Telegram delivery worker uses an atomic lock that updates the database only on a successful 200 OK delivery.
 
 ### 📦 Smart Alternatives & Hidden Warehouse Deals
-AzTracker parses complex condition sub-schemas from the Amazon PA-API to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons based on the exact condition.
+AzTracker parses complex condition sub-schemas from the Amazon Creators API to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons based on the exact condition.
 
 ### 📉 Distributed Scraping with Dynamic Governor Logic
 To prevent API rate-limiting, the scraper engine utilizes Cloudflare Queues (`scraper-queue`) with recursive triggering. A dynamic Governor script calculates the optimal batch sizes and distribution based on the total active user pool, ensuring requests are perfectly distributed across the hour.
@@ -48,7 +48,7 @@ graph TD;
     Cron[⏱️ CF Cron Trigger: * * * * *] --> Governor[⚡ Dynamic Governor];
     Governor -- Dispatches Batches --> SQ[📦 CF Queue: scraper-queue];
     SQ --> Engine[⚙️ Scraper Engine Worker];
-    Engine -- Batched PA-API Call --> PAAPI[🛒 Amazon Creators API];
+    Engine -- Batched Creators API Call --> PAAPI[🛒 Amazon Creators API];
     PAAPI -- Live Prices --> Engine;
     Engine -- Anti-Flap Logic & KV Deltas --> KV_Hist[(☁️ CF KV: Price History)];
     Engine -- Updates Global State --> D1;
@@ -81,7 +81,7 @@ The application is structured entirely using ES6 Modules within the `src/` direc
 
 ### 🔄 Background Jobs (`src/workers/`)
 - **`cron_trigger.js`**: Triggered by Cloudflare's `* * * * *` and `0 0 * * *` cron jobs. Manages D1 garbage collection and dynamically calculates scraping velocity using the active subscription pool. Dispatches initial jobs to the scraper queue.
-- **`scraper_engine.js`**: Core PA-API consumer. Processes database chunks, evaluates complex condition logic, pushes history to KV, and determines alert priority.
+- **`scraper_engine.js`**: Core Creators API consumer. Processes database chunks, evaluates complex condition logic, pushes history to KV, and determines alert priority.
 - **`queue_worker.js`**: Consumer for both `scraper-queue` and `telegram-outbox`. Ensures stable delivery and exponential backoff retry for Telegram rate limits.
 
 ---
@@ -94,12 +94,11 @@ The engine requires the following critical variables injected via `wrangler.toml
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Your Telegram Bot API token. |
 | `TELEGRAM_WEBHOOK_SECRET` | Security token to validate incoming Telegram webhook requests. |
-| `TELEGRAM_ROOT_ADMIN_IDS` / `TELEGRAM_ADMIN_IDS` | Comma-separated list of root-level Telegram user IDs. |
-| `AMAZON_CLIENT_ID` / `AMZN_CREATORS_ACCESS_KEY` | Amazon PA-API Access Key. |
-| `AMAZON_CLIENT_SECRET` / `AMZN_CREATORS_SECRET_KEY` | Amazon PA-API Secret Key. |
-| `AMZN_ASSOCIATES_TAG` / `AMAZON_PARTNER_TAG` | Your Amazon Associates Tracking ID. |
-| `AMZN_EG_MERCHANT_ID` | Amazon.eg Retail Merchant ID. |
-| `AMZN_RESALE_MERCHANT_ID` | Amazon.eg Resale/Warehouse Merchant ID. |
+| `TELEGRAM_ROOT_ADMIN_IDS` | Comma-separated list of root-level Telegram user IDs. |
+| `AMAZON_CLIENT_ID` | Amazon Creators API Access Key. |
+| `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret Key. |
+| `AMAZON_PARTNER_TAG` | Your Amazon Associates Tracking ID for Product URLs. |
+| `AMZN_ASSOCIATES_TAG` | Your Amazon Associates Tracking ID for the Creators API Payload. |
 | `DEFAULT_USER_PRODUCT_LIMIT` | Global limit on concurrent tracks per user. |
 | `TELEGRAM_PUBLIC_CHANNEL_ID` | (Optional) Target ID for automated Deal Broadcasting. |
 
