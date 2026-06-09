@@ -12,7 +12,7 @@ const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const QUEUE_MAX_DEPTH = 25;
 
 
-import { AmazonEdgeParser, getAmazonAccessToken } from './src/api/amazon';
+import { AmazonEdgeParser, getAmazonAccessToken } from './api/amazon';
 
 export default {
   async scheduled(event, env, ctx) {
