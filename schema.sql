@@ -79,8 +79,8 @@ CREATE TABLE User_Subscriptions (
 -- ============================================================================
 -- 4. Performance Indexes
 -- ============================================================================
--- Optimizes the UI /manage list queries
-CREATE INDEX idx_subscriptions_chat_id ON User_Subscriptions(chat_id);
+-- Optimizes the CRM Web App list queries
+CREATE INDEX IF NOT EXISTS idx_usersubscriptions_chatid ON User_Subscriptions (chat_id);
 -- Optimizes the Cron engine joining users to active products
 CREATE INDEX idx_subscriptions_asin ON User_Subscriptions(asin);
 -- Optimizes garbage collection / stale product queries

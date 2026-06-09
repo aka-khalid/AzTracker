@@ -9,7 +9,7 @@ This document tracks the technical debt, security fortifications, feature expans
   <summary><b>View Execution Brief</b></summary>
   
   **The Goal:** Eliminate legacy Cloudflare KV limits, establish relational data integrity, and build a unified interactive Command Center.
-  **The Strategy:** Fully migrated the relational models (`Users`, `Subscriptions`, `Global_Products`, `Audit_Logs`, and `Bot_States`) to Cloudflare D1 (SQLite) using a native schema. Converted the legacy `/manage` text commands into an interactive Telegram Web App CRM Dashboard built with Tailwind CSS. Integrated native Chart.js inline charts directly within the Web App, alongside a lazy history scrubber and security hardening.
+  **The Strategy:** Fully migrated the relational models (`Users`, `Subscriptions`, `Global_Products`, `Audit_Logs`, and `Bot_States`) to Cloudflare D1 (SQLite) using a native schema. Converted the legacy text commands into an interactive Telegram Web App CRM Dashboard built with Tailwind CSS. Integrated native Chart.js inline charts directly within the Web App, alongside a lazy history scrubber and security hardening.
   </details>
 
 - [x] **Phase 6.10: Monolith Decomposition & Async Queues**

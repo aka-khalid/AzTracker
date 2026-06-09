@@ -27,7 +27,7 @@
 To bypass edge limitations, AzTracker strictly separates state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all relational user tracking, concurrency locks, and the Hysteresis Engine. The legacy **Cloudflare KV** namespace is retained strictly as a NoSQL document store to handle massive time-series arrays for UI rendering (`history:{asin}`) and the Omnichannel Global Matrix, dropping database read-exhaustion to near zero.
 
 ### 🛡️ Edge-Rendered CRM & SIEM Auditing
-The `/manage` command bypasses native Telegram constraints by serving an edge-rendered, Tailwind-styled Command Center Web App. The `/api/crm/audit` route acts as a forensic SIEM ledger, secured via HMAC-SHA256 signature token verification against the `TELEGRAM_WEBHOOK_SECRET` to prevent unauthorized dashboard access.
+The **👑 Admin Panel** button within the `/start` menu bypasses native Telegram constraints by serving an edge-rendered, Tailwind-styled Command Center Web App. The `/api/crm/audit` route acts as a forensic SIEM ledger, secured via HMAC-SHA256 signature token verification against the `TELEGRAM_WEBHOOK_SECRET` to prevent unauthorized dashboard access.
 
 ### ⚛️ Decoupled Async Message Delivery
 To prevent race conditions and ensure optimal reliability, Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The Telegram delivery worker uses an atomic lock that updates the database only on a successful 200 OK delivery, creating a flawless Two-Phase Commit (2PC).
