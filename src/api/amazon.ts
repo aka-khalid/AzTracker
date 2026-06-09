@@ -52,7 +52,7 @@ export class AmazonEdgeParser {
   ) {
     this.accessToken = accessToken;
     this.partnerTag = partnerTag;
-    this.endpoint = `https://creatorsapi.amazon.com/paapi5/getitems`;
+    this.endpoint = `https://creatorsapi.amazon/paapi5/getitems`;
     this.endpointHost = endpointHost;
   }
 
@@ -96,8 +96,8 @@ export class AmazonEdgeParser {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`[AmazonEdgeParser] PA-API HTTP Error: ${response.status}`, errorBody);
-      throw new Error(`PA-API Error: ${response.status}`);
+      console.error(`[AmazonEdgeParser] Creators API HTTP Error: ${response.status}`, errorBody);
+      throw new Error(`Creators API Error: ${response.status}`);
     }
 
     const data = await response.json() as any;
