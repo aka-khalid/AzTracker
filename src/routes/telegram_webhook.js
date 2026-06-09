@@ -1,4 +1,5 @@
 import { getUserRoles, logAudit, resolveUserProfile } from '../core/db.js';
+import { t, resolveLanguageCode, getWelcomeMessage } from '../core/i18n.js';
 
 const QUEUE_MAX_DEPTH = 25;
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
@@ -19,10 +20,10 @@ export async function handleTelegramWebhook(request, env, ctx) {
 
   try {
     const payload = await request.json();
-    const baseUrl = url.origin; 
-    
+    const baseUrl = url.origin;
+
     if (payload.callback_query) {
-      ctx.waitUntil(handleCallback(payload.callback_query, env, baseUrl, ctx)); 
+      ctx.waitUntil(handleCallback(payload.callback_query, env, baseUrl, ctx));
     } else if (payload.message && payload.message.text) {
       ctx.waitUntil(handleMessage(payload.message, env, baseUrl, ctx));
     }
@@ -39,38 +40,47 @@ async function handleMessage(message, env, baseUrl, ctx) {
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
-  const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
+  // ── Language Detection ──────────────────────────────────────────────────
+  // For approved users: read lang from DB via getUserRoles
+  // For unapproved users: detect from Telegram OS language_code
+  const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
+  const osLang = resolveLanguageCode(message.from?.language_code);
+  const lang = dbLang || osLang || 'en';
+
   if (!isApproved) {
     if (isRejected) {
-      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nYour request to join this server has been explicitly rejected by an administrator.`);
+      await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang));
       return;
     }
     const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
 
     if (inQueue) {
-      await sendAppMessage(env, chatId, `⏳ <b>Request Pending</b>\n\nYour application is currently under review by an administrator. Please wait.`);
+      await sendAppMessage(env, chatId, t('access.pending_head', lang) + '\n\n' + t('access.pending_body', lang));
       return;
     }
-    
+
     if (text === "/start") {
-      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private Amazon deals server. You are not authorized to use it.`, {
-        inline_keyboard: [[{ text: "✋ Request Access", callback_data: `request_access_${chatId}` }]]
+      await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang), {
+        inline_keyboard: [[{ text: t('access.request_btn', lang), callback_data: `request_access_${chatId}` }]]
       });
     } else {
-      await sendAppMessage(env, chatId, `⛔ <b>Access Denied</b>\n\nThis is a private Amazon deals server. You are not authorized to use it.\n\nSend /start to request access.`);
+      await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang) + '\n\n' + t('access.denied_hint_start', lang));
     }
     return;
   }
 
   const stateKey = `state:${chatId}`;
   const activeState = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(stateKey).first('value');
-  
+
   // --- OVERRIDE BLOCK ---
   if (text === "/start") {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
-    
-    await renderMainMenu(env, chatId, null, isAdmin, baseUrl);
+
+    // Persist detected language on every /start for approved users
+    await env.DB.prepare("UPDATE Users SET lang = ? WHERE chat_id = ? AND (lang IS NULL OR lang != ?)").bind(osLang, chatId, osLang).run();
+
+    await renderMainMenu(env, chatId, null, isAdmin, baseUrl, lang);
     return;
   } else if (text.startsWith('/')) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
@@ -81,25 +91,25 @@ async function handleMessage(message, env, baseUrl, ctx) {
   // -------------------------------
 
 
-  
   if (activeState) {    const pid = activeState;
     const num = parseFloat(text);
-    
+
     if (isNaN(num) || num <= 0) {
       await deleteTelegramMessage(env, chatId, messageId);
-      await sendAppMessage(env, chatId, "⚠️ <b>Invalid amount.</b> Please enter a valid number.", {
-        inline_keyboard: [[{ text: "⬅️ Back", callback_data: `view_${pid}` }]]
+      await sendAppMessage(env, chatId, t('target.invalid_amount', lang), {
+        inline_keyboard: [[{ text: t('nav.back', lang), callback_data: `view_${pid}` }]]
       });
       return;
     }
 
     await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(num, chatId, pid).run();
-    
+
     await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
-    
-    await sendAppMessage(env, chatId, `🎯 <b>Target Price Set!</b>\n\nYou will only be notified when ASIN <code>${pid}</code> drops to or below <b>${num.toLocaleString()} EGP</b>.`, {
-      inline_keyboard: [[{ text: "⬅️ Back to Product", callback_data: `view_${pid}` }]]
+
+    const rawPrice = num.toLocaleString();
+    await sendAppMessage(env, chatId, t('target.set_confirm_head', lang) + '\n\n' + t('target.set_confirm_body', lang, { asin: pid, price: t('chrome.currency_egp', lang) + ' ' + rawPrice }), {
+      inline_keyboard: [[{ text: t('nav.back_to_product', lang), callback_data: `view_${pid}` }]]
     });
     return;
   }
@@ -120,31 +130,31 @@ async function handleMessage(message, env, baseUrl, ctx) {
       inputUrl = "https://" + inputUrl;
     }
 
-    const sentMsg = await sendAppMessage(env, chatId, `⏳ <b>Processing Amazon link...</b>`);
+    const sentMsg = await sendAppMessage(env, chatId, t('link.processing', lang));
     const tempMessageId = sentMsg.result.message_id;
 
     const expandedUrl = await expandAmazonUrl(inputUrl);
-    
+
     const domainMatch = expandedUrl.match(/https?:\/\/(?:www\.)?(amazon\.[a-z\.]+)/i);
     const productDomain = domainMatch ? domainMatch[1].toLowerCase() : null;
     const SUPPORTED_REGIONS = ['amazon.eg'];
 
     if (!productDomain || !SUPPORTED_REGIONS.includes(productDomain)) {
-      await editTelegramMessage(env, chatId, tempMessageId, `❌ <b>Region Not Supported</b>\n\nCurrently, we only support <code>amazon.eg</code>.`, {
-        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      await editTelegramMessage(env, chatId, tempMessageId, t('link.region_not_supported_head', lang) + '\n\n' + t('link.region_not_supported_body', lang), {
+        inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
       });
       return;
     }
 
     const pid = getAsinFromUrl(expandedUrl);
-    
+
     if (!pid) {
-      await editTelegramMessage(env, chatId, tempMessageId, "❌ <b>Could not parse a valid 10-digit ASIN.</b>", {
-        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      await editTelegramMessage(env, chatId, tempMessageId, t('link.could_not_parse', lang), {
+        inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
       });
       return;
     }
-    
+
     const user = await env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(chatId).first();
     const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
     const userLimit = user && user.item_limit !== null ? parseInt(user.item_limit) : defaultLimit;
@@ -153,32 +163,32 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     if (!isAdmin) {
       if (isNaN(defaultLimit)) {
-        await editTelegramMessage(env, chatId, tempMessageId, `⚠️ <b>System Error:</b> Global item limit is unconfigured. Please contact an admin.`, {
-          inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+        await editTelegramMessage(env, chatId, tempMessageId, t('link.system_error', lang), {
+          inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
         });
         return;
       }
 
       if (existingProducts && existingProducts.length >= userLimit) {
-        await editTelegramMessage(env, chatId, tempMessageId, `⛔ <b>Limit Reached</b>\n\nYou have saved ${existingProducts.length} items, but your current limit is ${userLimit}.\n\nPlease delete some products to free up space before adding new ones.`, {
+        await editTelegramMessage(env, chatId, tempMessageId, t('link.limit_reached_head', lang) + '\n\n' + t('link.limit_reached_body', lang, { used: existingProducts.length, limit: userLimit }), {
           inline_keyboard: [
-            [{ text: "📦 Manage My Products", callback_data: "list_products_0" }],
-            [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+            [{ text: t('link.manage_products', lang), callback_data: "list_products_0" }],
+            [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
           ]
         });
         return;
       }
     }
-    
+
     if (existingProducts && existingProducts.some(p => p.asin === pid)) {
-      await editTelegramMessage(env, chatId, tempMessageId, "⚠️ <b>You have already saved this product!</b>", {
-        inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]]
+      await editTelegramMessage(env, chatId, tempMessageId, t('link.already_exists', lang), {
+        inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
       });
       return;
     }
 
     const extractedName = extractNameFromUrl(expandedUrl);
-    
+
     // Insert into Global_Products to track price globally
     await env.DB.prepare(`
       INSERT INTO Global_Products (asin, name, last_updated)
@@ -197,16 +207,16 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     const title = extractedName ? extractedName : pid;
     const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
-    
-    const successText = `✅ <b>Product Registered!</b>\n\n` +
+
+    const successText = t('link.registered_head', lang) + '\n\n' +
                     `📌 <b>${cleanTitle}</b>\n` +
                     `🆔 ASIN: <code>${pid}</code>\n\n` +
-                    `<i>This item is now saved. It will pull the live price during the next automated check.</i>\n\n` +
-                    `🕐 <b>Status:</b> ⏳ Pending initial scan...\n\n#ad`;
+                    t('link.registered_status', lang) + '\n\n' +
+                    `🕐 <b>Status:</b> ${t('link.pending_scan', lang)}\n\n#ad`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
         [{ text: "📦 View My Products", callback_data: "list_products_0" }],
-        [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+        [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
       ]
     });
     return;
@@ -214,8 +224,8 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
 
   await deleteTelegramMessage(env, chatId, messageId);
-  await sendAppMessage(env, chatId, "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.", {
-    inline_keyboard: [[{ text: "🏠 Open Main Menu", callback_data: "main_menu" }]]
+  await sendAppMessage(env, chatId, t('link.invalid_command', lang), {
+    inline_keyboard: [[{ text: t('nav.open_menu', lang), callback_data: "main_menu" }]]
   });
 }
 
@@ -225,7 +235,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const chatId = message.chat.id.toString();
   const messageId = message.message_id;
 
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers } = await getUserRoles(chatId, env, ctx);
+  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers, lang } = await getUserRoles(chatId, env, ctx);
   if (ctx && ctx.waitUntil) ctx.waitUntil(syncUserNames(env, chatId, callback.from, baseUrl));
 
   if (!isApproved && !data.startsWith("request_access_")) return;
@@ -235,27 +245,27 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   try {
     if (data.startsWith("request_access_")) {
       const targetId = data.replace("request_access_", "");
-      if (targetId !== chatId) return; 
+      if (targetId !== chatId) return;
 
       const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
       if (inQueue) {
-        await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
+        await editTelegramMessage(env, chatId, messageId, t('access.request_sent', lang));
         return; // SEVERS THE BROADCAST LOOP FOR DUPLICATE CLICKS
       }
 
       const countRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Join_Queue").first();
       if (countRow.count >= QUEUE_MAX_DEPTH) {
-        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Queue Full</b>\n\nThe access queue is currently full. Please try again in 24 hours.`);
+        await editTelegramMessage(env, chatId, messageId, t('access.queue_full_head', lang) + '\n\n' + t('access.queue_full_body', lang));
         return;
       }
 
-      await editTelegramMessage(env, chatId, messageId, `⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.`);
+      await editTelegramMessage(env, chatId, messageId, t('access.request_sent', lang));
 
       const { label } = await resolveUserProfile(env, chatId, ctx);
-      const adminMsg = `🔔 <b>New Access Request</b>\n\n👤 <b>Name:</b> ${escapeHtml(label)}\n🆔 <b>ID:</b> <code>${chatId}</code>\n\n<i>This user is requesting authorization to access the server.</i>`;
+      const adminMsg = t('access.admin_new_request_head', lang) + '\n\n' + t('access.admin_new_request_body', lang, { name: escapeHtml(label), id: chatId });
       const adminButtons = {
         inline_keyboard: [
-          [{ text: "✅ Approve", callback_data: `queueApprove_${chatId}` }, { text: "❌ Reject", callback_data: `queueReject_${chatId}` }]
+          [{ text: t('access.admin_new_request_btn_approve', lang), callback_data: `queueApprove_${chatId}` }, { text: t('access.admin_new_request_btn_reject', lang), callback_data: `queueReject_${chatId}` }]
         ]
       };
 
@@ -271,10 +281,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
 
       await env.DB.prepare("INSERT INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages) VALUES (?, ?, ?, ?, ?)").bind(
-          chatId, 
-          callback.from ? callback.from.first_name : '', 
-          callback.from ? callback.from.username : '', 
-          Date.now(), 
+          chatId,
+          callback.from ? callback.from.first_name : '',
+          callback.from ? callback.from.username : '',
+          Date.now(),
           JSON.stringify(admin_messages)
       ).run();
     }
@@ -282,41 +292,44 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("queueReject_", "");
       let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
       if (!queueObj) {
-        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
+        await editTelegramMessage(env, chatId, messageId, t('admin.request_expired', lang));
         return;
       }
       if (typeof queueObj.admin_messages === 'string') {
         try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
       }
       await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-      
+
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
-      await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been denied access by ${escapeHtml(adminName)}.`);
-      
+      await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected', lang, { id: targetId, admin: escapeHtml(adminName) }));
+
       if (queueObj && queueObj.admin_messages) {
           for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
               if (admId !== chatId) {
-                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `🚫 <b>Request Handled</b>\nUser <code>${targetId}</code> was rejected by ${escapeHtml(adminName)}.`, { inline_keyboard: [] }));
+                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, t('access.handled_request', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] }));
               }
           }
       }
-      
+
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at)
-         VALUES (?, ?, ?, 'rejected', ?, ?, ?)
+         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang)
+         VALUES (?, ?, ?, 'rejected', ?, ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
       `).bind(
-        targetId, 
-        queueObj ? (queueObj.first_name || '') : '', 
-        queueObj ? (queueObj.username || '') : '', 
-        chatId, 
-        env.DEFAULT_USER_PRODUCT_LIMIT || "3", 
-        Date.now()
+        targetId,
+        queueObj ? (queueObj.first_name || '') : '',
+        queueObj ? (queueObj.username || '') : '',
+        chatId,
+        env.DEFAULT_USER_PRODUCT_LIMIT || "3",
+        Date.now(),
+        resolveLanguageCode(queueObj?.language_code) || 'en'
       ).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
-      await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.`);
-      
+      // Notify rejected user in their detected language
+      const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
+      await sendTelegram(env, targetId, t('access.denied_notify', targetLang));
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Rejected via Join Queue"));
     }
@@ -324,193 +337,200 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("queueApprove_", "");
       let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
       if (!queueObj) {
-        await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.`);
+        await editTelegramMessage(env, chatId, messageId, t('admin.request_expired', lang));
         return;
       }
       if (typeof queueObj.admin_messages === 'string') {
         try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
       }
       await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-      
+
+      const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
+      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
+
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at)
-         VALUES (?, ?, ?, 'approved', ?, ?, ?)
-         ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by
+         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang)
+         VALUES (?, ?, ?, 'approved', ?, ?, ?, ?)
+         ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by, lang = COALESCE(lang, excluded.lang)
       `).bind(
-        targetId, 
-        queueObj ? (queueObj.first_name || '') : '', 
-        queueObj ? (queueObj.username || '') : '', 
-        chatId, 
-        env.DEFAULT_USER_PRODUCT_LIMIT || "3", 
-        Date.now()
+        targetId,
+        queueObj ? (queueObj.first_name || '') : '',
+        queueObj ? (queueObj.username || '') : '',
+        chatId,
+        env.DEFAULT_USER_PRODUCT_LIMIT || "3",
+        Date.now(),
+        targetLang
       ).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-      
+
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
-      await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`);
+      await editTelegramMessage(env, chatId, messageId, t('admin.approved_result', lang, { id: targetId, admin: escapeHtml(adminName) }));
 
       if (queueObj && queueObj.admin_messages) {
           for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
               if (admId !== chatId) {
-                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, `✅ <b>Request Handled</b>\nUser <code>${targetId}</code> was approved by ${escapeHtml(adminName)}.`, { inline_keyboard: [] }));
+                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, t('access.handled_approved', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] }));
               }
           }
       }
-      
-      const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome!</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>\n\nHappy shopping! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
-      
+
+      // Send welcome message in the user's detected language
+      const welcomeMessage = getWelcomeMessage(targetLang, defaultLimit);
       await sendTelegram(env, targetId, welcomeMessage);
-      
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Approved via Join Queue"));
     }
     else if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
       if (rootAdmins.includes(targetId) || (admins.includes(targetId) && !isRootAdmin)) return;
-      const text = `⚠️ <b>Confirm Revocation</b>\n\nAre you sure you want to permanently revoke ID <code>${targetId}</code>?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>`;
+      const text = t('admin.confirm_revoke_head', lang) + '\n\n' + t('admin.confirm_revoke_body', lang, { id: targetId });
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
-          [{ text: "✅ Yes, Revoke", callback_data: `revoke_${targetId}` }],
-          [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+          [{ text: t('admin.btn_revoke', lang), callback_data: `revoke_${targetId}` }],
+          [{ text: t('admin.btn_cancel', lang), callback_data: `manage_user_${targetId}` }]
         ]
       });
     }
     else if (data.startsWith("confDemote_") && isRootAdmin) {
       const targetId = data.replace("confDemote_", "");
-      const text = `⚠️ <b>Confirm Demotion</b>\n\nAre you sure you want to strip Admin privileges from ID <code>${targetId}</code>?`;
+      const text = t('admin.confirm_demote_head', lang) + '\n\n' + t('admin.confirm_demote_body', lang, { id: targetId });
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
-          [{ text: "✅ Yes, Demote", callback_data: `demote_${targetId}` }],
-          [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+          [{ text: t('admin.btn_demote', lang), callback_data: `demote_${targetId}` }],
+          [{ text: t('admin.btn_cancel', lang), callback_data: `manage_user_${targetId}` }]
         ]
       });
     }
     else if (data.startsWith("confPromote_") && isRootAdmin) {
       const targetId = data.replace("confPromote_", "");
-      const text = `⚠️ <b>Confirm Promotion</b>\n\nAre you sure you want to grant full Admin privileges to ID <code>${targetId}</code>?`;
+      const text = t('admin.confirm_promote_head', lang) + '\n\n' + t('admin.confirm_promote_body', lang, { id: targetId });
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
-          [{ text: "✅ Yes, Promote", callback_data: `promote_${targetId}` }],
-          [{ text: "❌ Cancel", callback_data: `manage_user_${targetId}` }]
+          [{ text: t('admin.btn_promote', lang), callback_data: `promote_${targetId}` }],
+          [{ text: t('admin.btn_cancel', lang), callback_data: `manage_user_${targetId}` }]
         ]
       });
     }
     else if (data.startsWith("confClearTgt_")) {
       const pid = data.replace("confClearTgt_", "");
-      const text = `⚠️ <b>Confirm Target Removal</b>\n\nAre you sure you want to clear the target price for ASIN <code>${pid}</code>?`;
+      const text = t('target.remove_confirm_head', lang) + '\n\n' + t('target.remove_confirm_body', lang, { asin: pid });
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
-          [{ text: "✅ Yes, Clear Target", callback_data: `cleartarget_${pid}` }],
-          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+          [{ text: t('target.btn_yes_clear', lang), callback_data: `cleartarget_${pid}` }],
+          [{ text: t('target.remove_cancelled', lang), callback_data: `view_${pid}` }]
         ]
       });
     }
     else if (data.startsWith("reject_") && isAdmin) {
       const targetId = data.replace("reject_", "");
-      
+
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at)
-         VALUES (?, 'rejected', ?, ?, ?)
+         INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at, lang)
+         VALUES (?, 'rejected', ?, ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), lang).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-      
-      await editTelegramMessage(env, chatId, messageId, `🚫 <b>Request Rejected</b>\nUser <code>${targetId}</code> has been explicitly denied access.`);
-      await sendTelegram(env, targetId, `⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.`);
+
+      await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected_manual', lang, { id: targetId }));
+      await sendTelegram(env, targetId, t('access.denied_notify', lang));
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Manually rejected access"));
     }
     else if (data.startsWith("unban_") && isAdmin) {
       const targetId = data.replace("unban_", "");
-      
+
       await env.DB.prepare("DELETE FROM Users WHERE chat_id = ? AND role = 'rejected'").bind(targetId).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-      
-      await editTelegramMessage(env, chatId, messageId, `🔄 <b>User Unbanned</b>\nUser <code>${targetId}</code> has been removed from the Banned Directory. They can now send /start to request access again if they wish.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_panel" }]]
+
+      await editTelegramMessage(env, chatId, messageId, t('admin.unban_result', lang, { id: targetId }), {
+        inline_keyboard: [[{ text: t('admin.back_to_directory', lang), callback_data: "admin_panel" }]]
       });
-      
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "UNBAN_USER", targetId, "Removed from banned directory"));
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
-      await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at) VALUES (?, 'approved', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now()).run();
+      const targetLang = lang; // Use admin's lang as fallback; user will get /start to set their own
+      await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at, lang) VALUES (?, 'approved', ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by, lang = COALESCE(lang, excluded.lang)").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), targetLang).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-      await editTelegramMessage(env, chatId, messageId, `✅ <b>Approved!</b>\nUser <code>${targetId}</code> can now use the Amazon deals application.`);
-      
+      await editTelegramMessage(env, chatId, messageId, t('admin.approved_manual_result', lang, { id: targetId }));
+
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
-      const welcomeMessage = `🎉 <b>You have been approved! Welcome!</b>\n\nHere is a quick step-by-step guide on how to let the bot do the heavy lifting for your Amazon.eg shopping.\n\n<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.\n\n<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).\n\n<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!\n\n<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.\n\n<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>${defaultLimit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).\n\n<i>💡 Pro-Tip: You can always click "📦 My Products" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>\n\nHappy shopping! 🛒\n\n<i>"As an Amazon Associate I earn from qualifying purchases."</i>`;
-      
+      const welcomeMessage = getWelcomeMessage(targetLang, defaultLimit);
       await sendTelegram(env, targetId, welcomeMessage);
-      
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Manually approved"));
     }
     else if (data.startsWith("revoke_") && isAdmin) {
       const targetId = data.replace("revoke_", "");
-      
+
       // Security Boundary 1: Prevent revoking immutable Root Admins
       if (rootAdmins.includes(targetId)) return;
-      
+
       // Security Boundary 2: Standard Admins cannot revoke other Admins
       const targetRoles = await getUserRoles(targetId, env, ctx);
         if (targetRoles.isRootAdmin || (targetRoles.isAdmin && !isRootAdmin)) return;
 
 
-      
+
       await env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
-      
-      await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Revoked & Purged!</b>\nID <code>${targetId}</code> and their entire saved list have been permanently erased.`);
-      
+
+      await editTelegramMessage(env, chatId, messageId, t('admin.revoked_result', lang, { id: targetId }));
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "REVOKE_USER", targetId, "Revoked access and purged profile"));
     }
     else if (data.startsWith("promote_") && isRootAdmin) {
       const targetId = data.replace("promote_", "");
       await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
-      
+
       // CRITICAL FIX: Bust the edge cache for both the caller and the target
       if (ctx && ctx.waitUntil) {
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${chatId}`)));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       }
-      
-      await editTelegramMessage(env, chatId, messageId, `🌟 <b>Promoted!</b>\nID <code>${targetId}</code> has been elevated to Admin privileges.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_panel" }]]
+
+      await editTelegramMessage(env, chatId, messageId, t('admin.promoted_result', lang, { id: targetId }), {
+        inline_keyboard: [[{ text: t('admin.back_to_directory', lang), callback_data: "admin_panel" }]]
       });
-      await sendTelegram(env, targetId, `🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.`);
-      
+
+      // Notify promoted user in their language
+      const targetRoles = await getUserRoles(targetId, env, ctx);
+      const targetLang = targetRoles.lang || 'en';
+      await sendTelegram(env, targetId, t('admin.promoted_notify', targetLang));
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "PROMOTE_ADMIN", targetId, "Elevated to full Admin privileges"));
     }
     else if (data.startsWith("demote_") && isRootAdmin) {
       const targetId = data.replace("demote_", "");
       await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
-      
+
       // CRITICAL FIX: Bust the edge cache for both the caller and the target
       if (ctx && ctx.waitUntil) {
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${chatId}`)));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       }
-      
-      await editTelegramMessage(env, chatId, messageId, `🔽 <b>Demoted.</b>\nID <code>${targetId}</code> has returned to standard access tier.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Directory", callback_data: "admin_panel" }]]
+
+      await editTelegramMessage(env, chatId, messageId, t('admin.demoted_result', lang, { id: targetId }), {
+        inline_keyboard: [[{ text: t('admin.back_to_directory', lang), callback_data: "admin_panel" }]]
       });
-      
+
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "DEMOTE_ADMIN", targetId, "Demoted to standard access tier"));
     }
     else if (data === "main_menu") {
       await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
-      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl);
+      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, lang);
     }
     else if (data.startsWith("list_products_")) {
       await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
       const page = parseInt(data.replace("list_products_", "")) || 0;
-      await renderProductList(env, chatId, messageId, page);
+      await renderProductList(env, chatId, messageId, page, lang);
     }
     else if (data === "ignore") {
       return;
@@ -518,29 +538,29 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
     else if (data === "help_add") {
-      const text = `💡 <b>How to Add a Product:</b>\n\nCopy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.\n\n📱 <b>Short links shared directly from the mobile app are fully supported!</b>`;
+      const text = t('howto.head', lang) + '\n\n' + t('howto.body', lang) + '\n\n' + t('howto.shortlinks', lang);
       await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [[{ text: "⬅️ Back", callback_data: "main_menu" }]]
+        inline_keyboard: [[{ text: t('nav.back', lang), callback_data: "main_menu" }]]
       });
     }
     else if (data.startsWith("settarget_")) {
       const pid = data.replace("settarget_", "");
       await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES (?, ?, ?)").bind(`state:${chatId}`, pid, Date.now() + 300000).run();
-      const text = `🎯 <b>Set Target Price</b>\n\nASIN: <code>${pid}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).`;
+      const text = t('target.set_head', lang) + '\n\n' + t('target.set_prompt', lang, { asin: pid });
       await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [[{ text: "❌ Cancel", callback_data: `view_${pid}` }]]
+        inline_keyboard: [[{ text: t('target.cancel', lang), callback_data: `view_${pid}` }]]
       });
     }
     else if (data.startsWith("cleartarget_")) {
       const pid = data.replace("cleartarget_", "");
       await env.DB.prepare("UPDATE User_Subscriptions SET target_price = NULL WHERE chat_id = ? AND asin = ?").bind(chatId, pid).run();
       if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "CLEAR_TARGET", chatId, `Cleared target price for ${pid}`));
-      await renderProductView(env, chatId, messageId, pid, baseUrl);
+      await renderProductView(env, chatId, messageId, pid, baseUrl, lang);
     }
     else if (data.startsWith("view_")) {
       const pid = data.replace("view_", "");
       await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
-      await renderProductView(env, chatId, messageId, pid, baseUrl);
+      await renderProductView(env, chatId, messageId, pid, baseUrl, lang);
     }
     else if (data.startsWith("pause_") || data.startsWith("resume_")) {
       const action = data.split("_")[0];
@@ -549,28 +569,37 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const isPaused = action === "pause" ? 1 : 0;
       await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = ? WHERE chat_id = ? AND asin = ?").bind(isPaused, chatId, pid).run();
 
-      await renderProductView(env, chatId, messageId, pid, baseUrl);
+      await renderProductView(env, chatId, messageId, pid, baseUrl, lang);
     }
     else if (data.startsWith("confirmDel_")) {
       const pid = data.replace("confirmDel_", "");
-      const text = `⚠️ <b>Confirm Deletion</b>\n\nAre you sure you want to permanently delete ASIN <code>${pid}</code> from your saved list?\n\n<i>This action cannot be undone.</i>`;
-      
+      const text = t('delete.confirm_head', lang) + '\n\n' + t('delete.confirm_body', lang, { asin: pid });
+
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [
-          [{ text: "✅ Yes, Delete", callback_data: `remove_${pid}` }],
-          [{ text: "❌ Cancel", callback_data: `view_${pid}` }]
+          [{ text: t('delete.btn_yes_delete', lang), callback_data: `remove_${pid}` }],
+          [{ text: t('target.remove_cancelled', lang), callback_data: `view_${pid}` }]
         ]
       });
     }
     else if (data.startsWith("remove_")) {
       const pid = data.replace("remove_", "");
-      
+
       await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(chatId, pid).run();
       if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "DELETE_PRODUCT", chatId, `Deleted product ${pid}`));
-      
-      await editTelegramMessage(env, chatId, messageId, `🗑️ <b>Product Deleted</b>\n\nASIN <code>${pid}</code> has been completely removed from your active register.`, {
-        inline_keyboard: [[{ text: "⬅️ Back to Products", callback_data: "list_products_0" }]]
+
+      await editTelegramMessage(env, chatId, messageId, t('delete.deleted_head', lang) + '\n\n' + t('delete.deleted_body', lang, { asin: pid }), {
+        inline_keyboard: [[{ text: t('product.btn.back_to_products', lang), callback_data: "list_products_0" }]]
       });
+    }
+    // ── Language Toggle ────────────────────────────────────────────────────
+    else if (data === "toggle_lang") {
+      const newLang = lang === 'en' ? 'ar' : 'en';
+      await env.DB.prepare("UPDATE Users SET lang = ? WHERE chat_id = ?").bind(newLang, chatId).run();
+      await caches.default.delete(new Request(`https://auth.internal/roles/${chatId}`));
+      await editTelegramMessage(env, chatId, messageId, t('lang.changed', newLang));
+      // Re-render main menu in new language after a brief pause
+      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, newLang);
     }
   } finally {
     // Global Callback Resolution: Deferred to the end to maintain biological UI locking (spinner)
@@ -588,11 +617,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
-async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "") {
+async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "", lang = 'en') {
 
   const [stats, userRow] = await Promise.all([
       env.DB.prepare(`
-        SELECT COUNT(*) as total, SUM(CASE WHEN is_paused = 0 THEN 1 ELSE 0 END) as active 
+        SELECT COUNT(*) as total, SUM(CASE WHEN is_paused = 0 THEN 1 ELSE 0 END) as active
         FROM User_Subscriptions WHERE chat_id = ?
       `).bind(chatId).first(),
       env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(chatId).first()
@@ -613,17 +642,21 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
   const active = stats?.active || 0;
   const paused = total - active;
 
-  const text = `🏠 <b>Deals Dashboard</b>\n\n📦 <b>Your Saved Items:</b> ${total} / ${limitText}\n⚡ <b>Active:</b> ${active} | ⏸️ <b>Paused:</b> ${paused}\n\n<i>Select an operative option below:</i>`;
+  const text = t('menu.deals_dashboard', lang) + '\n\n' +
+    t('menu.your_saved_items', lang) + ` ${total} / ${limitText}\n` +
+    t('menu.active', lang) + ` ${active} | ` + t('menu.paused', lang) + ` ${paused}\n\n` +
+    `<i>${t('menu.select_option', lang)}</i>`;
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: "📦 My Products", callback_data: "list_products_0" }],
-      [{ text: "➕ How to Add Products", callback_data: "help_add" }]
+      [{ text: t('menu.btn_my_products', lang), callback_data: "list_products_0" }],
+      [{ text: t('menu.btn_how_to_add', lang), callback_data: "help_add" }],
+      [{ text: t('menu.btn_language', lang), callback_data: "toggle_lang" }]
     ]
   };
 
   if (isAdmin) {
-    keyboard.inline_keyboard.push([{ text: "👑 Admin Panel", web_app: { url: `${baseUrl}/crm` } }]);
+    keyboard.inline_keyboard.splice(2, 0, [{ text: t('menu.btn_admin_panel', lang), web_app: { url: `${baseUrl}/crm` } }]);
   }
 
   if (messageId) {
@@ -633,17 +666,17 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
   }
 }
 
-async function renderProductList(env, chatId, messageId, page = 0) {
+async function renderProductList(env, chatId, messageId, page = 0, lang = 'en') {
   const { results: products } = await env.DB.prepare(
-    `SELECT s.asin, s.is_paused, s.target_price, p.name 
-     FROM User_Subscriptions s 
-     JOIN Global_Products p ON s.asin = p.asin 
+    `SELECT s.asin, s.is_paused, s.target_price, p.name
+     FROM User_Subscriptions s
+     JOIN Global_Products p ON s.asin = p.asin
      WHERE s.chat_id = ?`
   ).bind(chatId).all();
-  
+
   if (!products || products.length === 0) {
-    const text = `❌ <b>Your saved list is empty.</b>\n\nPaste an Amazon.eg link in the chat box to add it to your list.`;
-    const keyboard = { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] };
+    const text = t('list.empty_head', lang) + '\n\n' + t('list.empty_hint', lang);
+    const keyboard = { inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]] };
     await editTelegramMessage(env, chatId, messageId, text, keyboard);
     return;
   }
@@ -653,13 +686,13 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   if (page >= totalPages) page = Math.max(0, totalPages - 1);
 
   const pagedProducts = products.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-  
+
   const keyboard = { inline_keyboard: [] };
-  
+
   pagedProducts.forEach((p) => {
     let name = p.name ? p.name : p.asin;
     if (name.length > 30) name = name.substring(0, 27) + "...";
-    
+
     const statusIcon = p.is_paused ? "⏸️" : "✅";
     const targetIcon = p.target_price ? "🎯 " : "";
     keyboard.inline_keyboard.push([{ text: `${statusIcon} ${targetIcon}${name}`, callback_data: `view_${p.asin}` }]);
@@ -668,29 +701,29 @@ async function renderProductList(env, chatId, messageId, page = 0) {
   if (totalPages > 1) {
     let navRow = [];
     if (page > 0) {
-      navRow.push({ text: "⬅️ Prev", callback_data: `list_products_${page - 1}` });
+      navRow.push({ text: t('list.prev', lang), callback_data: `list_products_${page - 1}` });
     }
     navRow.push({ text: `📄 ${page + 1}/${totalPages}`, callback_data: "ignore" });
     if (page < totalPages - 1) {
-      navRow.push({ text: "Next ➡️", callback_data: `list_products_${page + 1}` });
+      navRow.push({ text: t('list.next', lang), callback_data: `list_products_${page + 1}` });
     }
     keyboard.inline_keyboard.push(navRow);
   }
 
-  keyboard.inline_keyboard.push([{ text: "🏠 Main Menu", callback_data: "main_menu" }]);
+  keyboard.inline_keyboard.push([{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]);
 
-  const text = `📦 <b>My Saved Products</b> (Page ${page + 1} of ${totalPages})\n\n<i>Select an item below to modify its checking parameters:</i>`;
+  const text = t('list.my_saved_products', lang) + ` (${t('list.page_of', lang, { page: page + 1, total: totalPages })})\n\n<i>${t('list.select_hint', lang)}</i>`;
   await editTelegramMessage(env, chatId, messageId, text, keyboard);
 }
 
-async function renderProductView(env, chatId, messageId, pid, baseUrl) {
+async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'en') {
   const product = await env.DB.prepare(
-    `SELECT s.asin, s.is_paused as paused, s.target_price, p.name as name, 
+    `SELECT s.asin, s.is_paused as paused, s.target_price, p.name as name,
             p.amazon_price, p.used_price, p.new_price, p.last_updated,
             p.new_seller, p.new_mid, p.used_seller, p.used_mid,
             p.amazon_seller, p.amazon_mid, p.seen_amazon_eg_at, p.seen_resale_at
-     FROM User_Subscriptions s 
-     JOIN Global_Products p ON s.asin = p.asin 
+     FROM User_Subscriptions s
+     JOIN Global_Products p ON s.asin = p.asin
      WHERE s.chat_id = ? AND s.asin = ?`
   ).bind(chatId, pid).first();
 
@@ -710,9 +743,9 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
     seen_resale_at: product.seen_resale_at
   } };
 
-  const statusStr = product.paused ? "⏸️ Paused" : "✅ Active";
-  let lastPrice = "⏳ Waiting for next automated check...";
-  let lastUpdated = ""; 
+  const statusStr = product.paused ? t('product.status_paused', lang) : t('product.status_active', lang);
+  let lastPrice = t('product.waiting_check', lang);
+  let lastUpdated = "";
   let sellerInfo = "";
   let smartAlts = "";
   let title = product.name ? product.name : "Amazon Product";
@@ -727,41 +760,41 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
       let usedPrice = pData.used_price;
 
       if (newPrice !== undefined && newPrice !== null) {
-        lastPrice = newPrice.toLocaleString() + " EGP";
-        if (newSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(newSeller)}</i>`;
+        lastPrice = newPrice.toLocaleString() + " " + t('chrome.currency_egp', lang);
+        if (newSeller) sellerInfo = '\n' + t('product.seller_label', lang) + ` <i>${escapeHtml(newSeller)}</i>`;
       } else if (usedPrice !== undefined && usedPrice !== null) {
         // Gap 9.8 fix: show used price + used seller when new stock is unavailable
         const usedSeller = pData.used_seller;
-        lastPrice = `${usedPrice.toLocaleString()} EGP <i>(Used)</i>`;
-        if (usedSeller) sellerInfo = `\n🏬 <b>Seller:</b> <i>${escapeHtml(usedSeller)}</i>`;
+        lastPrice = `${usedPrice.toLocaleString()} ${t('chrome.currency_egp', lang)} <i>${t('product.used_tag', lang)}</i>`;
+        if (usedSeller) sellerInfo = '\n' + t('product.seller_label', lang) + ` <i>${escapeHtml(usedSeller)}</i>`;
       } else {
-        lastPrice = "❌ Out of Stock";
+        lastPrice = t('product.out_of_stock', lang);
         sellerInfo = "";
       }
 
       if (pData.name) title = pData.name;
 
-      smartAlts = buildSmartAlternatives(pData, pid, env);
+      smartAlts = buildSmartAlternatives(pData, pid, env, lang);
     } else {
-      lastPrice = prices[pid].toLocaleString() + " EGP";
+      lastPrice = prices[pid].toLocaleString() + " " + t('chrome.currency_egp', lang);
     }
   }
 
   if (systemCheckTime) {
     const dateObj = new Date(systemCheckTime);
-    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj); 
+    const checkDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(dateObj);
     const checkTime = dateObj.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: '2-digit', minute:'2-digit' });
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 
     if (checkDate === todayStr) {
-      lastUpdated = ` <i>(Checked: Today at ${checkTime})</i>`;
+      lastUpdated = ` <i>${t('product.checked_today', lang, { time: checkTime })}</i>`;
     } else {
-      lastUpdated = ` <i>(Checked: ${checkDate} ${checkTime})</i>`;
+      lastUpdated = ` <i>${t('product.checked_date', lang, { date: checkDate, time: checkTime })}</i>`;
     }
   }
 
   const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
-  let targetText = product.target_price ? `\n🎯 <b>Target:</b> ${product.target_price.toLocaleString()} EGP` : "";
+  let targetText = product.target_price ? '\n' + t('product.target_label', lang) + ` ${product.target_price.toLocaleString()} ${t('chrome.currency_egp', lang)}` : "";
 
   let productUrl = `https://www.amazon.eg/dp/${pid}`;
   const priceRecord = prices[pid] && typeof prices[pid] === "object" ? prices[pid] : {};
@@ -784,29 +817,29 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
                `└ 🆔 <code>${pid}</code>\n\n` +
-               `💰 <b>Price:</b> ${lastPrice}` +
-               `${targetText}` +
-               `${sellerInfo}` +
-               `${smartAlts}\n\n` +
-               `📡 <b>Status:</b> ${statusStr}${lastUpdated}\n\n#ad`;
+               t('product.price_label', lang) + ` ${lastPrice}` +
+               targetText +
+               sellerInfo +
+               smartAlts + '\n\n' +
+               t('product.status_label', lang) + ` ${statusStr}${lastUpdated}\n\n#ad`;
 
-  const targetBtn = product.target_price 
-    ? { text: "❌ Clear Target", callback_data: `confClearTgt_${pid}` }
-    : { text: "🎯 Set Target", callback_data: `settarget_${pid}` };
+  const targetBtn = product.target_price
+    ? { text: t('product.btn.clear_target', lang), callback_data: `confClearTgt_${pid}` }
+    : { text: t('product.btn.set_target', lang), callback_data: `settarget_${pid}` };
 
     const keyboard = {
     inline_keyboard: [
-      [{ text: "🛒 Open in Amazon.eg", url: productUrl }],
+      [{ text: t('product.btn.open_amazon', lang), url: productUrl }],
       [
-        { text: product.paused ? "▶️ Resume Checking" : "⏸️ Pause Checking", callback_data: `${product.paused ? "resume" : "pause"}_${pid}` },
+        { text: product.paused ? t('product.btn.resume', lang) : t('product.btn.pause', lang), callback_data: `${product.paused ? "resume" : "pause"}_${pid}` },
         targetBtn
       ],
       [
-        { text: "🗑️ Delete Product", callback_data: `confirmDel_${pid}` }
+        { text: t('product.btn.delete', lang), callback_data: `confirmDel_${pid}` }
       ],
       [
-        { text: "⬅️ Back to Products", callback_data: "list_products_0" },
-        { text: "🏠 Main Menu", callback_data: "main_menu" }
+        { text: t('product.btn.back_to_products', lang), callback_data: "list_products_0" },
+        { text: t('product.btn.main_menu', lang), callback_data: "main_menu" }
       ]
     ]
   };
@@ -828,10 +861,10 @@ async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();
   if (!secret) throw new Error("Unauthorized: Missing key");
   const key = await crypto.subtle.importKey(
-    "raw", 
-    enc.encode(secret), 
-    { name: "HMAC", hash: "SHA-256" }, 
-    false, 
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
     ["sign"]
   );
   const signature = await crypto.subtle.sign("HMAC", key, enc.encode(`${asin}:${exp}`));
@@ -845,10 +878,10 @@ async function verifyInitData(telegramInitData, botToken) {
     const hash = urlParams.get('hash');
     if (!hash) return null;
     urlParams.delete('hash');
-    
+
     const keys = Array.from(urlParams.keys()).sort();
     const dataCheckString = keys.map(key => `${key}=${urlParams.get(key)}`).join('\n');
-    
+
     const enc = new TextEncoder();
     const secretKey = await crypto.subtle.importKey(
       "raw",
@@ -857,9 +890,9 @@ async function verifyInitData(telegramInitData, botToken) {
       false,
       ["sign"]
     );
-    
+
     const secretKeyBytes = await crypto.subtle.sign("HMAC", secretKey, enc.encode(botToken));
-    
+
     const hmacKey = await crypto.subtle.importKey(
       "raw",
       secretKeyBytes,
@@ -867,10 +900,10 @@ async function verifyInitData(telegramInitData, botToken) {
       false,
       ["sign"]
     );
-    
+
     const signature = await crypto.subtle.sign("HMAC", hmacKey, enc.encode(dataCheckString));
     const hexSignature = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
-    
+
     if (hexSignature === hash) {
       const authDate = parseInt(urlParams.get('auth_date') || '0', 10);
       const now = Math.floor(Date.now() / 1000);
@@ -878,7 +911,7 @@ async function verifyInitData(telegramInitData, botToken) {
         console.warn("InitData Verification Error: auth_date expired");
         return null;
       }
-      
+
       const userStr = urlParams.get('user');
       if (userStr) return JSON.parse(userStr);
     }
@@ -906,7 +939,7 @@ function buildProductUrl(pid, env, merchantId = null) {
   return productUrl;
 }
 
-function buildSmartAlternatives(pData, pid, env) {
+function buildSmartAlternatives(pData, pid, env, lang = 'en') {
   const now = Date.now();
   const amazonSeenRecently = pData.seen_amazon_eg_at && (now - pData.seen_amazon_eg_at) < ALT_SELLER_TTL_MS;
   const resaleSeenRecently = pData.seen_resale_at && (now - pData.seen_resale_at) < ALT_SELLER_TTL_MS;
@@ -924,27 +957,27 @@ function buildSmartAlternatives(pData, pid, env) {
   if (!currentSellerIsAmazon) {
     const amazonEgUrl = buildProductUrl(pid, env, AMAZON_EG_MERCHANT_ID);
     if (amazonPrice !== null) {
-      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg</a>: <b>${amazonPrice.toLocaleString()} EGP</b>`);
+      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a>: <b>${amazonPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b>`);
     } else if (amazonSeenRecently) {
-      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">Amazon.eg</a> <i>(Check Stock)</i>`);
+      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
     }
   }
-  
+
   // Amazon Resale Link
   if (!currentSellerIsResale) {
     const resaleUrl = buildProductUrl(pid, env, AMAZON_RESALE_MERCHANT_ID);
     if (usedPrice !== null) {
-      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale</a>: <b>${usedPrice.toLocaleString()} EGP</b> <i>(Used)</i>`);
+      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a>: <b>${usedPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
     } else if (resaleSeenRecently) {
-      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">Amazon Resale</a> <i>(Check Stock)</i>`);
+      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
     }
   }
 
   // Render the clean block
   if (historicalLinks.length > 0) {
-    return `\n\n💡 <b>Other Options:</b>\n${historicalLinks.join("\n")}`;
+    return `\n\n${t('product.other_options_head', lang)}\n${historicalLinks.join("\n")}`;
   }
-  
+
   return "";
 }
 
@@ -960,12 +993,12 @@ async function syncUserNames(env, chatId, from, baseUrl) {
   const user = from.username || null;
   try {
     const res = await env.DB.prepare(`
-      UPDATE Users 
-      SET first_name = ?, username = ? 
-      WHERE chat_id = ? 
+      UPDATE Users
+      SET first_name = ?, username = ?
+      WHERE chat_id = ?
       AND (first_name IS NOT ? OR username IS NOT ?)
     `).bind(first, user, chatId, first, user).run();
-    
+
     if (res && res.meta && res.meta.changes > 0) {
        await caches.default.delete(new Request(`https://profile.internal/user/${chatId}`));
        if (baseUrl) {
@@ -985,7 +1018,7 @@ async function deleteTelegramMessage(env, chatId, messageId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, message_id: parseInt(messageId) })
     });
-    
+
     if (!res.ok) {
       console.error(`Telegram API Error [deleteMessage]: ${res.status} - ${await res.text()}`);
     }
@@ -1001,7 +1034,7 @@ async function expandAmazonUrl(url) {
     while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || currentUrl.includes("a.co") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
       const res = await fetch(currentUrl, { method: "GET", redirect: "manual", headers: { "User-Agent": "Agent/AzTrackerBot" }, signal: AbortSignal.timeout(5000) });
       const location = res.headers.get("location");
-      
+
       if (location) {
         currentUrl = new URL(location, currentUrl).href;
         hops++;
@@ -1045,7 +1078,7 @@ async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = n
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
   const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  
+
   try {
     const res = await fetch(url, {
       method: "POST",
