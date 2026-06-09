@@ -683,7 +683,7 @@ async function executeScrapeEngine(env, offset = 0) {
     }
   }
 
-  const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG || env.AMZN_ASSOCIATES_TAG);
+  const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG);
   const asins = staleProducts.map(p => p.asin);
   
   let liveItems;
@@ -742,7 +742,7 @@ async function executeScrapeEngine(env, offset = 0) {
       
       const qParams = new URLSearchParams();
       if (primary_mid) qParams.append("m", primary_mid);
-      const pTag = env.AMZN_ASSOCIATES_TAG || env.AMAZON_PARTNER_TAG;
+      const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
       
       const alert_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
@@ -1128,7 +1128,7 @@ async function executeScrapeEngine(env, offset = 0) {
       const header = bestDeal.is_atl ? `🔥 <b>ALL-TIME LOW (-${drop_pct_str} from average)</b>` : `🚨 <b>EXCEPTIONAL DEAL (-${drop_pct_str} from average)</b>`;
       const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
       const qParams = new URLSearchParams();
-      const pTag = env.AMZN_ASSOCIATES_TAG || env.AMAZON_PARTNER_TAG;
+      const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
       const timeStr = getCairoTime(now);
@@ -1934,7 +1934,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl) {
 
   const queryParams = new URLSearchParams();
   if (targetMerchant) queryParams.set("m", targetMerchant);
-  const partnerTag = env.AMZN_ASSOCIATES_TAG || env.AMAZON_PARTNER_TAG;
+  const partnerTag = env.AMAZON_PARTNER_TAG;
   if (partnerTag) queryParams.set("tag", partnerTag);
   const queryString = queryParams.toString();
   if (queryString) productUrl += `?${queryString}`;
@@ -2056,7 +2056,7 @@ function buildProductUrl(pid, env, merchantId = null) {
   let productUrl = `https://www.amazon.eg/dp/${cleanPid}`;
   const queryParams = new URLSearchParams();
   if (merchantId) queryParams.set("m", merchantId);
-  const partnerTag = env.AMZN_ASSOCIATES_TAG || env.AMAZON_PARTNER_TAG;
+  const partnerTag = env.AMAZON_PARTNER_TAG;
   if (partnerTag) queryParams.set("tag", partnerTag);
   const queryString = queryParams.toString();
   if (queryString) productUrl += `?${queryString}`;
