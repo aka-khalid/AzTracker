@@ -125,7 +125,7 @@ export default {
       
       // Clean Remaining "Price Drop" Gaps
       const originalLength = historyData.length;
-      historyData = historyData.filter(h => h.t !== 1780859708 && h.t !== 1780936963);
+      historyData = historyData.filter(h => h.t !== 1780859708 && h.t !== 1780936963 && !(h.t >= 1780859400 && h.t <= 1780859760));
       if (historyData.length !== originalLength) {
         ctx.waitUntil(env.AZTRACKER_DB.put(`history:${asin}`, JSON.stringify(historyData)));
       }
