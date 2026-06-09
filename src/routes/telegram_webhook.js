@@ -1,10 +1,20 @@
 import { getUserRoles, logAudit, resolveUserProfile } from '../core/db.js';
 import { t, resolveLanguageCode, getWelcomeMessage } from '../core/i18n.js';
+import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
 
 const QUEUE_MAX_DEPTH = 25;
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 const ALT_SELLER_TTL_MS = 86400000;
+
+/**
+ * Resolve the product name based on user language preference.
+ * Falls back to English name if Arabic is not available.
+ */
+function resolveProductName(item, lang) {
+  if (lang === 'ar' && item.name_ar) return item.name_ar;
+  return item.name || item.asin || 'Unknown Product';
+}
 
 export async function handleTelegramWebhook(request, env, ctx) {
   const url = new URL(request.url);
@@ -189,12 +199,33 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     const extractedName = extractNameFromUrl(expandedUrl);
 
+    // Fetch Arabic product name (non-blocking — falls back to English only)
+    let arabicName = null;
+    try {
+      const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+      const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+      if (clientId && clientSecret) {
+        const token = await getAmazonAccessToken(clientId, clientSecret);
+        const parser = new AmazonEdgeParser(token, env.AMZN_ASSOCIATES_TAG);
+        const arabicMap = await parser.getItemsWithArabic([pid]);
+        if (arabicMap.has(pid)) {
+          arabicName = arabicMap.get(pid);
+        }
+        // Fallback: scrape amazon.eg page if API didn't return Arabic
+        if (!arabicName) {
+          arabicName = await parser.scrapeArabicTitle(pid);
+        }
+      }
+    } catch (e) {
+      console.warn('[Webhook] Arabic name fetch failed (non-blocking):', e.message);
+    }
+
     // Insert into Global_Products to track price globally
     await env.DB.prepare(`
-      INSERT INTO Global_Products (asin, name, last_updated)
-      VALUES (?, ?, 0)
-      ON CONFLICT(asin) DO UPDATE SET name = excluded.name
-    `).bind(pid, extractedName || pid).run();
+      INSERT INTO Global_Products (asin, name, name_ar, last_updated)
+      VALUES (?, ?, ?, 0)
+      ON CONFLICT(asin) DO UPDATE SET name = excluded.name, name_ar = COALESCE(excluded.name_ar, name_ar)
+    `).bind(pid, extractedName || pid, arabicName).run();
 
     // Insert into User_Subscriptions
     await env.DB.prepare(`
@@ -668,7 +699,7 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
 
 async function renderProductList(env, chatId, messageId, page = 0, lang = 'en') {
   const { results: products } = await env.DB.prepare(
-    `SELECT s.asin, s.is_paused, s.target_price, p.name
+    `SELECT s.asin, s.is_paused, s.target_price, p.name, p.name_ar
      FROM User_Subscriptions s
      JOIN Global_Products p ON s.asin = p.asin
      WHERE s.chat_id = ?`
@@ -690,7 +721,8 @@ async function renderProductList(env, chatId, messageId, page = 0, lang = 'en') 
   const keyboard = { inline_keyboard: [] };
 
   pagedProducts.forEach((p) => {
-    let name = p.name ? p.name : p.asin;
+    const resolved = resolveProductName(p, lang);
+    let name = resolved || p.asin;
     if (name.length > 30) name = name.substring(0, 27) + "...";
 
     const statusIcon = p.is_paused ? "⏸️" : "✅";
@@ -718,7 +750,7 @@ async function renderProductList(env, chatId, messageId, page = 0, lang = 'en') 
 
 async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'en') {
   const product = await env.DB.prepare(
-    `SELECT s.asin, s.is_paused as paused, s.target_price, p.name as name,
+    `SELECT s.asin, s.is_paused as paused, s.target_price, p.name as name, p.name_ar,
             p.amazon_price, p.used_price, p.new_price, p.last_updated,
             p.new_seller, p.new_mid, p.used_seller, p.used_mid,
             p.amazon_seller, p.amazon_mid, p.seen_amazon_eg_at, p.seen_resale_at
@@ -729,10 +761,12 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
 
   if (!product) return;
   const prices = { [pid]: {
+    asin: product.asin,
     new_price: product.new_price,
     used_price: product.used_price,
     amazon_price: product.amazon_price,
     name: product.name,
+    name_ar: product.name_ar,
     new_seller: product.new_seller,
     new_mid: product.new_mid,
     used_seller: product.used_seller,
@@ -772,7 +806,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
         sellerInfo = "";
       }
 
-      if (pData.name) title = pData.name;
+      if (pData.name || pData.name_ar) title = resolveProductName(pData, lang);
 
       smartAlts = buildSmartAlternatives(pData, pid, env, lang);
     } else {

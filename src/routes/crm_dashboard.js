@@ -1,5 +1,6 @@
 import { getUserRoles, logAudit } from '../core/db.js';
 import { t, resolveLanguageCode } from '../core/i18n.js';
+import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
 
 async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();

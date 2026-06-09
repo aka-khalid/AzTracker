@@ -1,6 +1,15 @@
 import { AmazonEdgeParser, getAmazonAccessToken } from '../api/amazon.js';
 import { t } from '../core/i18n.js';
 
+/**
+ * Resolve the product name based on user language preference.
+ * Falls back to English name if Arabic is not available.
+ */
+function resolveProductName(item, lang) {
+  if (lang === 'ar' && item.name_ar) return item.name_ar;
+  return item.name || item.asin || 'Unknown Product';
+}
+
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 
@@ -70,6 +79,27 @@ export async function executeScrapeEngine(env, offset = 0) {
     throw error; // Throw so the queue retries this specific offset
   }
 
+  // Fetch Arabic product names (Creators API with Accept-Language: ar)
+  try {
+    const arabicNames = await parser.getItemsWithArabic(asins);
+    for (const item of liveItems) {
+      if (arabicNames.has(item.asin)) {
+        item.name_ar = arabicNames.get(item.asin);
+      }
+    }
+    // For ASINs still missing Arabic names, try scraping amazon.eg pages
+    for (const item of liveItems) {
+      if (!item.name_ar) {
+        const scraped = await parser.scrapeArabicTitle(item.asin);
+        if (scraped) item.name_ar = scraped;
+        // Small delay to avoid rate-limiting
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+  } catch (e) {
+    console.warn('[ScraperEngine] Arabic name enrichment failed (non-blocking):', e.message);
+  }
+
   const d1Batch = [];
   const kvPromises = [];
   const queueBatch = [];
@@ -107,7 +137,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           ]
       };
 
-      const safe_name = escapeHtml(truncateName(liveItem.name || liveItem.asin));
+      const safe_name = escapeHtml(truncateName(resolveProductName(liveItem, lang)));
       const safe_seller = escapeHtml(seller || "Unknown");
       const sellerLower = (seller || "").toLowerCase();
 
@@ -312,7 +342,7 @@ export async function executeScrapeEngine(env, offset = 0) {
         d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
         
         // Gap 9.4: Python-parity rich message — differentiate target-price vs general expiry
-        const safeProductName = escapeHtml(truncateName(liveItem.name || liveItem.asin));
+        const safeProductName = escapeHtml(truncateName(resolveProductName(liveItem, subLang)));
         const subLang = sub.lang || 'en';
         let expiryMsg;
         if (sub.target_price) {
@@ -423,7 +453,8 @@ export async function executeScrapeEngine(env, offset = 0) {
               seen_amazon_eg_at = ?, seen_resale_at = ?,
               new_seller = ?, new_mid = ?, used_seller = ?, used_mid = ?,
               amazon_seller = ?, amazon_mid = ?, amazon_is_buybox = ?,
-              hist_mean = ?, hist_stdev = ?, is_atl_new = ?
+              hist_mean = ?, hist_stdev = ?, is_atl_new = ?,
+              name_ar = COALESCE(?, name_ar)
           WHERE asin = ?
         `).bind(
           finalAmazonPrice, finalUsedPrice, finalNewPrice, now,
@@ -431,6 +462,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           finalNewSeller, finalNewMid, finalUsedSeller, finalUsedMid,
           finalAmazonSeller, finalAmazonMid, finalAmazonIsBuybox,
           histMean, histStdev, isAtlNew,
+          liveItem.name_ar || null,
           liveItem.asin
         )
       );
@@ -477,6 +509,7 @@ export async function executeScrapeEngine(env, offset = 0) {
                      bestDeal = {
                          asin: liveItem.asin,
                          name: liveItem.name,
+                         name_ar: liveItem.name_ar || null,
                          price: broadcastPrice,
                          last_price: displayLastPrice,
                          drop_pct: dropPct,
@@ -492,7 +525,7 @@ export async function executeScrapeEngine(env, offset = 0) {
 
   // Final Broadcast (public channel — organic Egyptian Arabic)
   if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
-      const safe_name = escapeHtml(truncateName(bestDeal.name || bestDeal.asin));
+      const safe_name = escapeHtml(truncateName(bestDeal.name_ar || bestDeal.name || bestDeal.asin));
       const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
       const qParams = new URLSearchParams();
       const pTag = env.AMAZON_PARTNER_TAG;
@@ -505,9 +538,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           `<b>${safe_name}</b>\n\n` +
           `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n` +
           `🏬 ${safe_broadcast_seller}\n\n` +
-          `👉 <a href="${broadcast_url}">خد الصفقة دلوقتي ←</a>\n\n` +
+          `👉 <a href="${broadcast_url}">الحق العرض من هنا ←</a>\n\n` +
           `🤖 @AzTrackerr_bot\n\n` +
-          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">🔗 تابع صفقات أكتر</a>\n\n` +
+          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">🔗 تابع عروض أكتر</a>\n\n` +
           `#ad`;
 
       queueBatch.push({
@@ -517,7 +550,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           text: broadcast_msg,
           markup: {
               inline_keyboard: [
-                  [{ text: '🛒 خد الصفقة ←', url: broadcast_url }]
+                  [{ text: '🛒 اشتري من هنا ←', url: broadcast_url }]
               ]
           }
       });

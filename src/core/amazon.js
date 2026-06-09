@@ -24,6 +24,11 @@ export async function getAmazonAccessToken(clientId, clientSecret) {
   return data.access_token;
 }
 
+function containsArabic(text) {
+  if (!text) return false;
+  return /[؀-ۿݐ-ݿࢠ-ࣿ]/.test(text);
+}
+
 export class AmazonEdgeParser {
   constructor(accessToken, partnerTag, endpointHost = 'www.amazon.eg') {
     this.accessToken = accessToken;
@@ -82,6 +87,88 @@ export class AmazonEdgeParser {
     }
     
     return results;
+  }
+
+  /**
+   * Fetch Arabic product titles by requesting Accept-Language: ar.
+   * Returns a Map<asin, arabicTitle> for ASINs where Arabic title was found.
+   */
+  async getItemsWithArabic(asins) {
+    if (asins.length === 0) return new Map();
+    if (asins.length > 10) throw new Error("Batch size exceeds 10 ASINs limit.");
+
+    const arabicNames = new Map();
+
+    const payload = {
+      itemIds: asins,
+      itemIdType: 'ASIN',
+      resources: ['itemInfo.title'],
+      partnerTag: this.partnerTag,
+      condition: 'Any'
+    };
+
+    try {
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json, text/javascript',
+          'Accept-Language': 'ar',
+          'Authorization': `Bearer ${this.accessToken}`,
+          'X-Marketplace': this.endpointHost
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) return arabicNames;
+
+      const data = await response.json();
+      const itemsResult = data.ItemsResult || data.itemsResult;
+      const items = itemsResult?.Items || itemsResult?.items;
+
+      if (items) {
+        for (const item of items) {
+          const asin = item.ASIN || item.asin;
+          const itemInfo = item.ItemInfo || item.itemInfo;
+          const title = itemInfo?.Title?.DisplayValue || itemInfo?.title?.displayValue;
+          if (title && containsArabic(title)) {
+            arabicNames.set(asin, title);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[AmazonEdgeParser] Arabic title fetch failed:', e.message);
+    }
+
+    return arabicNames;
+  }
+
+  /**
+   * Scrape the Arabic amazon.eg product page for the product title.
+   * Fallback when the Creators API doesn't return Arabic titles.
+   */
+  async scrapeArabicTitle(asin) {
+    const url = `https://www.amazon.eg/dp/${asin}`;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept-Language': 'ar,ar-EG;q=0.9',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) return null;
+      const html = await response.text();
+      const match = html.match(/id="productTitle"[^>]*>([^<]+)</);
+      if (match && match[1]) {
+        const title = match[1].trim();
+        if (containsArabic(title)) return title;
+      }
+    } catch (e) {
+      console.warn(`[AmazonEdgeParser] Arabic scrape failed for ${asin}:`, e.message);
+    }
+    return null;
   }
 
   parseItem(rawItem) {

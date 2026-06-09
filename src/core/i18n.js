@@ -51,7 +51,7 @@ const dict = {
   },
   "access.pending_body": {
     en: "Your application is currently under review by an administrator. Please wait.",
-    ar: "طلبك بيتراجع دلوقتي. ربنا يسهل."
+    ar: "بنشوف طلبك دلوقتي. ربنا يسهل."
   },
   "access.request_sent": {
     en: "⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.",
@@ -63,7 +63,7 @@ const dict = {
   },
   "access.queue_full_body": {
     en: "The access queue is currently full. Please try again in 24 hours.",
-    ar: "قائمة الانتظار مليانة دلوقتي. حاول تاني بعد 24 ساعة."
+    ar: "المكان مليان دلوقتي. حاول بعد يوم."
   },
   "access.admin_new_request_head": {
     en: "🔔 <b>New Access Request</b>",
@@ -71,7 +71,7 @@ const dict = {
   },
   "access.admin_new_request_body": {
     en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user is requesting authorization to access the server.</i>",
-    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>آي دي:</b> <code>{id}</code>\n\n<i>الشخص ده عايز يدخل.</i>"
+    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>الرقم:</b> <code>{id}</code>\n\n<i>الشخص ده عايز يدخل.</i>"
   },
   "access.admin_new_request_btn_approve": {
     en: "✅ Approve",
@@ -87,19 +87,19 @@ const dict = {
   },
   "access.admin_rejected": {
     en: "🚫 <b>Request Rejected</b>\nUser <code>{id}</code> has been denied access by {admin}.",
-    ar: "🚫 <b>الطلب اترفض</b>\nالمستخدم <code>{id}</code> اترفض من {admin}."
+    ar: "🚫 <b>الطلب اترفض</b>\nالشخص رقم <code>{id}</code> اترفض من {admin}."
   },
   "access.admin_rejected_manual": {
     en: "🚫 <b>Request Rejected</b>\nUser <code>{id}</code> has been explicitly denied access.",
-    ar: "🚫 <b>الطلب اترفض</b>\nالمستخدم <code>{id}</code> اترفض بشكل صريح."
+    ar: "🚫 <b>الطلب اترفض</b>\nالرقم <code>{id}</code> اترفض بالظبط."
   },
   "access.handled_request": {
     en: "🚫 <b>Request Handled</b>\nUser <code>{id}</code> was rejected by {admin}.",
-    ar: "🚫 <b>تم التعامل</b>\nالمستخدم <code>{id}</code> اترفض من {admin}."
+    ar: "🚫 <b>خلصنا الموضوع</b>\nالرقم <code>{id}</code> اترفض من {admin}."
   },
   "access.handled_approved": {
     en: "✅ <b>Request Handled</b>\nUser <code>{id}</code> was approved by {admin}.",
-    ar: "✅ <b>تم التعامل</b>\nالمستخدم <code>{id}</code> اتوافق عليه من {admin}."
+    ar: "✅ <b>خلصنا الموضوع</b>\nالرقم <code>{id}</code> اتوافق عليه من {admin}."
   },
 
   // ── Welcome Message ───────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ const dict = {
   },
   "welcome.step4": {
     en: "<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.",
-    ar: "<b>4️⃣ استرخي واستنى</b>\nالبوت هيفضل يتابع السوق في الخلفية. أول ما السعر ينزل أو المنتج يرجع المخزون، هيجيلك إشعار أوتوماتيك. حتى لو في بديل مستعمل أرخص من أمازون ريزيل، هتعرف."
+    ar: "<b>4️⃣ استرخي واستنى</b>\nالبوت هيفضل يتابع السوق في الخلفية. أول ما السعر ينزل أو المنتج يرجع المخزون، هيجيلك إشعار أوتوماتيك. حتى لو في بديل مستعمل أرخص من أمازون ريسيل، هتعرف."
   },
   "welcome.step5": {
     en: "<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>{limit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).",
@@ -199,11 +199,11 @@ const dict = {
   },
   "howto.body": {
     en: "Copy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.",
-    ar: "انسخ أي لينك منتج أمازون مصر من المتصفح أو الأبلكيشن والصقه في الشات ده مباشرة."
+    ar: "انسخ أي لينك منتج أمازون مصر من المتصفح أو الأبلكيشن وابعته في الشات ده مباشرة."
   },
   "howto.shortlinks": {
     en: "📱 <b>Short links shared directly from the mobile app are fully supported!</b>",
-    ar: "📱 <b>اللينكات القصورة اللي بتتبعتها من الأبلكيشن مدعومة بالكامل!</b>"
+    ar: "📱 <b>لينكات أمازون المختصرة من الأبلكيشن شغالة عادي!</b>"
   },
 
   // ── Product Link Processing ───────────────────────────────────────────────
@@ -225,11 +225,11 @@ const dict = {
   },
   "link.system_error": {
     en: "⚠️ <b>System Error:</b> Global item limit is unconfigured. Please contact an admin.",
-    ar: "⚠️ <b>خطأ في النظام:</b> الحد الأقصى للمنتجات مش متحدد. تواصل مع الأدمن."
+    ar: "⚠️ <b>فيه مشكلة:</b> الحد الأقصى للمنتجات مش متحدد. كلم الأدمن."
   },
   "link.limit_reached_head": {
     en: "⛔ <b>Limit Reached</b>",
-    ar: "⛔ <b>وصلت للحد</b>"
+    ar: "⛔ <b>وصلت للحد الأقصى</b>"
   },
   "link.limit_reached_body": {
     en: "You have saved {used} items, but your current limit is {limit}.\n\nPlease delete some products to free up space before adding new ones.",
@@ -245,19 +245,19 @@ const dict = {
   },
   "link.registered_head": {
     en: "✅ <b>Product Registered!</b>",
-    ar: "✅ <b>تم تسجيل المنتج!</b>"
+    ar: "✅ <b>أضفنا المنتج!</b>"
   },
   "link.registered_status": {
     en: "This item is now saved. It will pull the live price during the next automated check.",
-    ar: "المنتج ده اتحفظ دلوقتي. هيجيب السعر الحي في الفحص الأوتوماتيك الجاي."
+    ar: "المنتج ده اتحفظ دلوقتي. هنشوف السعر الجديد في شيك الجاي."
   },
   "link.pending_scan": {
     en: "⏳ Pending initial scan...",
-    ar: "⏳ في انتظار الشيك الأول..."
+    ar: "⏳ مستنيين نعرف السعر..."
   },
   "link.invalid_command": {
     en: "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.",
-    ar: "⚠️ <b>أمر غلط أو صيغة مش صحيحة</b>\n\nاستخدم الخيارات التفاعلية تحت أو حط لينك أمازون صحيح."
+    ar: "⚠️ <b>مش فاهم اللي انت كاتبه!</b>\n\nاستخدم الخيارات اللي تحت أو حط لينك أمازون صحيح."
   },
 
   // ── Product List ──────────────────────────────────────────────────────────
@@ -275,11 +275,11 @@ const dict = {
   },
   "list.empty_hint": {
     en: "Paste an Amazon.eg link in the chat box to add it to your list.",
-    ar: "الصق لينك أمازون مصر في الشات عشان تضيفه لقايمتك."
+    ar: "ابعت لينك أمازون مصر في الشات عشان تضيفه لقايمتك."
   },
   "list.select_hint": {
     en: "Select an item below to modify its checking parameters:",
-    ar: "اختار منتج تحت عشان تعدل بارامترات المتابعة:"
+    ar: "اختار منتج تحت عشان تشوف تفاصيله:"
   },
   "list.prev": {
     en: "⬅️ Prev",
@@ -297,7 +297,7 @@ const dict = {
   },
   "product.target_label": {
     en: "🎯 <b>Target:</b>",
-    ar: "🎯 <b>السعر المستهدف:</b>"
+    ar: "🎯 <b>التارجت:</b>"
   },
   "product.seller_label": {
     en: "🏬 <b>Seller:</b>",
@@ -309,15 +309,15 @@ const dict = {
   },
   "product.status_active": {
     en: "✅ Active",
-    ar: "✅ نشط"
+    ar: "نشط ✅"
   },
   "product.status_paused": {
     en: "⏸️ Paused",
-    ar: "⏸️ متوقف"
+    ar: "متوقف ⏸️"
   },
   "product.waiting_check": {
     en: "⏳ Waiting for next automated check...",
-    ar: "⏳ بنستنى الشيك الأوتوماتيك الجاي..."
+    ar: "⏳ بنشوف السعر..."
   },
   "product.out_of_stock": {
     en: "❌ Out of Stock",
@@ -325,11 +325,11 @@ const dict = {
   },
   "product.checked_today": {
     en: "(Checked: Today at {time})",
-    ar: "(آخر شيك: النهارده الساعة {time})"
+    ar: "(شوفناه: النهارده الساعة {time})"
   },
   "product.checked_date": {
     en: "(Checked: {date} {time})",
-    ar: "(آخر شيك: {date} {time})"
+    ar: "(شوفناه: {date} {time})"
   },
   "product.used_tag": {
     en: "(Used)",
@@ -345,11 +345,11 @@ const dict = {
   },
   "product.resale_label": {
     en: "Amazon Resale",
-    ar: "أمازون ريزيل"
+    ar: "أمازون ريسيل"
   },
   "product.check_stock": {
     en: "(Check Stock)",
-    ar: "(شيك على المخزون)"
+    ar: "(شيّك على المخزون)"
   },
 
   // ── Product View Buttons ──────────────────────────────────────────────────
@@ -359,11 +359,11 @@ const dict = {
   },
   "product.btn.set_target": {
     en: "🎯 Set Target",
-    ar: "🎯 حدد السعر المستهدف"
+    ar: "🎯 قوله السعر اللي عايزه"
   },
   "product.btn.clear_target": {
     en: "❌ Clear Target",
-    ar: "❌ امسح السعر المستهدف"
+    ar: "❌ امسح التارجت"
   },
   "product.btn.pause": {
     en: "⏸️ Pause Checking",
@@ -371,7 +371,7 @@ const dict = {
   },
   "product.btn.resume": {
     en: "▶️ Resume Checking",
-    ar: "▶️ استأنف المتابعة"
+    ar: "▶️ كمل المتابعة"
   },
   "product.btn.delete": {
     en: "🗑️ Delete Product",
@@ -389,7 +389,7 @@ const dict = {
   // ── Set Target Flow ───────────────────────────────────────────────────────
   "target.set_head": {
     en: "🎯 <b>Set Target Price</b>",
-    ar: "🎯 <b>حدد السعر المستهدف</b>"
+    ar: "🎯 <b>قوله السعر اللي عايزه</b>"
   },
   "target.set_prompt": {
     en: "ASIN: <code>{asin}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).",
@@ -401,33 +401,28 @@ const dict = {
   },
   "target.invalid_amount": {
     en: "⚠️ <b>Invalid amount.</b> Please enter a valid number.",
-    ar: "⚠️ <b>مبلغ غلط.</b> اكتب رقم صحيح."
+    ar: "⚠️ <b>الرقم ده مش مظبوط.</b> اكتب رقم صحيح."
   },
   "target.set_confirm_head": {
     en: "🎯 <b>Target Price Set!</b>",
-    ar: "🎯 <b>تم تحديد السعر المستهدف!</b>"
+    ar: "🎯 <b>حطينا السعر اللي عايزه!</b>"
   },
   "target.set_confirm_body": {
     en: "You will only be notified when ASIN <code>{asin}</code> drops to or below <b>{price}</b>.",
-    ar: "هتتجابل إشعار بس لما ASIN <code>{asin}</code> ينزل لـ <b>{price}</b> أو أقل."
+    ar: "هيجيلك إشعار بس لما ASIN <code>{asin}</code> ينزل لـ <b>{price}</b> أو أقل."
   },
-  "target.set_confirm_body_ara": {
-    en: "You will only be notified when ASIN <code>{asin}</code> drops to or below <b>{price}</b>.",
-    ar: "هتتجابل إشعار بس لما ASIN <code>{asin}</code> ينزل لـ <b>{price}</b> أو أقل."
-  },
-
   // ── Confirm Target Removal ────────────────────────────────────────────────
   "target.remove_confirm_head": {
     en: "⚠️ <b>Confirm Target Removal</b>",
-    ar: "⚠️ <b>تأكيد مسح السعر المستهدف</b>"
+    ar: "⚠️ <b>عايز تمسح التارجت؟</b>"
   },
   "target.remove_confirm_body": {
     en: "Are you sure you want to clear the target price for ASIN <code>{asin}</code>?",
-    ar: "متأكد إنك عايز تمسح السعر المستهدف لـ ASIN <code>{asin}</code>؟"
+    ar: "متأكد إنك عايز تمسح التارجت لـ ASIN <code>{asin}</code>؟"
   },
   "target.btn_yes_clear": {
     en: "✅ Yes, Clear Target",
-    ar: "✅ أيوه، امسح السعر المستهدف"
+    ar: "✅ أيوة، امسح التارجت"
   },
   "target.remove_cancelled": {
     en: "❌ Cancel",
@@ -437,7 +432,7 @@ const dict = {
   // ── Confirm Deletion ─────────────────────────────────────────────────────
   "delete.confirm_head": {
     en: "⚠️ <b>Confirm Deletion</b>",
-    ar: "⚠️ <b>تأكيد المسح</b>"
+    ar: "⚠️ <b>عايز تمسح؟</b>"
   },
   "delete.confirm_body": {
     en: "Are you sure you want to permanently delete ASIN <code>{asin}</code> from your saved list?\n\n<i>This action cannot be undone.</i>",
@@ -445,7 +440,7 @@ const dict = {
   },
   "delete.btn_yes_delete": {
     en: "✅ Yes, Delete",
-    ar: "✅ أيوه، امسح"
+    ar: "✅ أيوة، امسح"
   },
   "delete.deleted_head": {
     en: "🗑️ <b>Product Deleted</b>",
@@ -453,7 +448,7 @@ const dict = {
   },
   "delete.deleted_body": {
     en: "ASIN <code>{asin}</code> has been completely removed from your active register.",
-    ar: "ASIN <code>{asin}</code> اتمسح بالكامل من سجل المتابعة."
+    ar: "ASIN <code>{asin}</code> اتمسح خلاص."
   },
 
   // ── Admin: Confirm Revocation ─────────────────────────────────────────────
@@ -463,11 +458,11 @@ const dict = {
   },
   "admin.confirm_revoke_body": {
     en: "Are you sure you want to permanently revoke ID <code>{id}</code>?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>",
-    ar: "متأكد إنك عايز تلغي وصول الرقم <code>{id}</code> نهائياً؟\n\n<i>كل قايمته المحفوحة هتتتمسح. العملية دي ملهاش رجعة.</i>"
+    ar: "متأكد إنك عايز تشيل <code>{id}</code> نهائياً؟\n\n<i>كل منتجاته المحفوحة هتتتمسح. العملية دي ملهاش رجعة.</i>"
   },
   "admin.btn_revoke": {
     en: "✅ Yes, Revoke",
-    ar: "✅ أيوه، ألغي"
+    ar: "✅ أيوة، الغي"
   },
   "admin.btn_cancel": {
     en: "❌ Cancel",
@@ -477,7 +472,7 @@ const dict = {
   // ── Admin: Confirm Demotion ───────────────────────────────────────────────
   "admin.confirm_demote_head": {
     en: "⚠️ <b>Confirm Demotion</b>",
-    ar: "⚠️ <b>تأكيد التخفيض</b>"
+    ar: "⚠️ <b>عايز تخفض رتبته؟</b>"
   },
   "admin.confirm_demote_body": {
     en: "Are you sure you want to strip Admin privileges from ID <code>{id}</code>?",
@@ -485,37 +480,37 @@ const dict = {
   },
   "admin.btn_demote": {
     en: "✅ Yes, Demote",
-    ar: "✅ أيواه، خفض"
+    ar: "✅ أيوة، خفض"
   },
 
   // ── Admin: Confirm Promotion ──────────────────────────────────────────────
   "admin.confirm_promote_head": {
     en: "⚠️ <b>Confirm Promotion</b>",
-    ar: "⚠️ <b>تأكيد الترقية</b>"
+    ar: "⚠️ <b>عايز تخليه أدمن؟</b>"
   },
   "admin.confirm_promote_body": {
     en: "Are you sure you want to grant full Admin privileges to ID <code>{id}</code>?",
-    ar: "متأكد إنك عايز تدي صلاحيات كاملة للأدمن للرقم <code>{id}</code>؟"
+    ar: "متأكد إنك عايز تخلي الرقم <code>{id}</code> أدمن؟"
   },
   "admin.btn_promote": {
     en: "✅ Yes, Promote",
-    ar: "✅ أيوه، روّج"
+    ar: "✅ أيوة، يلا بينا"
   },
 
   // ── Admin: Revoked ────────────────────────────────────────────────────────
   "admin.revoked_result": {
     en: "🗑️ <b>Revoked & Purged!</b>\nID <code>{id}</code> and their entire saved list have been permanently erased.",
-    ar: "🗑️ <b>تم الإلغاء والمسح!</b>\nالرقم <code>{id}</code> وكايمته المحفوظة اتمسحوا نهائياً."
+    ar: "🗑️ <b>شيلناه ومسحناه!</b>\nالرقم <code>{id}</code> وكل منتجاته اتمسحوا."
   },
 
   // ── Admin: Promoted ──────────────────────────────────────────────────────
   "admin.promoted_result": {
     en: "🌟 <b>Promoted!</b>\nID <code>{id}</code> has been elevated to Admin privileges.",
-    ar: "🌟 <b>تمت الترقية!</b>\nالرقم <code>{id}</code> اترقى لصلاحيات الأدمن."
+    ar: "🌟 <b>بقيت أدمن!</b>\nالرقم <code>{id}</code> اترقى."
   },
   "admin.promoted_notify": {
     en: "🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.",
-    ar: "🌟 <b>اترقيت لأدمن!</b>\nدلوقتي عندك صلاحية الموافقة على المستخدمين. شغّل /start عشان تشوف مميزات الأدمن."
+    ar: "🌟 <b>مبروك بقيت أدمن!</b>\nدلوقتي تقدر تقبل أو ترفض مستخدمين. افتح المنيو عشان تشوف أدوات الأدمن."
   },
   "admin.back_to_directory": {
     en: "⬅️ Back to Directory",
@@ -525,27 +520,27 @@ const dict = {
   // ── Admin: Demoted ──────────────────────────────────────────────────────
   "admin.demoted_result": {
     en: "🔽 <b>Demoted.</b>\nID <code>{id}</code> has returned to standard access tier.",
-    ar: "🔽 <b>تم التخفيض.</b>\nالرقم <code>{id}</code> رجع لمستوى الوصول العادي."
+    ar: "🔽 <b>اتشال منه الأدمن.</b>\nالرقم <code>{id}</code> رجع مستخدم عادي."
   },
 
   // ── Admin: Unban ────────────────────────────────────────────────────────
   "admin.unban_result": {
     en: "🔄 <b>User Unbanned</b>\nUser <code>{id}</code> has been removed from the Banned Directory. They can now send /start to request access again if they wish.",
-    ar: "🔄 <b>تم رفع الحظر</b>\nالمستخدم <code>{id}</code> اتشال من دليل المحظورين. يقدر يبعت /start تاني عشان يطلب الوصول لو عايز."
+    ar: "🔄 <b>رفعنا الحظر عنه</b>\nالرقم <code>{id}</code> اتشال من البان. يقدر يبعت /start تاني لو عايز يدخل."
   },
 
   // ── Admin: Reference expired/handled ──────────────────────────────────────
   "admin.request_expired": {
     en: "⚠️ <b>Request Expired or Handled</b>\nThis application is no longer in the pending queue.",
-    ar: "⚠️ <b>الطلب انتهى أو اتعامل معاه</b>\nالطلب ده مش في قائمة الانتظار بقا."
+    ar: "⚠️ <b>الطلب ده بقديم</b>\nالطلب ده بقى مش في الليست."
   },
   "admin.approved_result": {
     en: "✅ <b>Approved!</b>\nUser <code>{id}</code> was approved by {admin}.",
-    ar: "✅ <b>تمت الموافقة!</b>\nالمستخدم <code>{id}</code> اتوافق عليه من {admin}."
+    ar: "✅ <b>وافقنا عليه!</b>\nالرقم <code>{id}</code> اتوافق عليه من {admin}."
   },
   "admin.approved_manual_result": {
     en: "✅ <b>Approved!</b>\nUser <code>{id}</code> can now use the Amazon deals application.",
-    ar: "✅ <b>تمت الموافقة!</b>\nالمستخدم <code>{id}</code> يقدر يستخدم أبلكيشن خصومات أمازون دلوقتي."
+    ar: "✅ <b>وافقنا عليه!</b>\nالرقم <code>{id}</code> يقدر يستخدم أبلكيشن أمازون مصر دلوقتي."
   },
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -577,11 +572,11 @@ const dict = {
   },
   "alert.target_met_target": {
     en: "🎯 <b>Target:</b> {price} EGP",
-    ar: "🎯 <b>المستهدف:</b> {price} ج.م"
+    ar: "🎯 <b>التارجت:</b> {price} ج.م"
   },
   "alert.target_met_dropped": {
     en: "📉 <b>Dropped:</b> {price} EGP",
-    ar: "📉 <b>انخفض:</b> {price} ج.م"
+    ar: "📉 <b>نزل:</b> {price} ج.م"
   },
   "alert.target_met_seller": {
     en: "🏬 <b>Seller:</b> {seller}",
@@ -611,7 +606,7 @@ const dict = {
   },
   "alert.price_drop_dropped": {
     en: "📉 <b>Dropped:</b> {diff} EGP",
-    ar: "📉 <b>انخفض:</b> {diff} ج.م"
+    ar: "📉 <b>نزل:</b> {diff} ج.م"
   },
   "alert.price_drop_was": {
     en: "📊 <b>Was:</b> {price} EGP",
@@ -626,26 +621,18 @@ const dict = {
     en: "🚨 <b>Item Missing!</b>",
     ar: "🚨 <b>المنتج ده اختفى من أمازون!</b>"
   },
-  "alert.missing_body": {
-    en: "ASIN <code>{asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.",
-    ar: "ASIN <code>{asin}</code> غير متوفر من المخزن أكتر من 24 ساعة. المتابعة اتوقفت أوتوماتيك."
-  },
-  "alert.missing_body_ara": {
-    en: "ASIN <code>{asin}</code> has been Out of Stock for > 24 hours. Tracking paused automatically.",
-    ar: "ASIN <code>{asin}</code> غير متوفر من المخزن أكتر من 24 ساعة. المتابعة اتوقفت أوتوماتيك."
-  },
 
   "alert.stale_target_head": {
     en: "⏰ <b>STALE TARGET RETIRED</b>",
-    ar: "⏰ <b>المستهدف ده اتشال خلاص</b>"
+    ar: "⏰ <b>التارجت ده اتشال خلاص</b>"
   },
   "alert.stale_target_with_price": {
     en: "Your target of <b>{target} EGP</b> for <b>{days}</b> days without being met has been retired. You will now resume receiving standard price alerts.",
-    ar: "المستهدف بتاعك <b>{target} ج.م</b> من <b>{days}</b> يوم من غير ما يتحقق اتشال. هترجع تاني تستقبل إشعارات السعر العادية."
+    ar: "التارجت بتاعك <b>{target} ج.م</b> من <b>{days}</b> يوم من غير ما يتحقق اتشال. هترجع تاني تستقبل إشعارات السعر العادية."
   },
   "alert.stale_target_no_price": {
     en: "You had no target set for {asin}, but tracking has been inactive for <b>{days}</b> days without activity. Standard price alerts have been resumed.",
-    ar: "ما كانش عندك سعر مستهدف لـ {asin}، بس المتابعة كانت مش نشطة لمدة <b>{days}</b> يوم. إشعارات السعر العادية اتعادت."
+    ar: "ما كانش عندك تارجت لـ {asin}، بس المتابعة كانت مش نشطة لمدة <b>{days}</b> يوم. إشعارات السعر العادية رجعت."
   },
 
   "alert.tracking_expired_head": {
@@ -654,7 +641,7 @@ const dict = {
   },
   "alert.tracking_expired_body": {
     en: "Your subscription for ASIN <code>{asin}</code> has been retired after <b>{days}</b> days without activity. If you still want to track this item, please re-add it.",
-    ar: "اشتراكك في ASIN <code>{asin}</code> اتشال بعد <b>{days}</b> يوم من غير أي نشاط. لسه عايز تتابع المنتج ده، أضفه من جديد."
+    ar: "تراك ASIN <code>{asin}</code> اتشال بعد <b>{days}</b> يوم من غير أي نشاط. لو عايز تتابع المنتج ده، أضفه من جديد."
   },
 
   "alert.btn_open_new": {
@@ -667,11 +654,11 @@ const dict = {
   },
   "alert.btn_disclaimer": {
     en: "ℹ️ Price Disclaimer",
-    ar: "ℹ️ تنبيه الأسعار"
+    ar: "ℹ️ الأسعار ممكن تتغير"
   },
   "alert.disclaimer_text": {
     en: "Prices are indicative and sourced from Amazon.eg at the time of check. Actual prices may vary.",
-    ar: "الأسعار استرشادية وماخوذة من أمازون مصر وقت الشيك. الأسعار الفعلية ممكن تختلف."
+    ar: "الأسعار دي تقريبية وأخدناها من أمازون مصر وقت ما شيكنا. السعر الحقيقي ممكن يختلف."
   },
   "alert.boosted_label": {
     en: "#ad",
@@ -683,7 +670,7 @@ const dict = {
   },
   "alert.historical_resale": {
     en: "Amazon Resale:",
-    ar: "أمازون ريزيل:"
+    ar: "أمازون ريسيل:"
   },
 
   // ── Scraper: Analytical Stale Target (shared between variants) ────────────
@@ -703,11 +690,11 @@ const dict = {
   },
   "broadcast.cta_shop": {
     en: "🛒 Click here to grab the deal →",
-    ar: "🛒 دوس هنا عشان تاخد الصفقة →"
+    ar: "🛒 دوس هنا عشان تلحق →"
   },
   "broadcast.cta_more": {
     en: "🔍 Find more exceptional deals →",
-    ar: "🔍 لمزيد من الصفقات الاستثنائية →"
+    ar: "🔍 لعروض أجمد →"
   },
   "broadcast.price_as_of": {
     en: "📅 Price as of {date}",
@@ -732,7 +719,7 @@ const dict = {
   },
   "crm.users_title": {
     en: "Users",
-    ar: "المستخدمين"
+    ar: "الناس"
   },
   "crm.products_title": {
     en: "Active Tracked Products",
@@ -740,7 +727,7 @@ const dict = {
   },
   "crm.system_overview": {
     en: "System Overview",
-    ar: "نظرة عامة"
+    ar: "ملخص سريع"
   },
   "crm.last_sync": {
     en: "Last Sync",
@@ -752,27 +739,27 @@ const dict = {
   },
   "crm.force_check": {
     en: "Force Check",
-    ar: "إجبار الشيك"
+    ar: "شوف الأسعار دلوقتي"
   },
   "crm.system_broadcast": {
     en: "System Broadcast",
-    ar: "بث عام"
+    ar: "برودكاست"
   },
   "crm.broadcast_placeholder": {
     en: "Enter message to blast to all users...",
-    ar: "اكتب رسالة تبعتها لكل المستخدمين..."
+    ar: "اكتب رسالة تبعتها لكل الناس..."
   },
   "crm.send_broadcast": {
     en: "Send Broadcast",
-    ar: "إرسال البث"
+    ar: "ابعت الرسالة"
   },
   "crm.tab_approved": {
     en: "Approved",
-    ar: "الموافق عليهم"
+    ar: "حبايبنا"
   },
   "crm.tab_pending": {
     en: "Pending",
-    ar: "قيد الانتظار"
+    ar: "مستنيين"
   },
   "crm.tab_banned": {
     en: "Banned",
@@ -864,7 +851,7 @@ const dict = {
   },
   "crm.btn_resume": {
     en: "Resume",
-    ar: "استأنف"
+    ar: "كمل"
   },
   "crm.btn_pause_drawer": {
     en: "Pause",
@@ -900,15 +887,15 @@ const dict = {
   },
   "crm.btn_unban": {
     en: "Unban User",
-    ar: "ارفع الحظر"
+    ar: "الغي الحظر"
   },
   "crm.toast_syncing": {
     en: "Syncing...",
-    ar: "بنزامن..."
+    ar: "بنجيب آخر الداتا..."
   },
   "crm.toast_synced": {
     en: "Data synchronized",
-    ar: "الاتزامن خلاص"
+    ar: "الداتا الجديده جات!"
   },
   "crm.toast_network_error": {
     en: "Network Error",
@@ -916,11 +903,11 @@ const dict = {
   },
   "crm.toast_action_queued": {
     en: "Action queued in background",
-    ar: "الإجراء في الطابور"
+    ar: "قيد التنفيذ"
   },
   "crm.toast_success": {
     en: "Success",
-    ar: "تم بنجاح"
+    ar: "تم"
   },
   "crm.toast_processing": {
     en: "Processing...",
@@ -952,7 +939,7 @@ const dict = {
   },
   "crm.action_demoted": {
     en: "You have been <b>DEMOTED</b> to standard user.",
-    ar: "اتخفيضت لمستخدم عادي."
+    ar: "شيلنا منك صلاحيات الأدمن."
   },
   "crm.action_limit_updated": {
     en: "Your tracking limit has been updated to <b>{limit}</b> items.",
@@ -968,15 +955,15 @@ const dict = {
   },
   "crm.action_force_scrape_ok": {
     en: "✅ <b>Force Scrape Completed</b>",
-    ar: "✅ <b>شيك إجباري تم</b>"
+    ar: "✅ <b>تم</b>"
   },
   "crm.action_force_scrape_fail": {
     en: "❌ <b>Force Scrape Failed</b>",
-    ar: "❌ <b>الشيك الإجباري فشل</b>"
+    ar: "❌ <b>منفعش</b>"
   },
   "crm.action_global_broadcast": {
     en: "📢 <b>Global Broadcast</b>",
-    ar: "📢 <b>بث عام</b>"
+    ar: "📢 <b>برودكاست</b>"
   },
   "crm.security_audit": {
     en: "🔒 <b>Security Audit Log</b>",
@@ -984,11 +971,11 @@ const dict = {
   },
   "crm.rolling_retention": {
     en: "📅 7-Day Rolling Retention",
-    ar: "📅 احتفاظ 7 أيام"
+    ar: "📅 آخر 7 أيام"
   },
   "crm.compiling_ledger": {
     en: "⏳ Compiling forensic ledger...",
-    ar: "⏳ بنجهز السجل الجنائي..."
+    ar: "⏳ بنجهز سجل الأمان..."
   },
   "crm.refresh": {
     en: "Refresh",

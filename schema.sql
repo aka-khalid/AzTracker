@@ -12,6 +12,7 @@ CREATE TABLE Users (
     chat_id TEXT PRIMARY KEY,
     first_name TEXT,
     username TEXT,
+    lang TEXT, -- User language preference: 'en' or 'ar'
     role TEXT NOT NULL DEFAULT 'approved', -- Roles: 'approved', 'admin', 'rejected'
     item_limit INTEGER NOT NULL DEFAULT 5,
     approved_by TEXT,
@@ -24,6 +25,7 @@ CREATE TABLE Users (
 CREATE TABLE Global_Products (
     asin TEXT PRIMARY KEY,
     name TEXT,
+    name_ar TEXT, -- Arabic product name (fetched from Amazon.eg)
 
     -- Live Pricing & Sellers
     new_price REAL,
