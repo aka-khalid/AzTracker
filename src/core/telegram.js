@@ -17,7 +17,7 @@ export async function sendTelegramMessage(env, chatId, text, replyMarkup = null)
 
 export async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
-  const body = { chat_id: chatId, message_id: messageId, text: text, parse_mode: "HTML", disable_web_page_preview: true };
+  const body = { chat_id: chatId, message_id: Number(messageId), text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
   
   try {
@@ -42,7 +42,7 @@ export async function deleteMessage(env, chatId, messageId) {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, message_id: parseInt(messageId) })
+      body: JSON.stringify({ chat_id: chatId, message_id: Number(messageId) })
     });
     
     if (!res.ok) {
