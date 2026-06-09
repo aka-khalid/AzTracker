@@ -47,6 +47,9 @@ export default {
   },
 
   async queue(batch, env, ctx) {
+    // FORCE KILL SWITCH: Immediately return to drain the queue and kill any active scraping chains.
+    return;
+    
     if (batch.queue === 'scraper-queue') {
       for (const msg of batch.messages) {
         try {
