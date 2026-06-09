@@ -112,7 +112,7 @@ export default {
 
     // Validate HMAC for /crm routes
     
-    if (url.pathname.startsWith("/api/history/") && request.method === "GET") {
+    if (url.pathname.startsWith("/api/crm/history/") && request.method === "GET") {
       const asin = url.pathname.split("/").pop();
       if (!asin || asin.length < 10) {
         return new Response(JSON.stringify({ error: "Invalid ASIN" }), { status: 400 });
