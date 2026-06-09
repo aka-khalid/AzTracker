@@ -113,9 +113,8 @@ export async function executeScrapeEngine(env, offset = 0) {
   let bestDeal = null;
   let maxZScore = 0.0;
   
-  function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice) {
+  function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice, isUsed) {
       const base_url = `https://www.amazon.eg/dp/${liveItem.asin}`;
-      const isUsed = condLabel.includes("(Used");
       const primary_mid = isUsed ? AMAZON_RESALE_MERCHANT_ID : mid;
 
       const qParams = new URLSearchParams();
@@ -393,7 +392,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           let targetHitUsed = false;
           
           if (finalNewPrice !== null && finalNewPrice <= targetPrice && !alertSentNew) {
-              queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+              queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, true, targetPrice, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
               targetHitNew = true;
           }
           
@@ -402,7 +401,7 @@ export async function executeScrapeEngine(env, offset = 0) {
                   // Target Grouping (Python Parity): Lock Used flag without spamming second message
                   targetHitUsed = true;
               } else {
-                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, true, targetPrice, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
                   targetHitUsed = true;
               }
           }
@@ -415,9 +414,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           if (finalNewPrice !== null) {
               if (oldItem.new_price === null && oldItem.last_updated) {
                   // Gap 9.5: New restock (already existed)
-                  queueAlert(sub.chat_id, sub.lang, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(New - Restocked)", finalNewPrice, null, finalNewSeller, finalNewMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
               } else if (oldItem.new_price !== null && finalNewPrice < oldItem.new_price) {
-                  queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(New)", finalNewPrice, oldItem.new_price, finalNewSeller, finalNewMid, false, 0, liveItem, isAtlNew, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, false);
               }
           }
           
@@ -425,9 +424,9 @@ export async function executeScrapeEngine(env, offset = 0) {
           // Gap 9.6: Used drop alert — fires when used_price drops, even with no target set
           if (finalUsedPrice !== null) {
               if (oldItem.used_price === null && oldItem.last_updated) {
-                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale - Restocked)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale - Restocked)", finalUsedPrice, null, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
               } else if (oldItem.used_price !== null && finalUsedPrice < oldItem.used_price) {
-                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice);
+                  queueAlert(sub.chat_id, sub.lang, "(Used - Amazon Resale)", finalUsedPrice, oldItem.used_price, finalUsedSeller, finalUsedMid, false, 0, liveItem, false, seenAmazonEgAt, seenResaleAt, finalAmazonPrice, finalUsedPrice, finalNewPrice, true);
               }
           }
       }

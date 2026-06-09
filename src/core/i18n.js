@@ -699,7 +699,7 @@ const dict = {
   },
   "broadcast.exceptional_head": {
     en: "🔥 <b>EXCEPTIONAL DEAL</b> 🔥",
-    ar: "🔥 <b>صفقة استثنائية</b> 🔥"
+    ar: "🚨 لقطة 🚨"
   },
   "broadcast.cta_shop": {
     en: "🛒 Click here to grab the deal →",
@@ -812,11 +812,11 @@ const dict = {
   },
   "crm.ath": {
     en: "ATH",
-    ar: "أعلى سعر"
+    ar: "ATH"
   },
   "crm.atl": {
     en: "ATL",
-    ar: "أقل سعر"
+    ar: "ATL"
   },
   "crm.avg": {
     en: "Avg",

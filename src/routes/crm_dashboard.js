@@ -786,7 +786,7 @@ export function renderCrmHTML(lang = 'en') {
     <main class="flex-1 px-4 py-6 pb-24 space-y-6 max-w-2xl mx-auto w-full" id="app-container">
         
         <!-- MAIN TABS -->
-        <div class="flex space-x-6 border-b border-gray-800 mb-6" id="main-tabs">
+        <div class="flex gap-6 border-b border-gray-800 mb-6" id="main-tabs">
             <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">${t('crm.users_title', lang)}</button>
             <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">${t('crm.security_audit', lang)}</button>
         </div>
@@ -853,8 +853,8 @@ export function renderCrmHTML(lang = 'en') {
                 <!-- Users View -->
                 <div id="view-users" class="space-y-3">
                     <div class="relative">
-                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${t('crm.search_placeholder', lang)}" class="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
-                        <svg class="w-4 h-4 text-gray-500 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${t('crm.search_placeholder', lang)}" class="w-full bg-gray-900 border border-gray-800 rounded-lg ps-10 pe-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                        <svg class="w-4 h-4 text-gray-500 absolute start-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
                     <div id="users-list" class="space-y-3">
                         <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
@@ -1200,7 +1200,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">
                     <div class="flex justify-between items-start mb-2">
-                        <div class="pr-6">
+                        <div class="pe-6">
                             <a href="https://www.amazon.eg/dp/\${p.asin}" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">\${name}</a>
                             <div class="text-xs text-gray-500 mt-1 font-mono">\${p.asin}</div>
                         </div>
