@@ -16,7 +16,7 @@ export async function getUserRoles(chatId, env, ctx) {
   const { results: approvedRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
   const approvedUsers = approvedRows.map(r => r.chat_id);
 
-  const user = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
+  const user = await env.DB.prepare("SELECT role, lang FROM Users WHERE chat_id = ?").bind(chatId).first();
   let role = user ? user.role : null;
 
   if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatId) {
@@ -27,7 +27,7 @@ export async function getUserRoles(chatId, env, ctx) {
   const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
   const isRejected = role === "rejected";
 
-  const result = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers };
+  const result = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: user?.lang || 'en' };
   if (ctx && ctx.waitUntil) {
     ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(result), {
       headers: { "Cache-Control": "s-maxage=60", "Content-Type": "application/json" }
