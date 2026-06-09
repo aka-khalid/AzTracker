@@ -7,6 +7,7 @@
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![ES6 JavaScript](https://img.shields.io/badge/ES6-JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 [![Cloudflare D1](https://img.shields.io/badge/Cloudflare-D1-0051C3?style=for-the-badge&logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/d1/)
+[![Cloudflare KV](https://img.shields.io/badge/Cloudflare-KV-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/kv/)
 [![Telegram API](https://img.shields.io/badge/Telegram-ChatOps-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
 > A highly scalable, multi-tenant price tracking architecture built purely on Cloudflare Workers, D1 SQL, and Queues. It features an interactive ChatOps UI, dual-hysteresis anti-flap protection, and dynamic queue-based scheduling.
@@ -22,20 +23,20 @@
 
 ## 🚀 Key Engineering Achievements
 
-### 🛡️ The Time-Based Hysteresis "Anti-Flap" Engine
-Amazon's Creators API frequently truncates payloads under heavy load, falsely reporting items as "Out of Stock." AzTracker implements a D1-backed time-based Hysteresis buffer. It artificially holds the last known good price through API glitches, eliminating false-positive "Restock" spam.
+### 🗄️ Hybrid Database Architecture (D1 + KV)
+To bypass edge limitations, AzTracker strictly separates state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all relational user tracking, concurrency locks, and the Hysteresis Engine. The legacy **Cloudflare KV** namespace is retained strictly as a NoSQL document store to handle massive time-series arrays for UI rendering (`history:{asin}`) and the Omnichannel Global Matrix, dropping database read-exhaustion to near zero.
+
+### 🛡️ Edge-Rendered CRM & SIEM Auditing
+The `/manage` command bypasses native Telegram constraints by serving an edge-rendered, Tailwind-styled Command Center Web App. The `/api/crm/audit` route acts as a forensic SIEM ledger, secured via HMAC-SHA256 signature token verification against the `TELEGRAM_WEBHOOK_SECRET` to prevent unauthorized dashboard access.
 
 ### ⚛️ Decoupled Async Message Delivery
-To prevent race conditions and ensure optimal reliability, Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The Telegram delivery worker uses an atomic lock that updates the database only on a successful 200 OK delivery.
+To prevent race conditions and ensure optimal reliability, Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The Telegram delivery worker uses an atomic lock that updates the database only on a successful 200 OK delivery, creating a flawless Two-Phase Commit (2PC).
 
 ### 📦 Smart Alternatives & Hidden Warehouse Deals
 AzTracker parses complex condition sub-schemas from the Amazon Creators API to unearth hidden "Amazon Resale" (Used/Warehouse) deals. The engine routes these discoveries to a dynamic, context-aware Telegram UI, rendering specialized checkout buttons based on the exact condition.
 
 ### 📉 Distributed Scraping with Dynamic Governor Logic
 To prevent API rate-limiting, the scraper engine utilizes Cloudflare Queues (`scraper-queue`) with recursive triggering. A dynamic Governor script calculates the optimal batch sizes and distribution based on the total active user pool, ensuring requests are perfectly distributed across the hour.
-
-### 📊 Edge-Rendered Mini App Analytics
-AzTracker intercepts Telegram's Native Web App triggers and acts as a web server (`/crm`), instantly rendering a beautiful, interactive `Chart.js` price graph. It pulls historical payload data from Cloudflare KV and combines it with relational metadata from Cloudflare D1.
 
 ---
 
@@ -48,8 +49,8 @@ graph TD;
     Cron[⏱️ CF Cron Trigger: * * * * *] --> Governor[⚡ Dynamic Governor];
     Governor -- Dispatches Batches --> SQ[📦 CF Queue: scraper-queue];
     SQ --> Engine[⚙️ Scraper Engine Worker];
-    Engine -- Batched Creators API Call --> PAAPI[🛒 Amazon Creators API];
-    PAAPI -- Live Prices --> Engine;
+    Engine -- Batched Creators API Call --> CreatorsAPI[🛒 Amazon Creators API];
+    CreatorsAPI -- Live Prices --> Engine;
     Engine -- Anti-Flap Logic & KV Deltas --> KV_Hist[(☁️ CF KV: Price History)];
     Engine -- Updates Global State --> D1;
     Engine -- Pushes Alerts --> TQ[📦 CF Queue: telegram-outbox];
@@ -61,7 +62,6 @@ graph TD;
 ## ✨ System Features
 
 * 👥 **Automated Join Queue:** Built-in ChatOps approval pipeline to manage guests safely, protected against "Thundering Herd" race conditions with a strict depth limit.
-* 🕵️ **Web App SIEM Ledger:** A forensic audit log (`/api/crm/audit`) tracking all root administrative actions.
 * 🌍 **Dynamic Geofencing:** Automatically parses incoming links and hard-rejects non-supported regions (locking the database securely to `amazon.eg`).
 * 🎯 **Strict Boolean Target Locks:** Users set specific budgets. The engine features zero-spam target locks—alerting exactly once upon matching the target price.
 * 📦 **Deduplicated Batch Processing:** 10 users tracking the same item triggers only 1 API request.
@@ -72,7 +72,7 @@ graph TD;
 
 The application is structured entirely using ES6 Modules within the `src/` directory, exporting fetch and queue handlers through `src/index.js`.
 
-### 🚏 Core Routes (`src/index.js` & `src/routes/`)
+### 🚏 Core Routes (`src/routes/` & `src/api/`)
 - `POST /webhook/*`: Serves the primary Telegram Bot interface and ChatOps logic (`telegram_webhook.js`).
 - `GET /crm`: Serves the secure administrative web app and charting UI (`crm_dashboard.js`).
 - `GET /api/crm/data` & `GET /api/crm/history/*`: Hydrates the frontend dashboard with live D1/KV data.
@@ -80,8 +80,8 @@ The application is structured entirely using ES6 Modules within the `src/` direc
 - `GET /audit` & `GET /api/audit`: Cryptographically signed routes for SIEM access.
 
 ### 🔄 Background Jobs (`src/workers/`)
-- **`cron_trigger.js`**: Triggered by Cloudflare's `* * * * *` and `0 0 * * *` cron jobs. Manages D1 garbage collection and dynamically calculates scraping velocity using the active subscription pool. Dispatches initial jobs to the scraper queue.
-- **`scraper_engine.js`**: Core Creators API consumer. Processes database chunks, evaluates complex condition logic, pushes history to KV, and determines alert priority.
+- **`cron_trigger.js`**: Triggered by Cloudflare's `* * * * *` cron. Manages D1 garbage collection and dynamically calculates scraping velocity using the active subscription pool. Dispatches initial jobs to the scraper queue.
+- **`scraper_engine.js`**: Core Creators API consumer. Processes database chunks, evaluates complex condition logic, pushes history to KV, updates D1, and determines alert priority.
 - **`queue_worker.js`**: Consumer for both `scraper-queue` and `telegram-outbox`. Ensures stable delivery and exponential backoff retry for Telegram rate limits.
 
 ---
@@ -104,26 +104,8 @@ The engine requires the following critical variables injected via `wrangler.toml
 
 ---
 
-## 📡 Advanced Feature: Omnichannel Broadcast (Optional)
-
-AzTracker includes a hidden, opt-in feature to automatically run a public Deals Channel. The engine evaluates every tracked item, calculates standard deviation, and triggers alerts for anomalous drops (Z-Score anomaly of **$z \le -1.5$** paired with a **$\ge 15\%$** absolute price drop). 
-
-Simply configure the `TELEGRAM_PUBLIC_CHANNEL_ID` environment variable, ensure your bot is an Administrator, and the engine handles the rest.
-
----
-
-## 👨‍💻 Architect & Acknowledgements
+## 👨💻 Architect & Acknowledgements
 
 Engineered and maintained by **Khalid Ibrahim**, built upon core cloud infrastructure and system architecture principles.
 
 Special thanks to **[Abdelrahman Elkhayat](https://www.facebook.com/bodaa.elkhayat)** for generously providing the Amazon Creators API credentials that power the core tracking engine.
-
-Built with assistance from:
-* [Gemini](https://gemini.google.com) by Google
-* [Claude](https://claude.ai) by Anthropic
-* [ChatGPT](https://chatgpt.com) by OpenAI
-
----
-
-## License
-MIT — free to use, modify, and distribute.

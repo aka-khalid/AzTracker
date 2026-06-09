@@ -1,6 +1,6 @@
 # 🚀 AzTracker: Comprehensive Deployment Guide
 
-AzTracker relies on a fully decoupled, serverless architecture running exclusively on Cloudflare Workers and Cloudflare D1. Background processing is handled natively by Cloudflare CRON triggers and Queues, while Disaster Recovery is backed by a Google Cloud Platform (GCP) Serverless Bridge.
+AzTracker relies on a fully decoupled, serverless architecture running exclusively on Cloudflare Workers and a Hybrid D1/KV Database structure. Background processing is handled natively by Cloudflare CRON triggers and Queues, while Disaster Recovery is backed by a Google Cloud Platform (GCP) Serverless Bridge.
 
 Follow these steps exactly in order to deploy to either the Development or Production environments.
 
@@ -10,7 +10,10 @@ Follow these steps exactly in order to deploy to either the Development or Produ
 
 Based on `wrangler.toml`, AzTracker uses a dual-environment setup (Development and Production):
 - **Development (default)**: Uses D1 Database `aztracker-test-db` and does not run CRON triggers by default.
-- **Production (`env.production`)**: Uses D1 Database `aztracker-prod-db` and runs automated CRON triggers (`* * * * *` and `0 0 * * *`).
+- **Production (`env.production`)**: Uses D1 Database `aztracker-prod-db` and runs automated CRON triggers (`* * * * *`).
+
+**The Hybrid Database Model:**
+While D1 handles all state, concurrency locks, and user definitions, the original KV Namespace (`AZTRACKER_DB`) is retained as a NoSQL document store. It exclusively handles the high-volume time-series arrays needed for charting (`history:{asin}`) and API token caching.
 
 Both environments share the following queues:
 - `telegram-outbox`: Handles outbound Telegram messages.
@@ -26,12 +29,12 @@ Before deploying, you must gather the root authority tokens from your cloud prov
    * Talk to `@BotFather`, create a new bot, and copy the **HTTP API Token**.
    * Talk to `@userinfobot`, and copy your numeric **User ID** (Root Admin ID).
 2. **Cloudflare:**
-   * Copy your **Account ID** from the dashboard URL (`dash.cloudflare.com/<ACCOUNT_ID>/...`).
+   * Copy your **Account ID** from the dashboard URL.
    * Create an **API Token** (*My Profile -> API Tokens -> Custom*).
      * **Required Permissions:** Select `Account` | `D1` | `Edit` and `Workers KV Storage` | `Edit`.
 3. **Google Cloud Platform (GCP):**
    * Download a **Service Account JSON key** with Drive permissions for the Backup Bridge.
-4. **Amazon PA-API:**
+4. **Amazon Creators API:**
    * Copy your **Client ID**, **Client Secret**, **Partner Tag**, and **Associates Tag** from your Amazon affiliate dashboard.
 
 ---
@@ -79,7 +82,8 @@ The deployment process and secrets injection are heavily automated using the `fi
    ```bash
    node finalize_cutover.js
    ```
-3. Follow the interactive prompts. The script will ask you whether you are targeting Development `[1]` or Production `[2]`, and it will handle injecting all secrets (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ROOT_ADMIN_IDS`, `AMAZON_CLIENT_ID`, etc.) into the specified environment. It will also generate a new webhook secret, register the webhook with Telegram, and run data migration scripts if applicable.
+3. Follow the interactive prompts. The script will handle injecting all secrets into the specified environment. It will also generate a new webhook secret, register the webhook with Telegram, and run data migration scripts if applicable. 
+   *(Note: The migration script will read from `AZTRACKER_DB` to seed D1, but it will NOT delete the KV data, as the charting UI relies on the historical time-series data left behind).*
 
 ---
 
