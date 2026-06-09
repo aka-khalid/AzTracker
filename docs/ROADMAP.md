@@ -266,14 +266,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Goal:** Programmatically wire the Telegram API to the newly deployed Cloudflare Worker and run a full diagnostic probe.<br>
   **The Strategy:** Resolve the `.workers.dev` subdomain dynamically, register the Webhook with Telegram using the generated `secret_token`, and execute a sequence of 4 health probes (Webhook Info, Scheduler Ping, KV Instantiation check, and Actions Status).
   </details>
-- [ ] **Multi-Marketplace Support (Amazon.ae / .sa)**
-  <details>
-  <summary><b>View Execution Brief</b></summary>
-  
-  **The Goal:** Scale the bot beyond Egypt using the foundation built in Phase 4.<br>
-  **The Strategy:** Leverage the `productDomain` extraction implemented in the Phase 4 Geofence update. Inject `region: productDomain` into the `user:{chat_id}` KV object when a product is added. Move the `AMZN_ASSOCIATES_TAG` and `Country` hardcodes out of the global scope. Dynamically group `fetch_batch` execution queues by region in `price_tracker.py` rather than pooling all ASINs universally together.<br>
-  **🤖 AI Execution Prompt:** *"AzTracker needs to support multiple Amazon regions based on the `productDomain` field in the user's KV profile. Walk me through the architecture of storing regional preferences (EG, AE, SA), and how to dynamically group `fetch_batch` execution queues by region rather than pooling all ASINs together."*
-  </details>
+
 
 ---
 
@@ -300,6 +293,8 @@ This document tracks the technical debt, security fortifications, feature expans
 ## 🛑 Intentional Architectural Boundaries
 *Features explicitly rejected to preserve the core product vision.*
 
+- **Multi-Region Scaling (Amazon.ae / .sa):** Rejected. We intentionally scrapped plans to support multiple geographic Amazon marketplaces. Supporting multiple regions required managing distinct Creators API credentials, dynamic merchant IDs, and complex regional queues, which diluted the core focus. The engine is strictly hardcoded to dominate the Amazon Egypt (Amazon.eg) marketplace.
+- **Containerized Deployment (Docker/K8s):** Rejected. We intentionally avoided packaging the engine into a Docker container or Kubernetes cluster. By strictly leveraging Cloudflare Workers, D1, Queues, and KV, we maintain a true "Serverless Edge" architecture with zero infrastructure maintenance, zero idle server costs, and seamless deployment.
 - **Separate Frontend Framework (React/Next.js):** Rejected. We intentionally avoided a decoupled frontend repository for the CRM dashboard. Generating raw HTML directly from the Cloudflare Worker maintains our strict zero-build-step, edge-native deployment philosophy.
 - **Synchronous CRM History Loading:** Rejected. We intentionally excluded historical KV data from the primary `/api/crm/data` endpoint. Price history is strictly "lazy-loaded" via a dedicated route ONLY when an admin explicitly opens a product drawer, preventing catastrophic KV read exhaustion.
 - **"Target Met" Stagnation Fix:** Rejected. Modifying the engine to continuously send alerts for new all-time lows *after* a target is met violates the strict "Zero-Spam Boolean Lock" philosophy. If a target is met, the system alerts once and locks.
