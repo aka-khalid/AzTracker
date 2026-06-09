@@ -70,7 +70,6 @@ export class AmazonEdgeParser {
     const payload = {
       itemIds: asins,
       itemIdType: 'ASIN',
-      condition: 'Any',
       resources: [
         'itemInfo.title',
         'offersV2.listings.price',
@@ -78,9 +77,7 @@ export class AmazonEdgeParser {
         'offersV2.listings.merchantInfo',
         'offersV2.listings.deliveryInfo.isBuyBoxWinner'
       ],
-      partnerTag: this.partnerTag,
-      partnerType: 'Associates',
-      marketplace: this.endpointHost
+      partnerTag: this.partnerTag
     };
 
     const response = await fetch(this.endpoint, {
