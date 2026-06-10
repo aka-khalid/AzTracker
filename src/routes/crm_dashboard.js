@@ -414,6 +414,10 @@ export async function fetchAPI(request, env, ctx) {
       const adminLang = adminLangRow?.lang || 'en';
 
       if (action === "restore_kv") {
+        if (!auth.isRootAdmin) {
+          await sendTelegram(env, adminId, t('crm.action_unauthorized', adminLang));
+          return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 403 });
+        }
         ctx.waitUntil((async () => {
           try {
             const allUsers = await env.DB.prepare("SELECT chat_id, role FROM Users").all();
@@ -841,9 +845,11 @@ export function renderCrmHTML(lang = 'en') {
                         <span class="text-sm font-medium" id="stat-sync">--</span>
                     </div>
                     <div class="flex gap-2 w-full">
-                        <button onclick="performAction('restore_kv', 'global')" class="flex-1 justify-center bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
+                        <div id="restore-btn-container" class="flex-1">
+                        <button onclick="performAction('restore_kv', 'global')" class="w-full justify-center bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> ${t('crm.restore_products', lang)}
                         </button>
+                        </div>
                         <button onclick="triggerGlobalScrape()" class="flex-1 justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> ${t('crm.force_check', lang)}
                         </button>
@@ -1013,8 +1019,10 @@ export function renderCrmHTML(lang = 'en') {
 
         function renderTelemetry() {
             if (appData.auth && !appData.auth.isRootAdmin) {
-                const el = document.getElementById('broadcast-section');
-                if (el) el.style.display = 'none';
+                const broadcastEl = document.getElementById('broadcast-section');
+                if (broadcastEl) broadcastEl.style.display = 'none';
+                const restoreEl = document.getElementById('restore-btn-container');
+                if (restoreEl) restoreEl.style.display = 'none';
             }
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = appData.systemStats.activeWatchPool || 0;
@@ -1183,7 +1191,7 @@ export function renderCrmHTML(lang = 'en') {
                             \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">${t('crm.btn_unban', lang)}</button>\`
                         :
                             \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_message', lang)}</button>
-                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">${t('crm.btn_edit', lang)}</button>\`}
+                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit}, '\${u.first_name || ''}', '\${u.username || ''}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">${t('crm.btn_edit_limit', lang)}</button>\`}
                             \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_promote', lang)}</button>\` : ''}
                             \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">${t('crm.btn_demote_drawer', lang)}</button>\` : ''}
                             \${u.role !== 'root' ? \`<button onclick="performAction('revoke', '\${u.chat_id}')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
@@ -1417,11 +1425,18 @@ export function renderCrmHTML(lang = 'en') {
             });
         }
 
-        function changeLimit(userId, currentLimit) {
-            // Use native prompt since tg.showPopup doesn't support input fields
-            const limit = prompt(\`${t('crm.btn_edit', lang)} — \${userId}:\`, currentLimit);
+        function changeLimit(userId, currentLimit, firstName, username) {
+            // Build a descriptive label: "Firstname (@username)" or fall back to userId
+            const userLabel = firstName
+                ? (username ? \`\${firstName} (@\${username})\` : firstName)
+                : userId;
+            const title = \`${t('crm.edit_limit_title', lang)} — \${userLabel}\`;
+            const promptMsg = \`${t('crm.edit_limit_prompt', lang)} \${userLabel} (current: \${currentLimit}):\`;
+            const limit = prompt(promptMsg, currentLimit);
             if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
                 performAction('set_limit', userId, { limit: parseInt(limit) });
+                // Show confirmation toast
+                showToast(\`${t('crm.edit_limit_success', lang, { limit: parseInt(limit), user: userLabel })}\`, "success");
             }
         }
 

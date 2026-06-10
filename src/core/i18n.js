@@ -775,15 +775,15 @@ const dict = {
   },
   "crm.no_pending": {
     en: "No pending requests",
-    ar: "مافيش طلبات معلقة"
+    ar: "مفيش طلبات معلقة"
   },
   "crm.no_users_found": {
     en: "No users found",
-    ar: "مافيش مستخدمين اتلقوا"
+    ar: "مفيش مستخدمين اتلقوا"
   },
   "crm.no_saved_products": {
     en: "No saved products",
-    ar: "مافيش منتجات محفوظة"
+    ar: "مفيش منتجات محفوظة"
   },
   "crm.price_history": {
     en: "Price History",
@@ -795,7 +795,7 @@ const dict = {
   },
   "crm.no_price_history": {
     en: "No price history available yet.",
-    ar: "مافيش تاريخ أسعار لسه."
+    ar: "مفيش تاريخ أسعار لسه."
   },
   "crm.ath": {
     en: "ATH",
@@ -819,7 +819,7 @@ const dict = {
   },
   "crm.no_audit": {
     en: "No administrative actions logged in the past 7 days.",
-    ar: "مافيش أحداث أدمن اتسجلت في آخر 7 أيام."
+    ar: "مفيش أحداث أدمن اتسجلت في آخر 7 أيام."
   },
   "crm.user_products": {
     en: "User Products",
@@ -876,6 +876,10 @@ const dict = {
   "crm.btn_edit": {
     en: "Edit",
     ar: "تعديل"
+  },
+  "crm.btn_edit_limit": {
+    en: "Edit Limit",
+    ar: "تعديل الحد"
   },
   "crm.btn_promote": {
     en: "Promote",
@@ -964,6 +968,22 @@ const dict = {
   "crm.action_force_scrape_fail": {
     en: "❌ <b>Force Scrape Failed</b>",
     ar: "❌ <b>منفعش</b>"
+  },
+  "crm.action_unauthorized": {
+    en: "⛔ <b>Unauthorized</b>\n\nOnly root admins can perform this action.",
+    ar: "⛔ <b>مش مسموح</b>\n\nالأدمن الرئيسي بس اللي يقدر يعمل ده."
+  },
+  "crm.edit_limit_title": {
+    en: "Edit Product Limit",
+    ar: "تعديل حد المنتجات"
+  },
+  "crm.edit_limit_prompt": {
+    en: "Set new product limit for",
+    ar: "حدد عدد المنتجات الجديد لـ"
+  },
+  "crm.edit_limit_success": {
+    en: "✅ Limit updated to {limit} items for {user}.",
+    ar: "✅ اتغير الحد لـ {limit} منتجات لـ {user}."
   },
   "crm.action_global_broadcast": {
     en: "📢 <b>Global Broadcast</b>",
