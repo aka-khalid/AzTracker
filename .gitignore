@@ -18,3 +18,6 @@ pnpm-debug.log*
 
 kv_export.json
 d1_seed.sql
+
+# Audit reports
+docs/i18n_masry_audit.md

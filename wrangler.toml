@@ -38,6 +38,7 @@ DEFAULT_USER_PRODUCT_LIMIT = "3"
 GLOBAL_POOL_LIMIT = "450"
 
 [triggers]
+crons = []
 # crons = ["* * * * *", "0 0 * * *"]
 
 [env.production]
@@ -79,4 +80,5 @@ max_batch_timeout = 1
 max_retries = 3
 
 [env.production.triggers]
+crons = []
 # crons = ["* * * * *", "0 0 * * *"]
