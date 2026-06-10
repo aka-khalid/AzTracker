@@ -90,7 +90,9 @@ export class AmazonEdgeParser {
   }
 
   /**
-   * Fetch Arabic product titles by requesting Accept-Language: ar.
+   * Fetch Arabic product titles using languagesOfPreference parameter.
+   * The Creators API ignores Accept-Language headers — the correct way is
+   * passing languagesOfPreference: ["ar_AE"] in the request body.
    * Returns a Map<asin, arabicTitle> for ASINs where Arabic title was found.
    */
   async getItemsWithArabic(asins) {
@@ -104,7 +106,8 @@ export class AmazonEdgeParser {
       itemIdType: 'ASIN',
       resources: ['itemInfo.title'],
       partnerTag: this.partnerTag,
-      condition: 'Any'
+      condition: 'Any',
+      languagesOfPreference: ['ar_AE']
     };
 
     try {
@@ -113,7 +116,6 @@ export class AmazonEdgeParser {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json, text/javascript',
-          'Accept-Language': 'ar',
           'Authorization': `Bearer ${this.accessToken}`,
           'X-Marketplace': this.endpointHost
         },
@@ -131,8 +133,10 @@ export class AmazonEdgeParser {
         for (const item of items) {
           const asin = item.ASIN || item.asin;
           const itemInfo = item.ItemInfo || item.itemInfo;
-          const title = itemInfo?.Title?.DisplayValue || itemInfo?.title?.displayValue;
-          if (title && containsArabic(title)) {
+          const titleObj = itemInfo?.Title || itemInfo?.title;
+          const title = titleObj?.DisplayValue || titleObj?.displayValue;
+          const locale = titleObj?.Locale || titleObj?.locale;
+          if (title && (locale === 'ar_AE' || containsArabic(title))) {
             arabicNames.set(asin, title);
           }
         }

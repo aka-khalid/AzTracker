@@ -79,7 +79,7 @@ export async function executeScrapeEngine(env, offset = 0) {
     throw error; // Throw so the queue retries this specific offset
   }
 
-  // Fetch Arabic product names (Creators API with Accept-Language: ar)
+  // Fetch Arabic product names (Creators API with languagesOfPreference: ar_AE)
   try {
     const arabicNames = await parser.getItemsWithArabic(asins);
     for (const item of liveItems) {
