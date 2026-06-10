@@ -1000,7 +1000,7 @@ export function renderCrmHTML(lang = 'en') {
                 return json;
             } catch (err) {
                 console.error(err);
-                showToast(\`${t('crm.toast_network_error', lang)}: \${err.message}\`, 'error');
+                showToast("${t('crm.toast_network_error', lang)}: " + err.message, 'error');
                 return null;
             }
         }
@@ -1428,27 +1428,29 @@ export function renderCrmHTML(lang = 'en') {
         function changeLimit(userId, currentLimit, firstName, username) {
             // Build a descriptive label: "Firstname (@username)" or fall back to userId
             const userLabel = firstName
-                ? (username ? \`\${firstName} (@\${username})\` : firstName)
+                ? (username ? firstName + ' (@' + username + ')' : firstName)
                 : userId;
-            const title = \`${t('crm.edit_limit_title', lang)} — \${userLabel}\`;
-            const promptMsg = \`${t('crm.edit_limit_prompt', lang)} \${userLabel} (current: \${currentLimit}):\`;
+            // Static i18n strings baked at render time; dynamic values appended at runtime
+            const promptMsg = "${t('crm.edit_limit_prompt', lang)} " + userLabel + " (current: " + currentLimit + "):";
             const limit = prompt(promptMsg, currentLimit);
             if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
                 performAction('set_limit', userId, { limit: parseInt(limit) });
-                // Show confirmation toast
-                showToast(\`${t('crm.edit_limit_success', lang, { limit: parseInt(limit), user: userLabel })}\`, "success");
+                // Show confirmation toast using pre-rendered i18n template
+                const successTemplate = "${t('crm.edit_limit_success', lang)}";
+                const successMsg = successTemplate.replace("{limit}", parseInt(limit)).replace("{user}", userLabel);
+                showToast(successMsg, "success");
             }
         }
 
         function changeTarget(userId, asin) {
-            const target = prompt(\`${t('crm.btn_edit', lang)} (${t('crm.new_price', lang)}) — \${asin}:\`);
+            const target = prompt("${t('crm.btn_edit', lang)} (${t('crm.new_price', lang)}) — " + asin + ":");
             if (target !== null && target !== "" && !isNaN(target) && target > 0) {
                 performAction('set_target', userId, { asin, target: parseFloat(target) });
             }
         }
 
         function confirmRevoke(userId) {
-            tg.showConfirm(\`${t('crm.btn_demote_drawer', lang)} — \${userId}?\`, (ok) => {
+            tg.showConfirm("${t('crm.btn_demote_drawer', lang)} — " + userId + "?", (ok) => {
                 if(ok) performAction('revoke', userId);
             });
         }
