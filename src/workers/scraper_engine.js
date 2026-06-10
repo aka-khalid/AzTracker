@@ -1,4 +1,4 @@
-import { AmazonEdgeParser, getAmazonAccessToken } from '../api/amazon.js';
+import { AmazonEdgeParser, getAmazonAccessToken } from '../core/amazon.js';
 import { t } from '../core/i18n.js';
 
 /**
