@@ -70,8 +70,8 @@ const dict = {
     ar: "🔔 <b>في حد جديد عايز يدخل</b>"
   },
   "access.admin_new_request_body": {
-    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user is requesting authorization to access the server.</i>",
-    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>الرقم:</b> <code>{id}</code>\n\n<i>الشخص ده عايز يدخل.</i>"
+    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> ‏<code>{id}</code>‏\n\n<i>This user is requesting authorization to access the server.</i>",
+    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>الرقم:</b> ‏<code>{id}</code>‏\n\n<i>الشخص ده عايز يدخل.</i>"
   },
   "access.admin_new_request_btn_approve": {
     en: "✅ Approve",
@@ -86,20 +86,20 @@ const dict = {
     ar: "⛔ <b>طلب مرفوض</b>\n\nمعلش في حد مش عايزك جوا."
   },
   "access.admin_rejected": {
-    en: "🚫 <b>Request Rejected</b>\nUser <code>{id}</code> has been denied access by {admin}.",
-    ar: "🚫 <b>الطلب اترفض</b>\nالشخص رقم <code>{id}</code> اترفض من {admin}."
+    en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been denied access by {admin}.",
+    ar: "🚫 <b>الطلب اترفض</b>\nالشخص رقم ‏<code>{id}</code>‏ اترفض من {admin}."
   },
   "access.admin_rejected_manual": {
-    en: "🚫 <b>Request Rejected</b>\nUser <code>{id}</code> has been explicitly denied access.",
-    ar: "🚫 <b>الطلب اترفض</b>\nالرقم <code>{id}</code> اترفض بالظبط."
+    en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been explicitly denied access.",
+    ar: "🚫 <b>الطلب اترفض</b>\nالرقم ‏<code>{id}</code>‏ اترفض بالظبط."
   },
   "access.handled_request": {
-    en: "🚫 <b>Request Handled</b>\nUser <code>{id}</code> was rejected by {admin}.",
-    ar: "🚫 <b>خلصنا الموضوع</b>\nالرقم <code>{id}</code> اترفض من {admin}."
+    en: "🚫 <b>Request Handled</b>\nUser ‏<code>{id}</code>‏ was rejected by {admin}.",
+    ar: "🚫 <b>خلصنا الموضوع</b>\nالرقم ‏<code>{id}</code>‏ اترفض من {admin}."
   },
   "access.handled_approved": {
-    en: "✅ <b>Request Handled</b>\nUser <code>{id}</code> was approved by {admin}.",
-    ar: "✅ <b>خلصنا الموضوع</b>\nالرقم <code>{id}</code> اتوافق عليه من {admin}."
+    en: "✅ <b>Request Handled</b>\nUser ‏<code>{id}</code>‏ was approved by {admin}.",
+    ar: "✅ <b>خلصنا الموضوع</b>\nالرقم ‏<code>{id}</code>‏ اتوافق عليه من {admin}."
   },
 
   // ── Welcome Message ───────────────────────────────────────────────────────
@@ -216,8 +216,8 @@ const dict = {
     ar: "❌ <b>المنطقة مش مدعومة</b>"
   },
   "link.region_not_supported_body": {
-    en: "Currently, we only support <code>amazon.eg</code>.",
-    ar: "دلوقتي بندعم <code>amazon.eg</code> بس."
+    en: "Currently, we only support ‏<code>amazon.eg</code>‏.",
+    ar: "دلوقتي بندعم ‏<code>amazon.eg</code>‏ بس."
   },
   "link.could_not_parse": {
     en: "❌ <b>Could not parse a valid 10-digit ASIN.</b>",
@@ -393,7 +393,7 @@ const dict = {
   },
   "target.set_prompt": {
     en: "ASIN: <code>{asin}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).",
-    ar: "ASIN: <code>{asin}</code>\n\nاكتب السعر الأقصى اللي عايزه بالجنيه في رسالة (مثلاً: <code>4500</code>)."
+    ar: "ASIN: ‏<code>{asin}</code>‏\n\nاكتب السعر الأقصى اللي عايزه بالجنيه في رسالة (مثلاً: ‏<code>4500</code>‏)."
   },
   "target.cancel": {
     en: "❌ Cancel",
@@ -409,7 +409,7 @@ const dict = {
   },
   "target.set_confirm_body": {
     en: "You will only be notified when ASIN <code>{asin}</code> drops to or below <b>{price}</b>.",
-    ar: "هيجيلك إشعار بس لما ASIN <code>{asin}</code> ينزل لـ <b>{price}</b> أو أقل."
+    ar: "هيجيلك إشعار بس لما ASIN ‏<code>{asin}</code>‏ ينزل لـ <b>{price}</b> أو أقل."
   },
   // ── Confirm Target Removal ────────────────────────────────────────────────
   "target.remove_confirm_head": {
@@ -418,7 +418,7 @@ const dict = {
   },
   "target.remove_confirm_body": {
     en: "Are you sure you want to clear the target price for ASIN <code>{asin}</code>?",
-    ar: "متأكد إنك عايز تمسح التارجت لـ ASIN <code>{asin}</code>؟"
+    ar: "متأكد إنك عايز تمسح التارجت لـ ASIN ‏<code>{asin}</code>‏؟"
   },
   "target.btn_yes_clear": {
     en: "✅ Yes, Clear Target",
@@ -436,7 +436,7 @@ const dict = {
   },
   "delete.confirm_body": {
     en: "Are you sure you want to permanently delete ASIN <code>{asin}</code> from your saved list?\n\n<i>This action cannot be undone.</i>",
-    ar: "متأكد إنك عايز تمسح ASIN <code>{asin}</code> من قايمتك نهائياً؟\n\n<i>العملية دي ملهاش رجعة.</i>"
+    ar: "متأكد إنك عايز تمسح ASIN ‏<code>{asin}</code>‏ من قايمتك نهائياً؟\n\n<i>العملية دي ملهاش رجعة.</i>"
   },
   "delete.btn_yes_delete": {
     en: "✅ Yes, Delete",
@@ -448,7 +448,7 @@ const dict = {
   },
   "delete.deleted_body": {
     en: "ASIN <code>{asin}</code> has been completely removed from your active register.",
-    ar: "ASIN <code>{asin}</code> اتمسح خلاص."
+    ar: "ASIN ‏<code>{asin}</code>‏ اتمسح خلاص."
   },
 
   // ── Admin: Confirm Revocation ─────────────────────────────────────────────
@@ -457,8 +457,8 @@ const dict = {
     ar: "⚠️ <b>تأكيد إلغاء الوصول</b>"
   },
   "admin.confirm_revoke_body": {
-    en: "Are you sure you want to permanently revoke ID <code>{id}</code>?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>",
-    ar: "متأكد إنك عايز تشيل <code>{id}</code> نهائياً؟\n\n<i>كل منتجاته المحفوحة هتتتمسح. العملية دي ملهاش رجعة.</i>"
+    en: "Are you sure you want to permanently revoke ID ‏<code>{id}</code>‏?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>",
+    ar: "متأكد إنك عايز تشيل ‏<code>{id}</code>‏ نهائياً؟\n\n<i>كل منتجاته المحفوحة هتتتمسح. العملية دي ملهاش رجعة.</i>"
   },
   "admin.btn_revoke": {
     en: "✅ Yes, Revoke",
@@ -475,8 +475,8 @@ const dict = {
     ar: "⚠️ <b>عايز تخفض رتبته؟</b>"
   },
   "admin.confirm_demote_body": {
-    en: "Are you sure you want to strip Admin privileges from ID <code>{id}</code>?",
-    ar: "متأكد إنك عايز تشيل صلاحيات الأدمن من الرقم <code>{id}</code>؟"
+    en: "Are you sure you want to strip Admin privileges from ID ‏<code>{id}</code>‏?",
+    ar: "متأكد إنك عايز تشيل صلاحيات الأدمن من الرقم ‏<code>{id}</code>‏؟"
   },
   "admin.btn_demote": {
     en: "✅ Yes, Demote",
@@ -489,8 +489,8 @@ const dict = {
     ar: "⚠️ <b>عايز تخليه أدمن؟</b>"
   },
   "admin.confirm_promote_body": {
-    en: "Are you sure you want to grant full Admin privileges to ID <code>{id}</code>?",
-    ar: "متأكد إنك عايز تخلي الرقم <code>{id}</code> أدمن؟"
+    en: "Are you sure you want to grant full Admin privileges to ID ‏<code>{id}</code>‏?",
+    ar: "متأكد إنك عايز تخلي الرقم ‏<code>{id}</code>‏ أدمن؟"
   },
   "admin.btn_promote": {
     en: "✅ Yes, Promote",
@@ -499,14 +499,14 @@ const dict = {
 
   // ── Admin: Revoked ────────────────────────────────────────────────────────
   "admin.revoked_result": {
-    en: "🗑️ <b>Revoked & Purged!</b>\nID <code>{id}</code> and their entire saved list have been permanently erased.",
-    ar: "🗑️ <b>شيلناه ومسحناه!</b>\nالرقم <code>{id}</code> وكل منتجاته اتمسحوا."
+    en: "🗑️ <b>Revoked & Purged!</b>\nID ‏<code>{id}</code>‏ and their entire saved list have been permanently erased.",
+    ar: "🗑️ <b>شيلناه ومسحناه!</b>\nالرقم ‏<code>{id}</code>‏ وكل منتجاته اتمسحوا."
   },
 
   // ── Admin: Promoted ──────────────────────────────────────────────────────
   "admin.promoted_result": {
-    en: "🌟 <b>Promoted!</b>\nID <code>{id}</code> has been elevated to Admin privileges.",
-    ar: "🌟 <b>بقيت أدمن!</b>\nالرقم <code>{id}</code> اترقى."
+    en: "🌟 <b>Promoted!</b>\nID ‏<code>{id}</code>‏ has been elevated to Admin privileges.",
+    ar: "🌟 <b>بقيت أدمن!</b>\nالرقم ‏<code>{id}</code>‏ اترقى."
   },
   "admin.promoted_notify": {
     en: "🌟 <b>You have been promoted to Admin!</b>\nYou now have authorization to approve users. Run /start to see the admin features.",
@@ -519,14 +519,14 @@ const dict = {
 
   // ── Admin: Demoted ──────────────────────────────────────────────────────
   "admin.demoted_result": {
-    en: "🔽 <b>Demoted.</b>\nID <code>{id}</code> has returned to standard access tier.",
-    ar: "🔽 <b>اتشال منه الأدمن.</b>\nالرقم <code>{id}</code> رجع مستخدم عادي."
+    en: "🔽 <b>Demoted.</b>\nID ‏<code>{id}</code>‏ has returned to standard access tier.",
+    ar: "🔽 <b>اتشال منه الأدمن.</b>\nالرقم ‏<code>{id}</code>‏ رجع مستخدم عادي."
   },
 
   // ── Admin: Unban ────────────────────────────────────────────────────────
   "admin.unban_result": {
-    en: "🔄 <b>User Unbanned</b>\nUser <code>{id}</code> has been removed from the Banned Directory. They can now send /start to request access again if they wish.",
-    ar: "🔄 <b>رفعنا الحظر عنه</b>\nالرقم <code>{id}</code> اتشال من البان. يقدر يبعت /start تاني لو عايز يدخل."
+    en: "🔄 <b>User Unbanned</b>\nUser ‏<code>{id}</code>‏ has been removed from the Banned Directory. They can now send /start to request access again if they wish.",
+    ar: "🔄 <b>رفعنا الحظر عنه</b>\nالرقم ‏<code>{id}</code>‏ اتشال من البان. يقدر يبعت /start تاني لو عايز يدخل."
   },
 
   // ── Admin: Reference expired/handled ──────────────────────────────────────
@@ -535,12 +535,12 @@ const dict = {
     ar: "⚠️ <b>الطلب ده بقديم</b>\nالطلب ده بقى مش في الليست."
   },
   "admin.approved_result": {
-    en: "✅ <b>Approved!</b>\nUser <code>{id}</code> was approved by {admin}.",
-    ar: "✅ <b>وافقنا عليه!</b>\nالرقم <code>{id}</code> اتوافق عليه من {admin}."
+    en: "✅ <b>Approved!</b>\nUser ‏<code>{id}</code>‏ was approved by {admin}.",
+    ar: "✅ <b>وافقنا عليه!</b>\nالرقم ‏<code>{id}</code>‏ اتوافق عليه من {admin}."
   },
   "admin.approved_manual_result": {
-    en: "✅ <b>Approved!</b>\nUser <code>{id}</code> can now use the Amazon deals application.",
-    ar: "✅ <b>وافقنا عليه!</b>\nالرقم <code>{id}</code> يقدر يستخدم أبلكيشن أمازون مصر دلوقتي."
+    en: "✅ <b>Approved!</b>\nUser ‏<code>{id}</code>‏ can now use the Amazon deals application.",
+    ar: "✅ <b>وافقنا عليه!</b>\nالرقم ‏<code>{id}</code>‏ يقدر يستخدم أبلكيشن أمازون مصر دلوقتي."
   },
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -641,7 +641,7 @@ const dict = {
   },
   "alert.tracking_expired_body": {
     en: "Your subscription for ASIN <code>{asin}</code> has been retired after <b>{days}</b> days without activity. If you still want to track this item, please re-add it.",
-    ar: "تراك ASIN <code>{asin}</code> اتشال بعد <b>{days}</b> يوم من غير أي نشاط. لو عايز تتابع المنتج ده، أضفه من جديد."
+    ar: "تراك ASIN ‏<code>{asin}</code>‏ اتشال بعد <b>{days}</b> يوم من غير أي نشاط. لو عايز تتابع المنتج ده، أضفه من جديد."
   },
 
   "alert.btn_open_new": {

@@ -241,7 +241,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     const successText = t('link.registered_head', lang) + '\n\n' +
                     `📌 <b>${cleanTitle}</b>\n` +
-                    `🆔 ASIN: <code>${pid}</code>\n\n` +
+                    `🆔 ‏<code>${pid}</code>‏\n\n` +
                     t('link.registered_status', lang) + '\n\n' +
                     `🕐 <b>Status:</b> ${t('link.pending_scan', lang)}\n\n#ad`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
@@ -850,7 +850,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
   if (queryString) productUrl += `?${queryString}`;
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
-               `└ 🆔 <code>${pid}</code>\n\n` +
+               `└ 🆔 ‏<code>${pid}</code>‏\n\n` +
                t('product.price_label', lang) + ` ${lastPrice}` +
                targetText +
                sellerInfo +

@@ -183,7 +183,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           const down_text = diff > 0 ? ` (${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })})` : "";
           msg = `${atl_banner}${t('alert.target_met_head', lang)} ${condLabel}\n\n` +
                 `📦 <b>${safe_name}</b>\n` +
-                `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+                `└ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
                 `${t('alert.target_met_current', lang, { price: formatEGP(price) })}\n` +
                 `${t('alert.target_met_target', lang, { price: formatEGP(targetPrice) })}${down_text}\n` +
                 `${t('alert.target_met_seller', lang, { seller: safe_seller })}` +
@@ -193,7 +193,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           if (lastPrice === null) {
               msg = `${atl_banner}${t('alert.restock_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
-                    `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+                    `└ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
                     `${t('alert.restock_price', lang, { price: formatEGP(price) })}\n` +
                     `${t('alert.restock_seller', lang, { seller: safe_seller })}` +
                     `${final_smart_alts}\n\n` +
@@ -203,7 +203,7 @@ export async function executeScrapeEngine(env, offset = 0) {
               const pct = lastPrice ? (diff / lastPrice * 100) : 0;
               msg = `${atl_banner}${t('alert.price_drop_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
-                    `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+                    `└ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
                     `${t('alert.price_drop_new', lang, { price: formatEGP(price) })}\n` +
                     `${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })} (${pct.toFixed(1)}% off)\n` +
                     `${t('alert.price_drop_was', lang, { price: formatEGP(lastPrice) })}\n` +
@@ -349,13 +349,13 @@ export async function executeScrapeEngine(env, offset = 0) {
           expiryMsg =
             t('alert.stale_target_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
-            `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+            `└ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
             t('alert.stale_target_with_price', subLang, { target: Number(sub.target_price).toLocaleString(), days: 90 });
         } else {
           expiryMsg =
             t('alert.tracking_expired_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
-            `└ 🆔 <code>${liveItem.asin}</code>\n\n` +
+            `└ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
             t('alert.tracking_expired_body', subLang, { asin: liveItem.asin, days: 90 });
         }
 
