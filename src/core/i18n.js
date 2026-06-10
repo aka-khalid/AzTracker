@@ -953,6 +953,10 @@ const dict = {
     en: "✅ <b>Restoration Complete</b>",
     ar: "✅ <b>كل حاجة اترجعت</b>"
   },
+  "crm.action_restoration_fail": {
+    en: "❌ <b>Restoration Failed</b>",
+    ar: "❌ <b>منفعش</b>"
+  },
   "crm.action_force_scrape_ok": {
     en: "✅ <b>Force Scrape Completed</b>",
     ar: "✅ <b>تم</b>"

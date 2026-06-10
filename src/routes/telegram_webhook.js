@@ -87,10 +87,15 @@ async function handleMessage(message, env, baseUrl, ctx) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
 
-    // Persist detected language on every /start for approved users
-    await env.DB.prepare("UPDATE Users SET lang = ? WHERE chat_id = ? AND (lang IS NULL OR lang != ?)").bind(osLang, chatId, osLang).run();
+    // Only set lang from Telegram OS on first interaction (NULL), never overwrite.
+    // User must explicitly toggle language via the button — OS language is NOT authoritative.
+    await env.DB.prepare("UPDATE Users SET lang = ? WHERE chat_id = ? AND lang IS NULL").bind(osLang, chatId).run();
 
-    await renderMainMenu(env, chatId, null, isAdmin, baseUrl, lang);
+    // Re-read lang after potential update: use DB value, fall back to OS detection
+    const freshRoles = await getUserRoles(chatId, env, ctx);
+    const effectiveLang = freshRoles.lang || osLang || 'en';
+
+    await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
     return;
   } else if (text.startsWith('/')) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
@@ -456,15 +461,19 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("reject_") && isAdmin) {
       const targetId = data.replace("reject_", "");
 
+      // Use target user's existing lang (from DB) if available; don't overwrite with admin's
+      const targetUserRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
+      const targetLang = targetUserRow?.lang || 'en';
+
       await env.DB.prepare(`
          INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at, lang)
          VALUES (?, 'rejected', ?, ?, ?, ?)
          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
-      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), lang).run();
+      `).bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), targetLang).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
       await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected_manual', lang, { id: targetId }));
-      await sendTelegram(env, targetId, t('access.denied_notify', lang));
+      await sendTelegram(env, targetId, t('access.denied_notify', targetLang));
       // AUDIT LOG
       ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Manually rejected access"));
     }
@@ -483,7 +492,9 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
-      const targetLang = lang; // Use admin's lang as fallback; user will get /start to set their own
+      // Default to 'en' — user's Telegram language_code is not available in callback queries.
+      // User should send /start (which sets lang from their OS) or use the toggle button.
+      const targetLang = 'en';
       await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at, lang) VALUES (?, 'approved', ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by, lang = COALESCE(lang, excluded.lang)").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), targetLang).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       await editTelegramMessage(env, chatId, messageId, t('admin.approved_manual_result', lang, { id: targetId }));
@@ -850,7 +861,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
   if (queryString) productUrl += `?${queryString}`;
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
-               `└ 🆔 ‏<code>${pid}</code>‏\n\n` +
+               `┘ 🆔 ‏<code>${pid}</code>‏\n\n` +
                t('product.price_label', lang) + ` ${lastPrice}` +
                targetText +
                sellerInfo +
@@ -991,9 +1002,9 @@ function buildSmartAlternatives(pData, pid, env, lang = 'en') {
   if (!currentSellerIsAmazon) {
     const amazonEgUrl = buildProductUrl(pid, env, AMAZON_EG_MERCHANT_ID);
     if (amazonPrice !== null) {
-      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a>: <b>${amazonPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b>`);
+      historicalLinks.push(`┘ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a>: <b>${amazonPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b>`);
     } else if (amazonSeenRecently) {
-      historicalLinks.push(`└ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+      historicalLinks.push(`┘ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
     }
   }
 
@@ -1001,9 +1012,9 @@ function buildSmartAlternatives(pData, pid, env, lang = 'en') {
   if (!currentSellerIsResale) {
     const resaleUrl = buildProductUrl(pid, env, AMAZON_RESALE_MERCHANT_ID);
     if (usedPrice !== null) {
-      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a>: <b>${usedPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
+      historicalLinks.push(`┘ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a>: <b>${usedPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
     } else if (resaleSeenRecently) {
-      historicalLinks.push(`└ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+      historicalLinks.push(`┘ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
     }
   }
 

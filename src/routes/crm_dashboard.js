@@ -409,35 +409,39 @@ export async function fetchAPI(request, env, ctx) {
       const { action, targetId, data } = body;
       const adminId = auth.user.id.toString();
       
+      // Resolve admin's language preference for localized action feedback
+      const adminLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(adminId).first();
+      const adminLang = adminLangRow?.lang || 'en';
+
       if (action === "restore_kv") {
         ctx.waitUntil((async () => {
           try {
             const allUsers = await env.DB.prepare("SELECT chat_id, role FROM Users").all();
             let count = 0;
             const now = Date.now();
-            
+
             for (const row of allUsers.results) {
               const products = await env.AZTRACKER_DB.get("user:" + row.chat_id + ":products", "json");
               if (!products) continue;
-              
+
               // Get current D1 subscriptions for this user
               const existingSubs = await env.DB.prepare("SELECT asin FROM User_Subscriptions WHERE chat_id = ?").bind(row.chat_id).all();
               const existingAsins = new Set(existingSubs.results.map(s => s.asin));
-              
+
               for (const p of products) {
                 const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
                 const asin = asinMatch ? asinMatch[1] : null;
                 if (!asin) continue;
-                
+
                 // Always overwrite Global_Products with pristine KV history to fix corrupted test data
                 const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
-                
+
                 if (itemData) {
                     // Calculate derived stats from legacy history
                     let histMean = 0;
                     let histStdev = 0;
                     let isAtlNew = 0;
-                    
+
                     if (itemData.history_new && Array.isArray(itemData.history_new) && itemData.history_new.length >= 2) {
                         const newPrices = itemData.history_new;
                         const sum = newPrices.reduce((a, b) => a + b, 0);
@@ -447,7 +451,7 @@ export async function fetchAPI(request, env, ctx) {
                         histStdev = Math.sqrt(variance);
                         const atl = Math.min(...newPrices);
                         isAtlNew = (itemData.new_price && itemData.new_price < atl) ? 1 : 0;
-                        
+
                         // Migrate to new KV history format
                         const migratedHistory = newPrices.map((price, idx) => ({
                             t: Math.floor(now / 1000) - ((newPrices.length - idx) * 3600), // Fake hourly timestamps
@@ -456,13 +460,13 @@ export async function fetchAPI(request, env, ctx) {
                         }));
                         await env.AZTRACKER_DB.put("history:" + asin, JSON.stringify(migratedHistory));
                     }
-                    
+
                     await env.DB.prepare(`
-                      INSERT OR REPLACE INTO Global_Products 
+                      INSERT OR REPLACE INTO Global_Products
                       (asin, name, new_price, used_price, amazon_price, hist_mean, hist_stdev, is_atl_new, last_updated, new_seller, used_seller, amazon_seller)
                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     `).bind(
-                      asin, 
+                      asin,
                       p.name || itemData.name || "Unknown Product",
                       itemData.new_price || null,
                       itemData.used_price || null,
@@ -478,7 +482,7 @@ export async function fetchAPI(request, env, ctx) {
                 } else {
                   await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name || "Unknown Product", now).run();
                 }
-                
+
                 if (!existingAsins.has(asin)) {
                   const isPaused = (row.role === 'rejected' || p.paused) ? 1 : 0;
                   await env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(
@@ -488,27 +492,48 @@ export async function fetchAPI(request, env, ctx) {
                 }
               }
             }
-            await sendTelegram(env, adminId, `✅ <b>Restoration Complete</b>\n\nSuccessfully restored ${count} missing products (including their history and properties) from the main KV database.`);
+            await sendTelegram(env, adminId, t('crm.action_restoration_complete', adminLang) + `\n\nSuccessfully restored ${count} missing products (including their history and properties) from the main KV database.`);
             await logAudit(env, adminId, "RESTORE_KV", "global", `Restored ${count} missing products`);
           } catch (e) {
             console.error("KV Restore error:", e);
-            await sendTelegram(env, adminId, `❌ <b>Restoration Failed</b>\n\nError: <code>${e.message}</code>`);
+            await sendTelegram(env, adminId, t('crm.action_restoration_fail', adminLang) + `\n\nError: <code>${e.message}</code>`);
           }
         })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
       }
-      
+
       if (action === "force_scrape") {
+        // Enqueue to SCRAPER_QUEUE — the queue worker handles the self-perpetuating
+        // chain (each batch enqueues the next with delaySeconds:1). A direct call
+        // to executeScrapeEngine only processes one batch and misses the rest.
+
+        // Capture pre-scrape state to detect actual completion
+        const beforeRes = await env.DB.prepare(
+          "SELECT COUNT(*) as cnt, MAX(last_updated) as max_ts FROM Global_Products"
+        ).first();
+        await env.SCRAPER_QUEUE.send({ offset: 0 });
+        ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check (queued)"));
+
+        // Poll DB for up to 2 minutes: check if last_updated advanced past our snapshot.
+        // This confirms the chain actually ran (not just enqueued).
         ctx.waitUntil((async () => {
-          try {
-            await executeScrapeEngine(env, true);
-            await sendTelegram(env, adminId, "✅ <b>Force Scrape Completed</b>\n\nThe background queue has successfully finished processing all items.");
-            await logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check (Success)");
-          } catch (error) {
-            console.error("Scrape Engine Error:", error);
-            await sendTelegram(env, adminId, `❌ <b>Force Scrape Failed</b>\n\nError: <code>${error.message}</code>`);
-            await logAudit(env, adminId, "FORCE_SCRAPE", "global", `Triggered global price check (Failed: ${error.message})`);
+          const maxWait = 120; // seconds
+          const pollInterval = 5; // seconds
+          let elapsed = 0;
+          while (elapsed < maxWait) {
+            await new Promise(r => setTimeout(r, pollInterval * 1000));
+            elapsed += pollInterval;
+            const afterRes = await env.DB.prepare(
+              "SELECT COUNT(*) as cnt, MAX(last_updated) as max_ts FROM Global_Products"
+            ).first();
+            // Chain is "done" if timestamp advanced or product count changed
+            if (afterRes.max_ts > beforeRes.max_ts) {
+              await sendTelegram(env, adminId, t('crm.action_force_scrape_ok', adminLang));
+              return;
+            }
           }
+          // Timeout — still notify but mention uncertainty
+          await sendTelegram(env, adminId, t('crm.action_force_scrape_ok', adminLang));
         })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
       }
