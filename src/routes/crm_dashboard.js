@@ -557,7 +557,7 @@ export async function fetchAPI(request, env, ctx) {
       }
       
       if (action === "approve") {
-        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', 5, ?, ?)").bind(targetId, adminId, Date.now()).run();
+        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', ?, ?, ?)").bind(targetId, adminId, parseInt(env.DEFAULT_USER_PRODUCT_LIMIT) || 3, Date.now()).run();
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
