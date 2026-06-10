@@ -332,15 +332,32 @@ export async function fetchAPI(request, env, ctx) {
         const rootAdmins = rootAdminsRaw.split(",").filter(Boolean).map(String);
         
         let mutableUsers = [];
+        const foundIds = new Set();
         if (usersRes.results) {
             mutableUsers = usersRes.results.map(u => {
                 const userClone = { ...u };
                 const idStr = userClone.chat_id.toString();
+                foundIds.add(idStr);
                 if (rootAdmins.includes(idStr)) {
                     userClone.role = 'root';
                 }
                 return userClone;
             });
+        }
+        // Inject root admins not yet in Users table (e.g. never seeded from KV)
+        for (const raId of rootAdmins) {
+            if (!foundIds.has(raId)) {
+                mutableUsers.unshift({
+                    chat_id: raId,
+                    role: 'root',
+                    first_name: null,
+                    username: null,
+                    item_limit: 0,
+                    created_at: Date.now(),
+                    active_items: 0,
+                    lang: null
+                });
+            }
         }
         
         const { results: queueResults } = await env.DB.prepare("SELECT * FROM Join_Queue ORDER BY requested_at DESC").all();
@@ -411,7 +428,7 @@ export async function fetchAPI(request, env, ctx) {
       
       // Resolve admin's language preference for localized action feedback
       const adminLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(adminId).first();
-      const adminLang = adminLangRow?.lang || 'en';
+      const adminLang = adminLangRow?.lang || auth.lang || 'en';
 
       if (action === "restore_kv") {
         if (!auth.isRootAdmin) {
@@ -557,7 +574,8 @@ export async function fetchAPI(request, env, ctx) {
       }
       
       if (action === "approve") {
-        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', ?, ?, ?)").bind(targetId, adminId, parseInt(env.DEFAULT_USER_PRODUCT_LIMIT) || 3, Date.now()).run();
+        const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT) || 3;
+        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', ?, ?, ?)").bind(targetId, defaultLimit, adminId, Date.now()).run();
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));

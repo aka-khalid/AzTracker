@@ -27,7 +27,7 @@ export async function getUserRoles(chatId, env, ctx) {
   const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
   const isRejected = role === "rejected";
 
-  const result = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: user?.lang || 'en' };
+  const result = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: user?.lang || null };
   if (ctx && ctx.waitUntil) {
     ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(result), {
       headers: { "Cache-Control": "s-maxage=5", "Content-Type": "application/json" }

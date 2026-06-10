@@ -87,6 +87,13 @@ async function handleMessage(message, env, baseUrl, ctx) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
 
+    // Ensure root admin always exists in Users table (idempotent)
+    const __raRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+    const __raList = __raRaw.split(",").filter(Boolean).map(s => s.trim());
+    if (__raList.includes(String(chatId))) {
+      await env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'admin', 0, ?)").bind(String(chatId), Date.now()).run();
+    }
+
     // Only set lang from Telegram OS on first interaction (NULL), never overwrite.
     // User must explicitly toggle language via the button — OS language is NOT authoritative.
     await env.DB.prepare("UPDATE Users SET lang = ? WHERE chat_id = ? AND lang IS NULL").bind(osLang, chatId).run();
