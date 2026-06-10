@@ -183,6 +183,7 @@ export async function fetchAPI(request, env, ctx) {
         }
         const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG);
         const items = await parser.getItems([asin]);
+        const arabicNames = await parser.getItemsWithArabic([asin]);
         const response2 = await fetch(parser.endpoint, {
           method: 'POST',
           headers: {
@@ -207,7 +208,7 @@ export async function fetchAPI(request, env, ctx) {
           })
         });
         const data = await response2.json();
-        return new Response(JSON.stringify({ parsed: items, raw: data }, null, 2), { headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ parsed: items, arabicName: arabicNames.get(asin) || null, raw: data }, null, 2), { headers: { "Content-Type": "application/json" } });
       } catch (e) {
         return new Response(e.stack || e.message, { status: 500 });
       }
