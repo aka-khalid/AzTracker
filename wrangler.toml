@@ -35,7 +35,6 @@ max_retries = 3
 GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
-GLOBAL_POOL_LIMIT = "450"
 
 [triggers]
 crons = []
@@ -48,7 +47,6 @@ name = "aztracker-v2-prod"
 GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
-GLOBAL_POOL_LIMIT = "450"
 
 [[env.production.kv_namespaces]]
 binding = "AZTRACKER_DB"

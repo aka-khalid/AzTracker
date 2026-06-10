@@ -52,60 +52,6 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ---
 
-## 📋 Backlog & Pending Milestones
-
-- [ ] **Phase 7.0: V1→V2 Production Cutover** — Migrate from `aztracker-bot` (KV-only, main branch) to `aztracker-v2` (D1+KV, current branch). See [Cutover Checklist](#phase-70-v1-to-v2-production-cutover) below.
-- [ ] **Phase 7.1: Documentation Accuracy Audit** — All docs cross-referenced against codebase with 100% accuracy.
-
----
-
-## 🛑 Intentional Architectural Boundaries
-*Features explicitly rejected to preserve the core product vision.*
-
-- **Massive Interactive Setup Pipeline:** Rejected. We intentionally scrapped plans to build a complex, multi-stage provisioning suite (`setup.py`, KV auto-creators, GitHub secret auto-injectors). By consolidating the entire V2 migration into the streamlined `finalize_cutover.js` automation script, we drastically reduced deployment overhead and tooling complexity.
-- **Multi-Region Scaling (Amazon.ae / .sa):** Rejected. We intentionally scrapped plans to support multiple geographic Amazon marketplaces. Supporting multiple regions required managing distinct Creators API credentials and complex regional queues. The engine is strictly hardcoded to dominate the Amazon Egypt (Amazon.eg) marketplace.
-- **Containerized Deployment (Docker/K8s):** Rejected. We intentionally avoided packaging the engine into a Docker container or Kubernetes cluster. By strictly leveraging Cloudflare Workers, D1, Queues, and KV, we maintain a true "Serverless Edge" architecture.
-- **Separate Frontend Framework (React/Next.js):** Rejected. We intentionally avoided a decoupled frontend repository for the CRM dashboard. Generating raw HTML directly from the Cloudflare Worker (`crm_dashboard.js`) maintains our strict zero-build-step, edge-native deployment philosophy.
-- **Synchronous CRM History Loading:** Rejected. We intentionally excluded historical KV data from the primary `/api/crm/data` endpoint. Price history is strictly "lazy-loaded" via a dedicated route ONLY when an admin explicitly opens a product drawer, preventing catastrophic KV read exhaustion.
-- **Percentage-Based Target Pricing:** Rejected. Modifying the engine and database schema to calculate dynamic percentage drops (e.g., "Alert me at 20% off") introduces severe UX friction by requiring multi-step inputs. The system strictly maintains a "Zero-Friction" fixed-price input philosophy.
-
----
-
-## 🗄️ Archived V1 History (Python / PA-API Engine)
-*The following phases document the original Python engine architecture prior to the V2 ES6 JavaScript & D1 migration. Kept strictly for architectural context.*
-
-<details>
-<summary><b>Expand V1 Archive (Phases 1 - 5)</b></summary>
-
-### 🛡️ Phase 1: The Ironclad Foundation (Security & Stability)
-- **The Regex URL Parser:** Replaced fragile splits in `price_tracker.py` with robust regex to ensure tracking queries never break the API batch fetch.
-- **Zero-Trust Webhook Validation:** Implemented `X-Telegram-Bot-Api-Secret-Token` header verification.
-- **State-Overwrite Race Condition (2PC):** Implemented a Unified Atomic Two-Phase Commit (2PC) to sync Telegram delivery locks and backend resets simultaneously.
-- **The Bulk-Write Blindspot:** Neutralized Cloudflare KV REST API limits by replacing concurrent `PUT` requests with a native `/bulk` array operation.
-- **The "Dead ASIN" Quota Leak:** Stopped wasting Amazon API quotas on completely delisted (404) ASINs by implementing a zero-write timestamp engine.
-
-### ⚡ Phase 2: DevOps & Database Optimization
-- **Sharding the Global Blob:** Broke the massive `global_prices` JSON object into individual KV pairs to neutralize Cloudflare's 25MB value limit.
-- **Asynchronous Processing:** Refactored engine to use `asyncio.Semaphore()` and `aiohttp` to prevent Layer 7 TCP exhaustion.
-- **KV Write Quota Auditing:** Transitioned the jitter lock mechanism to use Cloudflare's in-memory standard caching API instead of KV.
-
-### 📊 Phase 3: The User Experience
-- **Anti-Flap Hysteresis Engine:** Built a 2.5-hour static timestamp holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
-- **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
-- **All-Time Low (ATL) Intelligence:** Injected high-urgency text when a price drops to its lowest recorded state.
-- **Global Price Matrix (Root Admin Dashboard):** Evaluated active ASINs applying Omnichannel Z-Score logic ($z \le -1.5$).
-
-### 🔐 Phase 4: Identity Provisioning & Security Governance
-- **Strict Region-Lock Enforcement:** Broadened the `isAmazonLink` regex listener to intercept all global Amazon domains, validating against `amazon.eg`.
-- **Automated Access Provisioning:** Introduced a `global:join_queue` KV array to eliminate manual ID hand-offs.
-- **Forensic Security Audit Log:** Hooked all state-modifying admin callbacks to write atomic, self-expiring keys secured by HMAC.
-
-### 🔁 Phase 5: Scheduler Resilience
-- **Colo-Local Circuit Breaker:** Utilized `caches.default` to create an `/_internal/circuit/open` flag to stop hammering a dead API during outages.
-</details>
-
----
-
 ## Phase 7.0: V1→V2 Production Cutover
 
 <details>
@@ -159,7 +105,7 @@ To abort the cutover and instantly revert your live bot back to the old V1 worke
    ```
    https://api.telegram.org/bot<YOUR_LIVE_BOT_TOKEN>/setWebhook?url=https://aztracker-bot.khalid-ibrahim-dev.workers.dev/webhook&secret_token=<YOUR_OLD_V1_SECRET>
    ```
-As soon as you do that, Telegram will instantly sever the connection to V2 and start routing all user messages back to your V1 infrastructure.
+As soon as you that, Telegram will instantly sever the connection to V2 and start routing all user messages back to your V1 infrastructure.
 
 ### ☁️ Phase 3: GCP Backup Bridge Provisioning
 
@@ -175,6 +121,59 @@ As soon as you do that, Telegram will instantly sever the connection to V2 and s
 - [ ] **Step 4: Configure the Scheduler**
   Create a Cloud Scheduler job running at `0 0 * * *`, HTTP target, OIDC auth header.
 
+</details>
+
+---
+
+## 📋 Backlog & Pending Milestones
+
+- [ ] **Phase 7.1: Documentation Accuracy Audit** — All docs cross-referenced against codebase with 100% accuracy.
+
+---
+
+## 🛑 Intentional Architectural Boundaries
+*Features explicitly rejected to preserve the core product vision.*
+
+- **Massive Interactive Setup Pipeline:** Rejected. We intentionally scrapped plans to build a complex, multi-stage provisioning suite (`setup.py`, KV auto-creators, GitHub secret auto-injectors). By consolidating the entire V2 migration into the streamlined `finalize_cutover.js` automation script, we drastically reduced deployment overhead and tooling complexity.
+- **Multi-Region Scaling (Amazon.ae / .sa):** Rejected. We intentionally scrapped plans to support multiple geographic Amazon marketplaces. Supporting multiple regions required managing distinct Creators API credentials and complex regional queues. The engine is strictly hardcoded to dominate the Amazon Egypt (Amazon.eg) marketplace.
+- **Containerized Deployment (Docker/K8s):** Rejected. We intentionally avoided packaging the engine into a Docker container or Kubernetes cluster. By strictly leveraging Cloudflare Workers, D1, Queues, and KV, we maintain a true "Serverless Edge" architecture.
+- **Separate Frontend Framework (React/Next.js):** Rejected. We intentionally avoided a decoupled frontend repository for the CRM dashboard. Generating raw HTML directly from the Cloudflare Worker (`crm_dashboard.js`) maintains our strict zero-build-step, edge-native deployment philosophy.
+- **Synchronous CRM History Loading:** Rejected. We intentionally excluded historical KV data from the primary `/api/crm/data` endpoint. Price history is strictly "lazy-loaded" via a dedicated route ONLY when an admin explicitly opens a product drawer, preventing catastrophic KV read exhaustion.
+- **Percentage-Based Target Pricing:** Rejected. Modifying the engine and database schema to calculate dynamic percentage drops (e.g., "Alert me at 20% off") introduces severe UX friction by requiring multi-step inputs. The system strictly maintains a "Zero-Friction" fixed-price input philosophy.
+
+---
+
+## 🗄️ Archived V1 History (Python / PA-API Engine)
+*The following phases document the original Python engine architecture prior to the V2 ES6 JavaScript & D1 migration. Kept strictly for architectural context.*
+
+<details>
+<summary><b>Expand V1 Archive (Phases 1 - 5)</b></summary>
+
+### 🛡️ Phase 1: The Ironclad Foundation (Security & Stability)
+- **The Regex URL Parser:** Replaced fragile splits in `price_tracker.py` with robust regex to ensure tracking queries never break the API batch fetch.
+- **Zero-Trust Webhook Validation:** Implemented `X-Telegram-Bot-Api-Secret-Token` header verification.
+- **State-Overwrite Race Condition (2PC):** Implemented a Unified Atomic Two-Phase Commit (2PC) to sync Telegram delivery locks and backend resets simultaneously.
+- **The Bulk-Write Blindspot:** Neutralized Cloudflare KV REST API limits by replacing concurrent `PUT` requests with a native `/bulk` array operation.
+- **The "Dead ASIN" Quota Leak:** Stopped wasting Amazon API quotas on completely delisted (404) ASINs by implementing a zero-write timestamp engine.
+
+### ⚡ Phase 2: DevOps & Database Optimization
+- **Sharding the Global Blob:** Broke the massive `global_prices` JSON object into individual KV pairs to neutralize Cloudflare's 25MB value limit.
+- **Asynchronous Processing:** Refactored engine to use `asyncio.Semaphore()` and `aiohttp` to prevent Layer 7 TCP exhaustion.
+- **KV Write Quota Auditing:** Transitioned the jitter lock mechanism to use Cloudflare's in-memory standard caching API instead of KV.
+
+### 📊 Phase 3: The User Experience
+- **Anti-Flap Hysteresis Engine:** Built a 2.5-hour static timestamp holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
+- **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
+- **All-Time Low (ATL) Intelligence:** Injected high-urgency text when a price drops to its lowest recorded state.
+- **Global Price Matrix (Root Admin Dashboard):** Evaluated active ASINs applying Omnichannel Z-Score logic ($z \le -1.5$).
+
+### 🔐 Phase 4: Identity Provisioning & Security Governance
+- **Strict Region-Lock Enforcement:** Broadened the `isAmazonLink` regex listener to intercept all global Amazon domains, validating against `amazon.eg`.
+- **Automated Access Provisioning:** Introduced a `global:join_queue` KV array to eliminate manual ID hand-offs.
+- **Forensic Security Audit Log:** Hooked all state-modifying admin callbacks to write atomic, self-expiring keys secured by HMAC.
+
+### 🔁 Phase 5: Scheduler Resilience
+- **Colo-Local Circuit Breaker:** Utilized `caches.default` to create an `/_internal/circuit/open` flag to stop hammering a dead API during outages.
 </details>
 
 ---

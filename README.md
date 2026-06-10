@@ -69,7 +69,7 @@ graph TD;
 * 🎯 **Strict Boolean Target Locks:** Users set specific budget targets. The engine uses `alert_sent_new` and `alert_sent_used` boolean flags to alert exactly once per condition type when the target price is met or beaten. Targets auto-reset when price rises above target.
 * 📦 **Deduplicated Batch Processing:** The scraper uses `SELECT DISTINCT` across all active subscriptions — 10 users tracking the same ASIN triggers only 1 API request. Results are fan-out to all matching subscribers in-memory.
 * 🔄 **Anti-Flap Hysteresis:** In-memory timers (2.5h for new/used, 1h for Amazon.eg) prevent phantom price oscillations from triggering false alerts when the API temporarily returns null for a listing.
-* 🌐 **Bilingual UI (EN/AR):** Full i18n localization engine with Professional Masry Egyptian Arabic. Every user-facing string — menus, alerts, CRM dashboard — is rendered in the user's preferred language, detected from Telegram OS settings on first interaction.
+* 🌐 **Bilingual UI (EN/AR):** Full i18n localization engine with Professional Masry Egyptian Arabic. Every user-facing string — menus, alerts, CRM dashboard — is rendered in the user's preferred language. Language is persisted in the `Users.lang` column and resolved per-message: DB value takes priority, falling back to Telegram's `language_code` for unapproved users.
 * 📊 **Price History Charts:** The CRM dashboard renders interactive price history charts (Chart.js) using KV-stored time-series data, with ATH/ATL/Avg metrics.
 * 📢 **Public Deal Broadcasting:** The best deal of each scrape cycle (determined by z-score and drop percentage) is broadcast to a public Telegram channel in organic Egyptian Arabic.
 
@@ -127,7 +127,6 @@ The application is structured entirely using ES6 Modules within the `src/` direc
 | Variable | Description |
 |----------|-------------|
 | `DEFAULT_USER_PRODUCT_LIMIT` | Global limit on concurrent tracks per user (default: `"3"`). |
-| `GLOBAL_POOL_LIMIT` | Maximum active products in the global pool (default: `"450"`). |
 | `GITHUB_OWNER` | GitHub owner for the project (default: `"aka-khalid"`). |
 | `GITHUB_REPO` | GitHub repository name (default: `"AzTracker"`). |
 

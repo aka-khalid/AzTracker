@@ -102,7 +102,6 @@ The CRON array is commented out. To enable the Dynamic Governor, uncomment `* * 
 | `GITHUB_OWNER` | `aka-khalid` | `crm_dashboard.js` (GitHub issue tracking) |
 | `GITHUB_REPO` | `AzTracker` | `crm_dashboard.js` |
 | `DEFAULT_USER_PRODUCT_LIMIT` | `"3"` | `telegram_webhook.js`, `crm_dashboard.js` |
-| `GLOBAL_POOL_LIMIT` | `"450"` | Defined but **not directly referenced** in source code (reserved for future use) |
 
 ---
 
