@@ -6,6 +6,48 @@ const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 const TELEGRAM_MSG_LIMIT = 4096;
 
+// ── Amazon API Circuit Breaker ──────────────────────────────────────────────
+// States: "closed" (normal) | "open" (failing, reject fast) | "half_open" (testing)
+const CB_KEY = "amazon_api_circuit_breaker";
+const CB_FAILURE_THRESHOLD = 5;   // consecutive failures before opening
+const CB_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown before half-open
+
+async function checkCircuitBreaker(env) {
+  try {
+    const state = JSON.parse(await env.AZTRACKER_DB.get(CB_KEY) || '{"state":"closed","failures":0}');
+    if (state.state === "open") {
+      if (Date.now() - (state.openedAt || 0) > CB_COOLDOWN_MS) {
+        state.state = "half_open";
+        await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify(state));
+        return "half_open";
+      }
+      return "open";
+    }
+    return state.state; // "closed" or "half_open"
+  } catch (e) {
+    return "closed"; // KV failure → assume closed (fail open)
+  }
+}
+
+async function recordCircuitSuccess(env) {
+  try {
+    await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify({ state: "closed", failures: 0 }));
+  } catch (e) { /* non-blocking */ }
+}
+
+async function recordCircuitFailure(env) {
+  try {
+    const state = JSON.parse(await env.AZTRACKER_DB.get(CB_KEY) || '{"state":"closed","failures":0}');
+    state.failures = (state.failures || 0) + 1;
+    if (state.failures >= CB_FAILURE_THRESHOLD) {
+      state.state = "open";
+      state.openedAt = Date.now();
+      console.error(`[CircuitBreaker] Amazon API circuit OPENED after ${state.failures} failures`);
+    }
+    await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify(state));
+  } catch (e) { /* non-blocking */ }
+}
+
 /**
  * Truncate a message to Telegram's 4096-char limit.
  * Cuts at the last newline before the limit to avoid breaking HTML tags mid-way.
@@ -25,9 +67,16 @@ export async function executeScrapeEngine(env, offset = 0) {
   const { results: staleProducts } = await env.DB.prepare(query).bind(offset).all();
   if (!staleProducts || staleProducts.length === 0) return false;
 
+  // Check circuit breaker before any Amazon API calls
+  const cbState = await checkCircuitBreaker(env);
+  if (cbState === "open") {
+    console.warn("[CircuitBreaker] Amazon API circuit is OPEN — skipping scrape batch");
+    throw new Error("Amazon API circuit breaker open");
+  }
+
   const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
   const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
-  
+
   let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
   if (!accessToken) {
     try {
@@ -35,18 +84,24 @@ export async function executeScrapeEngine(env, offset = 0) {
       await env.AZTRACKER_DB.put('amazon_access_token', accessToken, { expirationTtl: 3300 }); // 55 minutes
     } catch (e) {
       console.error("Failed to acquire Amazon Access Token:", e);
+      await recordCircuitFailure(env);
       return false; // Abort chain on auth failure
     }
   }
 
   const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
   const asins = staleProducts.map(p => p.asin);
-  
+
   let liveItems;
   try {
     liveItems = await parser.getItems(asins);
+    // Success: reset circuit breaker (unless we're half_open, then let it close on next success)
+    if (cbState === "half_open") {
+      await recordCircuitSuccess(env);
+    }
   } catch (error) {
     console.error("Creators API error in executeScrapeEngine:", error);
+    await recordCircuitFailure(env);
     throw error; // Throw so the queue retries this specific offset
   }
 
