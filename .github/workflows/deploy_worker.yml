@@ -4,7 +4,7 @@ on:
     branches:
       - main
     paths:
-      - 'worker.js'
+      - 'src/**'
       - 'wrangler.toml'
       - '.github/workflows/deploy_worker.yml'
 env:
