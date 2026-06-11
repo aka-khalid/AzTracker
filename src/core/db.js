@@ -1,6 +1,10 @@
 export async function getUserRoles(chatId, env, ctx) {
+  // Normalize chatId to string — Telegram delivers it as a number,
+  // but rootAdmins are parsed from env as strings via split(",")
+  const chatIdStr = String(chatId);
+
   const cache = caches.default;
-  const cacheReq = new Request(`https://auth.internal/roles/${chatId}`);
+  const cacheReq = new Request(`https://auth.internal/roles/${chatIdStr}`);
   const cached = await cache.match(cacheReq);
   if (cached) {
     return await cached.json();
@@ -8,7 +12,7 @@ export async function getUserRoles(chatId, env, ctx) {
 
   const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
   const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
-  let isRootAdmin = rootAdmins.includes(chatId);
+  let isRootAdmin = rootAdmins.includes(chatIdStr);
 
   const { results: adminRows } = await env.DB.prepare("SELECT chat_id FROM Users WHERE role = 'admin' ORDER BY created_at ASC").all();
   const admins = adminRows.map(r => r.chat_id);
@@ -19,12 +23,12 @@ export async function getUserRoles(chatId, env, ctx) {
   const user = await env.DB.prepare("SELECT role, lang FROM Users WHERE chat_id = ?").bind(chatId).first();
   let role = user ? user.role : null;
 
-  if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatId) {
+  if (!isRootAdmin && rootAdmins.length === 0 && admins.length > 0 && admins[0] === chatIdStr) {
       isRootAdmin = true;
   }
 
-  const isAdmin = isRootAdmin || role === "admin" || admins.includes(chatId);
-  const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatId);
+  const isAdmin = isRootAdmin || role === "admin" || admins.includes(chatIdStr);
+  const isApproved = isAdmin || role === "approved" || approvedUsers.includes(chatIdStr);
   const isRejected = role === "rejected";
 
   const result = { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: user?.lang || null };
