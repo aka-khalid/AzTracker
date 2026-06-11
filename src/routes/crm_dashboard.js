@@ -382,7 +382,8 @@ export async function fetchAPI(request, env, ctx) {
              first_name: q.first_name,
              username: q.username,
              requested_at: q.requested_at,
-             admin_messages: q.admin_messages ? JSON.parse(q.admin_messages) : {}
+             admin_messages: q.admin_messages ? JSON.parse(q.admin_messages) : {},
+             request_type: q.request_type || 'access'
         }));
         
         const data = {
@@ -1171,15 +1172,31 @@ export function renderCrmHTML(lang = 'en') {
                 
                 list.innerHTML = appData.joinQueue.map(u => {
                     const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    const isUnban = u.request_type === 'unban';
+                    const typeBadge = isUnban
+                        ? '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/20">🔓 ' + "${t('crm.queue_type_unban', lang)}" + '</span>'
+                        : '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-400 border border-brand-500/20">🆕 ' + "${t('crm.queue_type_access', lang)}" + '</span>';
+                    const idEsc = escapeHtml(String(u.id));
+                    const rejectBtn = isUnban
+                        ? `<button onclick="performAction('reject', '\${idEsc}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition" title="${t('crm.btn_deny', lang) || 'Deny'}"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`
+                        : `<button onclick="performAction('reject', '\${idEsc}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
+                    const approveBtn = isUnban
+                        ? `<button onclick="performAction('unban', '\${idEsc}')" class="h-8 px-3 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition text-xs font-medium border border-emerald-500/20">✅ ${t('crm.btn_unban', lang)}</button>`
+                        : `<button onclick="performAction('approve', '\${idEsc}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>`;
                     return \`
-                    <div class="glass rounded-xl p-3 flex justify-between items-center">
+                    <div class="glass rounded-xl p-3 flex justify-between items-center \${isUnban ? 'border-l-2 border-l-orange-500/40' : ''}">
                         <div>
-                            <div class="font-medium text-sm truncate max-w-[250px]">\${escapeHtml(u.first_name) || 'User'} (\${u.username ? '@' + escapeHtml(u.username) : escapeHtml(String(u.id))})</div>
-                            <div class="text-xs text-gray-500 mt-0.5">${t('crm.requested_label', lang)} \${time}</div>
+                            <div class="flex items-center gap-2 mb-0.5">
+                                <div class="font-medium text-sm truncate max-w-[250px]">\${escapeHtml(u.first_name) || 'User'} (\${u.username ? '@' + escapeHtml(u.username) : idEsc})</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                \${typeBadge}
+                                <div class="text-xs text-gray-500">${t('crm.requested_label', lang)} \${time}</div>
+                            </div>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="performAction('reject', '\${escapeHtml(String(u.id))}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                            <button onclick="performAction('approve', '\${escapeHtml(String(u.id))}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
+                            \${rejectBtn}
+                            \${approveBtn}
                         </div>
                     </div>\`;
                 }).join('');

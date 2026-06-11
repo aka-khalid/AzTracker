@@ -115,7 +115,21 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
   if (!isApproved) {
     if (isRejected) {
-      await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang));
+      // Check if user already has a pending unban request in Join_Queue
+      const existingUnban = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ? AND request_type = 'unban'").bind(chatId).first();
+      if (text === "/start") {
+        if (existingUnban) {
+          // Already requested unban — show pending state, not the button again
+          await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.unban_pending', lang));
+        } else {
+          // Rejected users see an "unban request" button
+          await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang), {
+            inline_keyboard: [[{ text: t('access.unban_btn', lang), callback_data: `request_unban_${chatId}` }]]
+          });
+        }
+      } else {
+        await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang) + '\n\n' + t('access.denied_hint_start', lang));
+      }
       return;
     }
 
@@ -357,7 +371,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers, lang } = await getUserRoles(chatId, env, ctx);
   if (ctx && ctx.waitUntil) ctx.waitUntil(syncUserNames(env, chatId, callback.from, baseUrl));
 
-  if (!isApproved && !data.startsWith("request_access_")) return;
+  if (!isApproved && !data.startsWith("request_access_") && !data.startsWith("request_unban_")) return;
 
 
 
@@ -365,12 +379,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     if (data.startsWith("request_access_")) {
       const targetId = data.replace("request_access_", "");
       if (targetId !== chatId) return;
-
-      const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
-      if (inQueue) {
-        await editTelegramMessage(env, chatId, messageId, t('access.request_sent', lang));
-        return; // SEVERS THE BROADCAST LOOP FOR DUPLICATE CLICKS
-      }
 
       const countRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Join_Queue").first();
       if (countRow.count >= QUEUE_MAX_DEPTH) {
@@ -381,11 +389,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, t('access.request_sent', lang));
 
       // ATOMIC INSERT FIRST — prevents race condition where concurrent clicks
-      // send duplicate admin notifications. If the row already exists (PRIMARY KEY
-      // conflict), the INSERT affects 0 rows and we bail out.
+      // send duplicate admin notifications. If row already exists, INSERT affects
+      // 0 rows and we bail out.
       const insertResult = await env.DB.prepare(`
-        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages)
-        VALUES (?, ?, ?, ?, '{}')
+        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type)
+        VALUES (?, ?, ?, ?, '{}', 'access')
       `).bind(
         chatId,
         callback.from ? callback.from.first_name : '',
@@ -394,7 +402,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       ).run();
 
       if (insertResult.meta.changes === 0) {
-        // Row already existed — duplicate click, bail silently
+        // Already in queue — duplicate click, bail silently
         return;
       }
 
@@ -417,7 +425,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
 
-      // UPDATE with collected message IDs (row already exists from atomic INSERT)
+      // Persist admin message IDs for later "handled" updates
       await env.DB.prepare("UPDATE Join_Queue SET admin_messages = ? WHERE chat_id = ?").bind(
         JSON.stringify(admin_messages),
         chatId
@@ -431,8 +439,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       // ATOMIC INSERT FIRST — prevents duplicate unban requests on rapid clicks
       const unbanInsert = await env.DB.prepare(`
-        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages)
-        VALUES (?, ?, ?, ?, '{}')
+        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type)
+        VALUES (?, ?, ?, ?, '{}', 'unban')
       `).bind(
         chatId,
         callback.from ? callback.from.first_name : '',
@@ -654,9 +662,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         inline_keyboard: [[{ text: t('admin.back_to_directory', lang), callback_data: "admin_panel" }]]
       });
 
-      // Notify the unbanned user
+      // Notify the unbanned user in THEIR language (not the admin's)
+      const targetUserRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
+      const targetUnbanLang = targetUserRow?.lang || 'en';
       try {
-        await sendTelegram(env, targetId, t('access.unban_notify', lang) || "✅ Your account has been unbanned. Send /start to continue.");
+        await sendTelegram(env, targetId, t('access.unban_notify', targetUnbanLang) || "✅ Your account has been unbanned. Send /start to continue.");
       } catch(e) { /* user may still have bot blocked */ }
 
       // AUDIT LOG

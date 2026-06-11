@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS Join_Queue (
     first_name TEXT,
     username TEXT,
     requested_at INTEGER NOT NULL,
-    admin_messages TEXT
+    admin_messages TEXT,
+    request_type TEXT NOT NULL DEFAULT 'access' -- 'access' for new join requests, 'unban' for unban appeals
 );
 
 -- ============================================================================

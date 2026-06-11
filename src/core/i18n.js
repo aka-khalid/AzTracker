@@ -91,7 +91,7 @@ const dict = {
   },
   "access.blocked_body": {
     en: "Your account was blocked because the bot was banned or couldn't reach you. Request an unban below.",
-    ar: "الحساب اتقفل لأن البوت كان محظور أو مش قابع يوصلك. اطلب الغاء الحظر من تحت."
+    ar: "الحساب اتقفل لأن البوت كان محظور أو مش قادر يوصلك. اطلب الغاء الحظر من تحت."
   },
   "access.unban_btn": {
     en: "🔄 Request Unban",
@@ -99,7 +99,11 @@ const dict = {
   },
   "access.unban_sent": {
     en: "✅ <b>Unban Request Sent</b>\n\nAn administrator will review your request shortly.",
-    ar: "✅ <b>استلمنا طلبك</b>\n\nحد من الادمنز هيشوفوه قريب."
+    ar: "✅ <b>استلمنا طلبك</b>\n\nحد من الادمنز هيشوفه قريب."
+  },
+  "access.unban_pending": {
+    en: "⏳ <b>Unban Request Pending</b>\n\nYou already have a pending unban request. An administrator will review it shortly.\n\nPlease be patient — sending multiple requests will not speed up the process.",
+    ar: "⏳ <b>طلب إلغاء الحظر قيد الانتظار</b>\n\nعندك طلب إلغاء حظر منتظر المراجعة. حد من الادمنز هيشوفه قريب.\n\nلو سمحت استنى — إرسال طلبات مش هيسرع العملية."
   },
   "admin.unban_request_head": {
     en: "🔔 <b>Unban Request</b>",
@@ -107,7 +111,7 @@ const dict = {
   },
   "admin.unban_request_body": {
     en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> ‏<code>{id}</code>‏\n\n<i>This user was previously blocked (bot banned/unreachable) and is requesting to be unbanned.</i>",
-    ar: "👤 **الاسم:** {name}\n🆔 **الرقم:** {code}\n\n<i>الشخص ده كان مقفول (حظر البوت أو مش قابع يوصلك) وعايز يلغي الحظر.</i>"
+    ar: "👤 **الاسم:** {name}\n🆔 **الرقم:** {code}\n\n<i>الشخص ده كان مقفول (حظر البوت أو مش قادر يوصلك) وعايز يلغي الحظر.</i>"
   },
   "admin.unban_request_btn_unban": {
     en: "✅ Unban",
@@ -816,6 +820,14 @@ const dict = {
   "crm.tab_pending": {
     en: "Pending",
     ar: "مستنيين"
+  },
+  "crm.queue_type_access": {
+    en: "🆕 New Access",
+    ar: "🆕 طلب جديد"
+  },
+  "crm.queue_type_unban": {
+    en: "🔓 Unban Request",
+    ar: "🔓 إلغاء حظر"
   },
   "crm.tab_banned": {
     en: "Banned",
