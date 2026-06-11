@@ -19,7 +19,7 @@ export async function editTelegramMessage(env, chatId, messageId, text, replyMar
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;
   const body = { chat_id: chatId, message_id: Number(messageId), text: text, parse_mode: "HTML", disable_web_page_preview: true };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  
+
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -30,9 +30,12 @@ export async function editTelegramMessage(env, chatId, messageId, text, replyMar
     if (!res.ok) {
       const errText = await res.text();
       console.error(`Telegram API Error [editMessageText]: ${res.status} - ${errText}`);
+      return { ok: false, error_code: res.status, description: errText };
     }
+    return await res.json();
   } catch (e) {
     console.error("editTelegramMessage fetch failed:", e);
+    return { ok: false, error_code: 500, description: e.message };
   }
 }
 
