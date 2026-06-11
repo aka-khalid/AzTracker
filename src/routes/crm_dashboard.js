@@ -769,7 +769,7 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
                 const container = document.getElementById('audit-container');
                 
                 if (logs.length === 0) {
-                    container.innerHTML = '<div class="empty-state">${t("crm.no_audit", lang)}</div>';
+                    container.innerHTML = '<div class="empty-state">' + ${JSON.stringify(t("crm.no_audit", lang))} + '</div>';
                     return;
                 }
 
@@ -811,7 +811,7 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
                         container.appendChild(card);
                     });
                 } catch (err) {
-                    document.getElementById('loading').innerText = '${t("crm.toast_network_error", lang)}';
+                    document.getElementById('loading').innerText = ${JSON.stringify(t("crm.toast_network_error", lang))};
                 }
             }
             
@@ -823,6 +823,9 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
 }
 
 export function renderCrmHTML(lang = 'en') {
+  // Escape a translated string for safe injection into a JS double-quoted string literal.
+  // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
+  const js = (key, vars) => JSON.stringify(t(key, lang, vars));
   return `<!DOCTYPE html>
 <html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}" class="dark">
 <head>
@@ -919,7 +922,7 @@ export function renderCrmHTML(lang = 'en') {
             <section id="broadcast-section">
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_broadcast', lang)}</h2>
                 <div class="glass rounded-xl p-4">
-                    <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="${t('crm.broadcast_placeholder', lang)}"></textarea>
+                    <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="${escapeHtml(t('crm.broadcast_placeholder', lang))}"></textarea>
                     <div class="flex justify-end mt-3">
                         <button onclick="sendBroadcast()" class="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-brand-500/20 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> ${t('crm.send_broadcast', lang)}
@@ -947,7 +950,7 @@ export function renderCrmHTML(lang = 'en') {
                 <!-- Users View -->
                 <div id="view-users" class="space-y-3">
                     <div class="relative">
-                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${t('crm.search_placeholder', lang)}" class="w-full bg-gray-900 border border-gray-800 rounded-lg ps-10 pe-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-900 border border-gray-800 rounded-lg ps-10 pe-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
                         <svg class="w-4 h-4 text-gray-500 absolute start-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
                     <div id="users-list" class="space-y-3">
@@ -1052,7 +1055,7 @@ export function renderCrmHTML(lang = 'en') {
         }
 
         async function fetchAPI(path, method = 'GET', body = null) {
-            if(!initData) return showToast("${t('crm.local_mode_toast', lang)}", "error");
+            if(!initData) return showToast(${js('crm.local_mode_toast')}, "error");
             try {
                 const opts = {
                     method,
@@ -1070,20 +1073,20 @@ export function renderCrmHTML(lang = 'en') {
                 return json;
             } catch (err) {
                 console.error(err);
-                showToast("${t('crm.toast_network_error', lang)}: " + err.message, 'error');
+                showToast(${js('crm.toast_network_error')} + ": " + err.message, 'error');
                 return null;
             }
         }
 
         async function refreshData() {
-            showLoader("${t('crm.toast_syncing', lang)}");
+            showLoader(${js('crm.toast_syncing')});
             const data = await fetchAPI('/data');
             hideLoader();
             if (data) {
                 appData = data;
                 renderTelemetry();
                 renderTabs();
-                showToast("${t('crm.toast_synced', lang)}", "success");
+                showToast(${js('crm.toast_synced')}, "success");
             }
         }
 
@@ -1097,7 +1100,7 @@ export function renderCrmHTML(lang = 'en') {
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = appData.systemStats.activeWatchPool || 0;
             const ms = appData.systemStats.lastRunMs;
-            document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "${t('crm.never', lang)}";
+            document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ${js('crm.never')};
             
             const badge = document.getElementById('badge-queue');
             if(appData.joinQueue.length > 0) {
@@ -1131,17 +1134,17 @@ export function renderCrmHTML(lang = 'en') {
         
         async function loadAuditTab() {
             const container = document.getElementById('audit-list');
-            container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-400">${t("crm.loading_audit", lang)}</div>';
+            container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-400">' + ${js('crm.loading_audit')} + '</div>';
             
             const logs = await fetchAPI('/audit');
             if (!logs) {
-                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-red-400">${t("crm.toast_network_error", lang)}</div>';
+                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-red-400">' + ${js('crm.toast_network_error')} + '</div>';
                 return;
             }
             appData.auditLoaded = true;
             
             if (logs.length === 0) {
-                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-500 border border-gray-800 border-dashed">${t("crm.no_audit", lang)}</div>';
+                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-500 border border-gray-800 border-dashed">' + ${js('crm.no_audit')} + '</div>';
                 return;
             }
             
@@ -1190,14 +1193,14 @@ export function renderCrmHTML(lang = 'en') {
             if (activeTab === 'queue') {
                 const list = document.getElementById('queue-list');
                 if (!appData.joinQueue || appData.joinQueue.length === 0) {
-                    list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">${t("crm.no_pending", lang)}</div>';
+                    list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_pending')} + '</div>';
                     return;
                 }
                 
                 list.innerHTML = appData.joinQueue.map(u => {
                     const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     const isUnban = u.request_type === 'unban';
-                    const typeLabel = isUnban ? ${JSON.stringify(t('crm.queue_type_unban', lang))} : ${JSON.stringify(t('crm.queue_type_access', lang))};
+                    const typeLabel = isUnban ? ${js('crm.queue_type_unban')} : ${js('crm.queue_type_access')};
                     const typeColor = isUnban ? 'bg-orange-500/15 text-orange-400 border-orange-500/20' : 'bg-brand-500/15 text-brand-400 border-brand-500/20';
                     const typeIcon = isUnban ? '🔓' : '🆕';
                     const idEsc = escapeHtml(String(u.id));
@@ -1205,12 +1208,12 @@ export function renderCrmHTML(lang = 'en') {
                     const userDisplay = u.username ? '@' + escapeHtml(u.username) : idEsc;
                     const borderClass = isUnban ? 'border-l-2 border-l-orange-500/40' : '';
                     const actionApprove = isUnban ? 'unban' : 'approve';
-                    const approveLabel = isUnban ? ${JSON.stringify(t('crm.btn_unban', lang))} : '';
+                    const approveLabel = isUnban ? ${js('crm.btn_unban')} : '';
                     const approveClass = isUnban ? 'h-8 px-3 text-xs font-medium border border-emerald-500/20' : 'w-8 h-8';
                     const approveInner = isUnban
                         ? '✅ ' + approveLabel
                         : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
-                    const rejectTitle = isUnban ? (${JSON.stringify(t('crm.btn_deny', lang))} || 'Deny') : '';
+                    const rejectTitle = isUnban ? (${js('crm.btn_deny')} || 'Deny') : '';
                     const rejectAttr = isUnban ? ' title="' + rejectTitle + '"' : '';
                     return '<div class="glass rounded-xl p-3 flex justify-between items-center ' + borderClass + '">' +
                         '<div>' +
@@ -1219,12 +1222,12 @@ export function renderCrmHTML(lang = 'en') {
                             '</div>' +
                             '<div class="flex items-center gap-2">' +
                                 '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ' + typeColor + ' border">' + typeIcon + ' ' + typeLabel + '</span>' +
-                                '<div class="text-xs text-gray-500">' + ${JSON.stringify(t('crm.requested_label', lang))} + ' ' + time + '</div>' +
+                                '<div class="text-xs text-gray-500">' + ${js('crm.requested_label')} + ' ' + time + '</div>' +
                             '</div>' +
                         '</div>' +
                         '<div class="flex gap-2">' +
-                            '<button onclick="performAction(\'reject\', \'' + idEsc + '\')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"' + rejectAttr + '><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>' +
-                            '<button onclick="performAction(\'' + actionApprove + '\', \'' + idEsc + '\')" class="' + approveClass + ' rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition">' + approveInner + '</button>' +
+                            '<button onclick="performAction(\\'reject\\', \\'' + idEsc + '\\')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"' + rejectAttr + '><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>' +
+                            '<button onclick="performAction(\\'' + actionApprove + '\\', \\'' + idEsc + '\\')" class="' + approveClass + ' rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition">' + approveInner + '</button>' +
                         '</div>' +
                     '</div>';
                 }).join('');
@@ -1250,7 +1253,7 @@ export function renderCrmHTML(lang = 'en') {
             filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)));
             
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${JSON.stringify(t('crm.no_users_found', lang))} + '</div>';
+                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_users_found')} + '</div>';
                 return;
             }
 
@@ -1279,20 +1282,20 @@ export function renderCrmHTML(lang = 'en') {
 
                 let actionBtns = '';
                 if (isRejected) {
-                    actionBtns += '<button onclick="performAction(\'unban\', \'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">' + ${JSON.stringify(t('crm.btn_unban', lang))} + '</button>';
+                    actionBtns += '<button onclick="performAction(\\'unban\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">' + ${js('crm.btn_unban')} + '</button>';
                 } else {
-                    actionBtns += '<button onclick="messageUser(\'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${JSON.stringify(t('crm.btn_message', lang))} + '</button>';
-                    if (!isPrivileged) actionBtns += '<button onclick="changeLimit(\'' + chatIdEsc + '\', ' + u.item_limit + ', \'' + firstNameJsEsc + '\', \'' + usernameJsEsc + '\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">' + ${JSON.stringify(t('crm.btn_edit_limit', lang))} + '</button>';
-                    if (isApproved) actionBtns += '<button onclick="performAction(\'promote\', \'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${JSON.stringify(t('crm.btn_promote', lang))} + '</button>';
-                    if (isAdmin) actionBtns += '<button onclick="performAction(\'demote\', \'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">' + ${JSON.stringify(t('crm.btn_demote_drawer', lang))} + '</button>';
+                    actionBtns += '<button onclick="messageUser(\\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${js('crm.btn_message')} + '</button>';
+                    if (!isPrivileged) actionBtns += '<button onclick="changeLimit(\\'' + chatIdEsc + '\\', ' + u.item_limit + ', \\'' + firstNameJsEsc + '\\', \\'' + usernameJsEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">' + ${js('crm.btn_edit_limit')} + '</button>';
+                    if (isApproved) actionBtns += '<button onclick="performAction(\\'promote\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${js('crm.btn_promote')} + '</button>';
+                    if (isAdmin) actionBtns += '<button onclick="performAction(\\'demote\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">' + ${js('crm.btn_demote_drawer')} + '</button>';
                 }
-                if (!isRoot) actionBtns += '<button onclick="performAction(\'revoke\', \'' + chatIdEsc + '\')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
+                if (!isRoot) actionBtns += '<button onclick="performAction(\\'revoke\\', \\'' + chatIdEsc + '\\')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
 
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">' +
                     rootGlow +
                     '<div class="flex justify-between items-center mb-2 relative z-10">' +
                         '<div class="font-medium text-sm font-semibold truncate">' + firstNameEsc + ' (' + usernameEsc + ')</div>' +
-                        '<button onclick="openDrawer(\'' + chatIdEsc + '\')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">' + ${JSON.stringify(t('crm.btn_view_items', lang))} + '</button>' +
+                        '<button onclick="openDrawer(\\'' + chatIdEsc + '\\')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">' + ${js('crm.btn_view_items')} + '</button>' +
                     '</div>' +
                     '<div class="flex items-center gap-2 mb-3 relative z-10">' +
                         roleBadge +
@@ -1306,7 +1309,7 @@ export function renderCrmHTML(lang = 'en') {
         }
 
         function messageUser(userId) {
-            const msg = prompt("${t('crm.btn_message', lang)} — " + userId + ":");
+            const msg = prompt(${js('crm.btn_message')} + " — " + userId + ":");
             if (msg) {
                 performAction('direct_message', userId, { message: msg });
             }
@@ -1317,8 +1320,8 @@ export function renderCrmHTML(lang = 'en') {
             const content = document.getElementById('drawer-content');
             const itemsCont = document.getElementById('drawer-items');
             
-            document.getElementById('drawer-subtitle').innerText = ${JSON.stringify(t('crm.id_label', lang))} + ' ' + userId;
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${JSON.stringify(t('crm.loading_items', lang))} + '</div>';
+            document.getElementById('drawer-subtitle').innerText = ${js('crm.id_label')} + ' ' + userId;
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
             
             drawer.classList.remove('hidden');
             setTimeout(() => {
@@ -1328,22 +1331,22 @@ export function renderCrmHTML(lang = 'en') {
             const products = await fetchAPI('/user/' + userId + '/products');
 
             if (!products || products.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${JSON.stringify(t('crm.no_saved_products', lang))} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_saved_products')} + '</div>';
                 return;
             }
 
             itemsCont.innerHTML = products.map(p => {
                 const isPaused = p.is_paused === 1;
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
-                const statusText = isPaused ? ${JSON.stringify(t('crm.user_paused', lang))} : ${JSON.stringify(t('crm.user_active', lang))};
+                const statusText = isPaused ? ${js('crm.user_paused')} : ${js('crm.user_active')};
                 const rawName = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
                 const nameEsc = escapeHtml(rawName);
                 const asinEsc = escapeHtml(p.asin);
-                const price = p.new_price ? p.new_price + ' EGP' : (p.used_price ? ${JSON.stringify(t('crm.user_used_only', lang))} : ${JSON.stringify(t('crm.user_out_of_stock', lang))});
+                const price = p.new_price ? p.new_price + ' EGP' : (p.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const userIdEsc = escapeHtml(String(userId));
                 const actionType = isPaused ? 'resume_product' : 'pause_product';
                 const pauseIcon = isPaused ? '▶️' : '⏸️';
-                const pauseLabel = isPaused ? ${JSON.stringify(t('crm.btn_resume', lang))} : ${JSON.stringify(t('crm.btn_pause_drawer', lang))};
+                const pauseLabel = isPaused ? ${js('crm.btn_resume')} : ${js('crm.btn_pause_drawer')};
                 const hasTarget = !!p.target_price;
                 const targetBadge = hasTarget
                     ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: ' + p.target_price + '</div>'
@@ -1362,9 +1365,9 @@ export function renderCrmHTML(lang = 'en') {
                         targetBadge +
                     '</div>' +
                     '<div class="flex gap-2">' +
-                        '<button onclick="performAction(\'' + actionType + '\', \'' + userIdEsc.replace(/'/g, "\\'") + '\', {asin: \'' + asinEsc.replace(/'/g, "\\'") + '\'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">' + pauseIcon + ' ' + pauseLabel + '</button>' +
-                        '<button onclick="openChartModal(\'' + asinEsc.replace(/'/g, "\\'") + '\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${JSON.stringify(t('crm.btn_chart', lang))} + '</button>' +
-                        '<button onclick="performAction(\'delete_product\', \'' + userIdEsc.replace(/'/g, "\\'") + '\', {asin: \'' + asinEsc.replace(/'/g, "\\'") + '\'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ' + ${JSON.stringify(t('crm.btn_delete_drawer', lang))} + '</button>' +
+                        '<button onclick="performAction(\\'' + actionType + '\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">' + pauseIcon + ' ' + pauseLabel + '</button>' +
+                        '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>' +
+                        '<button onclick="performAction(\\'delete_product\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ' + ${js('crm.btn_delete_drawer')} + '</button>' +
                     '</div>' +
                 '</div>';
             }).join('');
@@ -1393,13 +1396,13 @@ export function renderCrmHTML(lang = 'en') {
             document.getElementById('chart-loading').style.display = 'block';
             document.getElementById('crmPriceChart').style.display = 'none';
             document.getElementById('chart-metrics').style.display = 'none';
-            document.getElementById('chart-loading').innerText = "${t('crm.chart_loading', lang)}";
+            document.getElementById('chart-loading').innerText = ${js('crm.chart_loading')};
             
             const data = await fetchAPI('/history/' + asin); // This actually maps to /api/crm/history/ASIN due to fetchAPI prefix
             document.getElementById('chart-loading').style.display = 'none';
             
             if (!data || data.length === 0) {
-                document.getElementById('chart-loading').innerText = '${t("crm.no_price_history", lang)}';
+                document.getElementById('chart-loading').innerText = ${js('crm.no_price_history')};
                 document.getElementById('chart-loading').style.display = 'block';
                 return;
             }
@@ -1444,7 +1447,7 @@ export function renderCrmHTML(lang = 'en') {
                     labels: labels,
                     datasets: [
                         {
-                            label: '${t("crm.new_price", lang)}',
+                            label: ${js('crm.new_price')},
                             data: newPrices,
                             borderColor: lineColor,
                             backgroundColor: lineColor + '20',
@@ -1463,7 +1466,7 @@ export function renderCrmHTML(lang = 'en') {
                             fill: true
                         },
                         {
-                            label: '${t("crm.used_price", lang)}',
+                            label: ${js('crm.used_price')},
                             data: usedPrices,
                             borderColor: '#4caf50',
                             borderDash: [5, 5],
@@ -1510,9 +1513,9 @@ export function renderCrmHTML(lang = 'en') {
             
             if (res) {
                 if (res.status === 'queued') {
-                    showToast("${t('crm.toast_action_queued', lang)}", "success");
+                    showToast(${js('crm.toast_action_queued')}, "success");
                 } else {
-                    showToast("${t('crm.toast_success', lang)}", "success");
+                    showToast(${js('crm.toast_success')}, "success");
                     if(action.includes('_product')) {
                         openDrawer(targetId); // refresh drawer
                     }
@@ -1522,15 +1525,15 @@ export function renderCrmHTML(lang = 'en') {
         }
 
         function triggerGlobalScrape() {
-            tg.showConfirm("${t('crm.force_check', lang)}?", (ok) => {
+            tg.showConfirm(${js('crm.force_check')} + "?", (ok) => {
                 if(ok) performAction("force_scrape", null);
             });
         }
 
         function sendBroadcast() {
             const msg = document.getElementById('broadcast-msg').value.trim();
-            if(!msg) return showToast("${t('crm.toast_msg_empty', lang)}", "error");
-            tg.showConfirm("${t('crm.send_broadcast', lang)}?", (ok) => {
+            if(!msg) return showToast(${js('crm.toast_msg_empty')}, "error");
+            tg.showConfirm(${js('crm.send_broadcast')} + "?", (ok) => {
                 if(ok) {
                     performAction("broadcast", null, { message: msg });
                     document.getElementById('broadcast-msg').value = '';
@@ -1544,32 +1547,32 @@ export function renderCrmHTML(lang = 'en') {
                 ? (username ? firstName + ' (@' + username + ')' : firstName)
                 : userId;
             // Static i18n strings baked at render time; dynamic values appended at runtime
-            const promptMsg = "${t('crm.edit_limit_prompt', lang)} " + userLabel + " (${t('crm.current_label', lang)} " + currentLimit + "):";
+            const promptMsg = ${js('crm.edit_limit_prompt')} + " " + userLabel + " (" + ${js('crm.current_label')} + " " + currentLimit + "):";
             const limit = prompt(promptMsg, currentLimit);
             if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
                 performAction('set_limit', userId, { limit: parseInt(limit) });
                 // Show confirmation toast using pre-rendered i18n template
-                const successTemplate = "${t('crm.edit_limit_success', lang)}";
+                const successTemplate = ${js('crm.edit_limit_success')};
                 const successMsg = successTemplate.replace("{limit}", parseInt(limit)).replace("{user}", userLabel);
                 showToast(successMsg, "success");
             }
         }
 
         function changeTarget(userId, asin) {
-            const target = prompt("${t('crm.btn_edit', lang)} (${t('crm.new_price', lang)}) — " + asin + ":");
+            const target = prompt(${js('crm.btn_edit')} + " (" + ${js('crm.new_price')} + ") — " + asin + ":");
             if (target !== null && target !== "" && !isNaN(target) && target > 0) {
                 performAction('set_target', userId, { asin, target: parseFloat(target) });
             }
         }
 
         function confirmRevoke(userId) {
-            tg.showConfirm("${t('crm.btn_demote_drawer', lang)} — " + userId + "?", (ok) => {
+            tg.showConfirm(${js('crm.btn_demote_drawer')} + " — " + userId + "?", (ok) => {
                 if(ok) performAction('revoke', userId);
             });
         }
 
         // --- Helpers ---
-        function showLoader(text = "${t('crm.toast_processing', lang)}") {
+        function showLoader(text = ${js('crm.toast_processing')}) {
             const overlay = document.getElementById('overlay');
             document.getElementById('overlay-text').innerText = text;
             if (loaderTimeout) clearTimeout(loaderTimeout);

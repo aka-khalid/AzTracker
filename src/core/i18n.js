@@ -1123,10 +1123,6 @@ const dict = {
     en: "Loading audit log...",
     ar: "بنحمل سجل المراجعة..."
   },
-  "crm.loading_items": {
-    en: "Loading items...",
-    ar: "بنحمل المنتجات..."
-  },
   "crm.requested_label": {
     en: "Requested:",
     ar: "تاريخ الطلب:"
