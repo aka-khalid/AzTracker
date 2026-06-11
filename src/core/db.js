@@ -102,11 +102,37 @@ export async function logAudit(env, adminId, action, target, details) {
     }
 
     const timestamp = Date.now();
-    await env.DB.prepare(
-      "INSERT INTO Audit_Logs (timestamp, actor_id, actor_name, action, target_id, details) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(timestamp, adminId.toString(), adminHandle, action, target ? target.toString() : null, JSON.stringify({ targetHandle, details })).run();
+    const auditValues = [
+      timestamp,
+      adminId.toString(),
+      adminHandle,
+      action,
+      target ? target.toString() : null,
+      JSON.stringify({ targetHandle, details })
+    ];
+    // Retry up to 3 times with exponential backoff
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await env.DB.prepare(
+          "INSERT INTO Audit_Logs (timestamp, actor_id, actor_name, action, target_id, details) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(...auditValues).run();
+        return; // success
+      } catch (e) {
+        if (attempt === 2) {
+          // Last attempt failed — log full audit data for forensic recovery
+          console.error("Audit log FAILED after 3 attempts:", JSON.stringify({
+            timestamp, actorId: adminId.toString(), action,
+            targetId: target ? target.toString() : null,
+            error: e.message
+          }));
+        } else {
+          // Exponential backoff: 100ms, 400ms
+          await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+        }
+      }
+    }
   } catch (e) {
-    console.error("Audit log failed to write:", e);
+    console.error("Audit log failed:", e);
   }
 }
 
