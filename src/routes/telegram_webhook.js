@@ -8,6 +8,54 @@ const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 const ALT_SELLER_TTL_MS = 86400000;
 
+// ── Rate Limiting ─────────────────────────────────────────────────────────
+const RATE_LIMIT_WINDOW_MS = 60_000;       // 1-minute window
+const RATE_LIMIT_MAX_MESSAGES = 30;        // max messages per window
+const RATE_LIMIT_KV_PREFIX = "rl:";         // KV key prefix for rate counters
+
+/**
+ * Check whether a chat is rate-limited using KV.
+ * Returns { allowed, remaining, resetMs }.
+ * Uses a simple counter with TTL = window length.
+ */
+async function checkRateLimit(chatId, env) {
+  const key = `${RATE_LIMIT_KV_PREFIX}${chatId}`;
+  try {
+    const raw = await env.AZTRACKER_DB.get(key);
+    const now = Date.now();
+    if (!raw) {
+      // First message in a new window — initialize counter
+      await env.AZTRACKER_DB.put(key, JSON.stringify({ count: 1, windowStart: now }), {
+        expirationTtl: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000),
+      });
+      return { allowed: true, remaining: RATE_LIMIT_MAX_MESSAGES - 1, resetMs: RATE_LIMIT_WINDOW_MS };
+    }
+    const data = JSON.parse(raw);
+    const elapsed = now - data.windowStart;
+    if (elapsed >= RATE_LIMIT_WINDOW_MS) {
+      // Window expired — reset
+      await env.AZTRACKER_DB.put(key, JSON.stringify({ count: 1, windowStart: now }), {
+        expirationTtl: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000),
+      });
+      return { allowed: true, remaining: RATE_LIMIT_MAX_MESSAGES - 1, resetMs: RATE_LIMIT_WINDOW_MS };
+    }
+    // Within window
+    data.count += 1;
+    const remaining = Math.max(0, RATE_LIMIT_MAX_MESSAGES - data.count);
+    const resetMs = RATE_LIMIT_WINDOW_MS - elapsed;
+    if (data.count <= RATE_LIMIT_MAX_MESSAGES) {
+      await env.AZTRACKER_DB.put(key, JSON.stringify(data), {
+        expirationTtl: Math.ceil(resetMs / 1000) + 1,
+      });
+    }
+    return { allowed: data.count <= RATE_LIMIT_MAX_MESSAGES, remaining, resetMs };
+  } catch (e) {
+    console.error("Rate limit KV error:", e);
+    // Fail open — don't block users if KV is unreachable
+    return { allowed: true, remaining: RATE_LIMIT_MAX_MESSAGES, resetMs: 0 };
+  }
+}
+
 export async function handleTelegramWebhook(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -23,6 +71,19 @@ export async function handleTelegramWebhook(request, env, ctx) {
   try {
     const payload = await request.json();
     const baseUrl = url.origin;
+
+    // ── Rate Limiting ──────────────────────────────────────────────────────
+    // Extract chat ID from the update for rate-limit check
+    const chatId = payload.message?.chat?.id?.toString()
+      || payload.callback_query?.message?.chat?.id?.toString()
+      || null;
+    if (chatId) {
+      const rl = await checkRateLimit(chatId, env);
+      if (!rl.allowed) {
+        console.warn(`[RateLimit] chat ${chatId} exceeded ${RATE_LIMIT_MAX_MESSAGES} msgs/min — dropping update`);
+        return new Response("OK", { status: 200 }); // Ack silently so Telegram doesn't retry
+      }
+    }
 
     if (payload.callback_query) {
       ctx.waitUntil(handleCallback(payload.callback_query, env, baseUrl, ctx));
