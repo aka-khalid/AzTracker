@@ -109,7 +109,19 @@ CREATE TABLE IF NOT EXISTS Bot_States (
 );
 
 -- ============================================================================
--- 7. Performance Indexes (all idempotent with IF NOT EXISTS)
+-- 7. Dead Letter Queue (Failed Queue Messages)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS Failed_Queue_Messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_name TEXT NOT NULL,
+    body TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    failed_at INTEGER NOT NULL
+);
+
+-- ============================================================================
+-- 8. Performance Indexes (all idempotent with IF NOT EXISTS)
 -- ============================================================================
 -- Optimizes the CRM Web App list queries
 CREATE INDEX IF NOT EXISTS idx_usersubscriptions_chatid ON User_Subscriptions (chat_id);

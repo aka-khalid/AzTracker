@@ -1,11 +1,34 @@
 import { executeScrapeEngine } from './scraper_engine.js';
 import { sendTelegramMessage } from '../core/telegram.js';
 
+const MAX_RETRY_ATTEMPTS = 5;
+const DLQ_TABLE = 'Failed_Queue_Messages';
+
+/**
+ * Dead-letter a message that exceeded max retries.
+ * Stores in D1 for later inspection/replay.
+ */
+async function deadLetter(env, queueName, msg, error) {
+  try {
+    await env.DB.prepare(
+      "INSERT INTO Failed_Queue_Messages (queue_name, body, attempts, last_error, failed_at) VALUES (?, ?, ?, ?, ?)"
+    ).bind(queueName, JSON.stringify(msg.body), msg.attempts || 0, error.message, Date.now()).run();
+  } catch (e) {
+    console.error("DLQ write failed:", e);
+  }
+}
+
 export async function queue(batch, env, ctx) {
     if (batch.queue === 'scraper-queue') {
       //return; // Kill switch to manual trigger for scraper engine to avoid infinite loops during development
       for (const msg of batch.messages) {
         try {
+          if ((msg.attempts || 0) >= MAX_RETRY_ATTEMPTS) {
+            console.error(`[ScraperQueue] Msg exceeded ${MAX_RETRY_ATTEMPTS} retries, dead-lettering`);
+            await deadLetter(env, 'scraper-queue', msg, new Error('Max retries exceeded'));
+            msg.ack();
+            continue;
+          }
           const offset = msg.body.offset || 0;
           const hasMore = await executeScrapeEngine(env, offset);
           if (hasMore) {
@@ -29,6 +52,12 @@ export async function queue(batch, env, ctx) {
         continue;
       }
       try {
+        if ((msg.attempts || 0) >= MAX_RETRY_ATTEMPTS) {
+          console.error(`[MsgQueue] Msg exceeded ${MAX_RETRY_ATTEMPTS} retries, dead-lettering`);
+          await deadLetter(env, 'message-queue', msg, new Error('Max retries exceeded'));
+          msg.ack();
+          continue;
+        }
         const payload = msg.body;
         if (payload.type === 'telegram_alert' || payload.type === 'telegram_alert_new' || payload.type === 'telegram_alert_used') {
           const res = await sendTelegramMessage(env, payload.chatId, payload.text, payload.markup);
@@ -59,7 +88,14 @@ export async function queue(batch, env, ctx) {
         msg.ack();
       } catch (e) {
         console.error("Queue error:", e);
-        msg.retry();
+        if ((msg.attempts || 0) >= MAX_RETRY_ATTEMPTS) {
+          console.error(`[MsgQueue] Msg exceeded ${MAX_RETRY_ATTEMPTS} retries, dead-lettering`);
+          await deadLetter(env, 'message-queue', msg, e);
+          msg.ack();
+        } else {
+          msg.retry();
+        }
       }
     }
+  }
 }
