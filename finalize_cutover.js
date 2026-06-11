@@ -335,7 +335,7 @@ async function registerWebhook(inputs) {
 
   header('Registering Telegram Webhook');
 
-  const url = `https://api.telegram.org/bot${inputs.botToken}/setWebhook?url=https://${inputs.workerUrl}/webhook&secret_token=${inputs.webhookSecret}`;
+  const url = `https://api.telegram.org/bot${inputs.botToken}/setWebhook?url=${encodeURIComponent(`https://${inputs.workerUrl}/webhook`)}&secret_token=${encodeURIComponent(inputs.webhookSecret)}`;
 
   if (DRY_RUN) {
     log(`[DRY-RUN] Would call: ${url.replace(inputs.botToken, '***TOKEN***').replace(inputs.webhookSecret, '***SECRET***')}`);
