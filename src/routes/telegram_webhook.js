@@ -65,10 +65,26 @@ async function handleMessage(message, env, baseUrl, ctx) {
       await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang));
       return;
     }
+
+    // Check if user was previously blocked (bot banned/unreachable)
+    const blockedUser = await env.DB.prepare("SELECT 1 FROM Users WHERE chat_id = ? AND role = 'blocked'").bind(chatId).first() !== null;
+
     const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
 
     if (inQueue) {
       await sendAppMessage(env, chatId, t('access.pending_head', lang) + '\n\n' + t('access.pending_body', lang));
+      return;
+    }
+
+    if (blockedUser) {
+      // Blocked user: offer unban request (notifies admins)
+      if (text === "/start") {
+        await sendAppMessage(env, chatId, t('access.blocked_head', lang) + '\n\n' + t('access.blocked_body', lang), {
+          inline_keyboard: [[{ text: t('access.unban_btn', lang), callback_data: `request_unban_${chatId}` }]]
+        });
+      } else {
+        await sendAppMessage(env, chatId, t('access.blocked_head', lang) + '\n\n' + t('access.blocked_body', lang) + '\n\n' + t('access.denied_hint_start', lang));
+      }
       return;
     }
 
@@ -338,6 +354,43 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           JSON.stringify(admin_messages)
       ).run();
     }
+    else if (data.startsWith("request_unban_")) {
+      const targetId = data.replace("request_unban_", "");
+      if (targetId !== chatId) return;
+
+      // Prevent duplicate unban requests
+      const alreadyRequested = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
+      if (alreadyRequested) {
+        await editTelegramMessage(env, chatId, messageId, t('access.unban_sent', lang));
+        return;
+      }
+
+      await editTelegramMessage(env, chatId, messageId, t('access.unban_sent', lang));
+
+      const { label } = await resolveUserProfile(env, chatId, ctx);
+      const adminMsg = t('admin.unban_request_head', lang) + '\n\n' + t('admin.unban_request_body', lang, { name: escapeHtml(label), id: chatId });
+      const adminButtons = {
+        inline_keyboard: [
+          [{ text: t('admin.unban_request_btn_unban', lang), callback_data: `unban_${chatId}` }]
+        ]
+      };
+
+      const allAdmins = [...new Set([...admins, ...rootAdmins])];
+      for (const adminId of allAdmins) {
+        try {
+          await sendTelegram(env, adminId, adminMsg, adminButtons);
+        } catch(e) { console.error("Failed to notify admin", adminId); }
+      }
+
+      // Store in Join_Queue so the unban_ handler can find it
+      await env.DB.prepare("INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages) VALUES (?, ?, ?, ?, ?)").bind(
+          chatId,
+          callback.from ? callback.from.first_name : '',
+          callback.from ? callback.from.username : '',
+          Date.now(),
+          '{}'
+      ).run();
+    }
     else if (data.startsWith("queueReject_") && isAdmin) {
       const targetId = data.replace("queueReject_", "");
       let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
@@ -513,15 +566,32 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     else if (data.startsWith("unban_") && isAdmin) {
       const targetId = data.replace("unban_", "");
 
-      await env.DB.prepare("DELETE FROM Users WHERE chat_id = ? AND role = 'rejected'").bind(targetId).run();
+      // Handle both 'rejected' and 'blocked' roles
+      const userRow = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(targetId).first();
+      if (userRow && (userRow.role === 'rejected' || userRow.role === 'blocked')) {
+        // Reset role to 'pending' so user can request access again
+        await env.DB.prepare("UPDATE Users SET role = 'pending' WHERE chat_id = ?").bind(targetId).run();
+        // Unpause subscriptions if they were blocked
+        if (userRow.role === 'blocked') {
+          await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId).run();
+        }
+      }
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+
+      // Clean up join queue entry if exists
+      await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
 
       await editTelegramMessage(env, chatId, messageId, t('admin.unban_result', lang, { id: targetId }), {
         inline_keyboard: [[{ text: t('admin.back_to_directory', lang), callback_data: "admin_panel" }]]
       });
 
+      // Notify the unbanned user
+      try {
+        await sendTelegram(env, targetId, t('access.unban_notify', lang) || "✅ Your account has been unbanned. Send /start to continue.");
+      } catch(e) { /* user may still have bot blocked */ }
+
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "UNBAN_USER", targetId, "Removed from banned directory"));
+      ctx.waitUntil(logAudit(env, chatId, "UNBAN_USER", targetId, `Unbanned (was ${userRow?.role || 'unknown'})`));
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");

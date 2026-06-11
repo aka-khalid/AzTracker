@@ -85,6 +85,34 @@ const dict = {
     en: "⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.",
     ar: "⛔ <b>طلب مرفوض</b>\n\nمعلش في حد مش عايزك جوا."
   },
+  "access.blocked_head": {
+    en: "🚫 <b>Account Blocked</b>",
+    ar: "🚫 <b>الحساب مقفول</b>"
+  },
+  "access.blocked_body": {
+    en: "Your account was blocked because the bot was banned or couldn't reach you. Request an unban below.",
+    ar: "الحساب اتقفل لأن البوت كان محظور أو مش قابع يوصلك. اطلب الغاء الحظر من تحت."
+  },
+  "access.unban_btn": {
+    en: "🔄 Request Unban",
+    ar: "🔄 اطلب الغاء الحظر"
+  },
+  "access.unban_sent": {
+    en: "✅ <b>Unban Request Sent</b>\n\nAn administrator will review your request shortly.",
+    ar: "✅ <b>استلمنا طلبك</b>\n\nحد من الادمنز هيشوفوه قريب."
+  },
+  "admin.unban_request_head": {
+    en: "🔔 <b>Unban Request</b>",
+    ar: "🔔 <b>في حد عايز يلغي الحظر</b>"
+  },
+  "admin.unban_request_body": {
+    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> ‏<code>{id}</code>‏\n\n<i>This user was previously blocked (bot banned/unreachable) and is requesting to be unbanned.</i>",
+    ar: "👤 **الاسم:** {name}\n🆔 **الرقم:** {code}\n\n<i>الشخص ده كان مقفول (حظر البوت أو مش قابع يوصلك) وعايز يلغي الحظر.</i>"
+  },
+  "admin.unban_request_btn_unban": {
+    en: "✅ Unban",
+    ar: "✅ الغي الحظر"
+  },
   "access.admin_rejected": {
     en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been denied access by {admin}.",
     ar: "🚫 **الطلب اترفض**\nالشخص رقم {id} اترفض من {admin}."
