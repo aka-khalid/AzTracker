@@ -742,10 +742,12 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
     <div id="audit-container"></div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
-        if (tg.setHeaderColor) tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
+        const tg = window.Telegram?.WebApp || {};
+        if (tg.ready) tg.ready();
+        if (tg.expand) tg.expand();
+        try {
+            if (tg.setHeaderColor) tg.setHeaderColor(tg.themeParams?.bg_color || '#ffffff');
+        } catch (e) { console.warn('Telegram theme color not supported:', e); }
 
         function escapeHtml(unsafe) {
             if (!unsafe) return "";
@@ -1027,11 +1029,13 @@ export function renderCrmHTML(lang = 'en') {
     <div id="toast-container" class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.ready();
-        if (tg.setHeaderColor) tg.setHeaderColor('#030712');
-        if (tg.setBackgroundColor) tg.setBackgroundColor('#030712');
+        const tg = window.Telegram?.WebApp || {};
+        if (tg.expand) tg.expand();
+        if (tg.ready) tg.ready();
+        try {
+            if (tg.setHeaderColor) tg.setHeaderColor('#030712');
+            if (tg.setBackgroundColor) tg.setBackgroundColor('#030712');
+        } catch (e) { console.warn('Telegram theme color not supported:', e); }
 
         const initData = tg.initData || '';
         let appData = { users: [], joinQueue: [] };
