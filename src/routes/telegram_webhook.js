@@ -39,8 +39,11 @@ export async function handleTelegramWebhook(request, env, ctx) {
     }
     return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error(err);
-    return new Response("OK", { status: 200 });
+    console.error("Webhook error:", err);
+    // Return 500 for parse/validation errors so Telegram retries the update.
+    // Return 200 only if we successfully extracted the update but downstream failed.
+    const isParseError = err instanceof SyntaxError || err instanceof TypeError;
+    return new Response("Error", { status: isParseError ? 500 : 200 });
   }
 }
 
