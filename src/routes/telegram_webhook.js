@@ -380,6 +380,24 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       await editTelegramMessage(env, chatId, messageId, t('access.request_sent', lang));
 
+      // ATOMIC INSERT FIRST — prevents race condition where concurrent clicks
+      // send duplicate admin notifications. If the row already exists (PRIMARY KEY
+      // conflict), the INSERT affects 0 rows and we bail out.
+      const insertResult = await env.DB.prepare(`
+        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages)
+        VALUES (?, ?, ?, ?, '{}')
+      `).bind(
+        chatId,
+        callback.from ? callback.from.first_name : '',
+        callback.from ? callback.from.username : '',
+        Date.now()
+      ).run();
+
+      if (insertResult.meta.changes === 0) {
+        // Row already existed — duplicate click, bail silently
+        return;
+      }
+
       const { label } = await resolveUserProfile(env, chatId, ctx);
       const adminMsg = t('access.admin_new_request_head', lang) + '\n\n' + t('access.admin_new_request_body', lang, { name: escapeHtml(label), id: chatId });
       const adminButtons = {
@@ -399,26 +417,33 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
 
-      await env.DB.prepare("INSERT INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages) VALUES (?, ?, ?, ?, ?)").bind(
-          chatId,
-          callback.from ? callback.from.first_name : '',
-          callback.from ? callback.from.username : '',
-          Date.now(),
-          JSON.stringify(admin_messages)
+      // UPDATE with collected message IDs (row already exists from atomic INSERT)
+      await env.DB.prepare("UPDATE Join_Queue SET admin_messages = ? WHERE chat_id = ?").bind(
+        JSON.stringify(admin_messages),
+        chatId
       ).run();
     }
     else if (data.startsWith("request_unban_")) {
       const targetId = data.replace("request_unban_", "");
       if (targetId !== chatId) return;
 
-      // Prevent duplicate unban requests
-      const alreadyRequested = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
-      if (alreadyRequested) {
-        await editTelegramMessage(env, chatId, messageId, t('access.unban_sent', lang));
+      await editTelegramMessage(env, chatId, messageId, t('access.unban_sent', lang));
+
+      // ATOMIC INSERT FIRST — prevents duplicate unban requests on rapid clicks
+      const unbanInsert = await env.DB.prepare(`
+        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages)
+        VALUES (?, ?, ?, ?, '{}')
+      `).bind(
+        chatId,
+        callback.from ? callback.from.first_name : '',
+        callback.from ? callback.from.username : '',
+        Date.now()
+      ).run();
+
+      if (unbanInsert.meta.changes === 0) {
+        // Already in queue — duplicate click, bail silently
         return;
       }
-
-      await editTelegramMessage(env, chatId, messageId, t('access.unban_sent', lang));
 
       const { label } = await resolveUserProfile(env, chatId, ctx);
       const adminMsg = t('admin.unban_request_head', lang) + '\n\n' + t('admin.unban_request_body', lang, { name: escapeHtml(label), id: chatId });
@@ -434,15 +459,6 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           await sendTelegram(env, adminId, adminMsg, adminButtons);
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
-
-      // Store in Join_Queue so the unban_ handler can find it
-      await env.DB.prepare("INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages) VALUES (?, ?, ?, ?, ?)").bind(
-          chatId,
-          callback.from ? callback.from.first_name : '',
-          callback.from ? callback.from.username : '',
-          Date.now(),
-          '{}'
-      ).run();
     }
     else if (data.startsWith("queueReject_") && isAdmin) {
       const targetId = data.replace("queueReject_", "");
