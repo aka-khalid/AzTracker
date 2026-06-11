@@ -41,7 +41,7 @@
  *   TELEGRAM_BOT_TOKEN=xxx TELEGRAM_ROOT_ADMIN_IDS=123 node finalize_cutover.js --env prod
  */
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -309,9 +309,13 @@ async function injectSecrets(inputs) {
       continue;
     }
 
-    const cmd = `echo ${secret.value} | npx wrangler secret put ${secret.name} ${ENV_FLAG}`;
     try {
-      execSafe(cmd);
+      // Use execFileSync to avoid shell injection via secret.value
+      execFileSync('npx', ['wrangler', 'secret', 'put', secret.name, ENV_FLAG], {
+        encoding: 'utf-8',
+        input: secret.value,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
       ok(`${secret.name} injected`);
     } catch (e) {
       fail(`Failed to inject ${secret.name}: ${e.message}`);
