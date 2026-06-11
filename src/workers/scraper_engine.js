@@ -12,6 +12,18 @@ function resolveProductName(item, lang) {
 
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
+const TELEGRAM_MSG_LIMIT = 4096;
+
+/**
+ * Truncate a message to Telegram's 4096-char limit.
+ * Cuts at the last newline before the limit to avoid breaking HTML tags mid-way.
+ */
+function truncateMessage(msg) {
+  if (msg.length <= TELEGRAM_MSG_LIMIT) return msg;
+  let cut = msg.lastIndexOf('\n', TELEGRAM_MSG_LIMIT - 20);
+  if (cut < TELEGRAM_MSG_LIMIT / 2) cut = TELEGRAM_MSG_LIMIT - 20;
+  return msg.substring(0, cut) + '\n\n…';
+}
 
 function truncateName(name, maxLength = 60) {
   if (!name) return null;
@@ -222,7 +234,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           type: alertType,
           asin: liveItem.asin,
           chatId: chatId,
-          text: msg,
+          text: truncateMessage(msg),
           markup: btn_markup
       });
   }
@@ -549,7 +561,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           type: 'telegram_alert',
           asin: bestDeal.asin,
           chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
-          text: broadcast_msg,
+          text: truncateMessage(broadcast_msg),
           markup: {
               inline_keyboard: [
                   [{ text: t('broadcast.buy_here', 'ar'), url: broadcast_url }]
