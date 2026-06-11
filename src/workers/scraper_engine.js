@@ -480,7 +480,8 @@ export async function executeScrapeEngine(env, offset = 0) {
               new_seller = ?, new_mid = ?, used_seller = ?, used_mid = ?,
               amazon_seller = ?, amazon_mid = ?, amazon_is_buybox = ?,
               hist_mean = ?, hist_stdev = ?, is_atl_new = ?,
-              name_ar = COALESCE(?, name_ar)
+              name_ar = COALESCE(?, name_ar),
+              name = COALESCE(?, name)
           WHERE asin = ?
         `).bind(
           finalAmazonPrice, finalUsedPrice, finalNewPrice, now,
@@ -489,6 +490,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           finalAmazonSeller, finalAmazonMid, finalAmazonIsBuybox,
           histMean, histStdev, isAtlNew,
           liveItem.name_ar || null,
+          liveItem.name || null,
           liveItem.asin
         )
       );
@@ -497,8 +499,11 @@ export async function executeScrapeEngine(env, offset = 0) {
       // runs every cycle but was previously skipped when dbNeedsUpdate was false.
       d1Batch.push(
         env.DB.prepare(`
-          UPDATE Global_Products SET last_updated = ?, name_ar = COALESCE(?, name_ar) WHERE asin = ?
-        `).bind(now, liveItem.name_ar || null, liveItem.asin)
+          UPDATE Global_Products SET last_updated = ?,
+              name_ar = COALESCE(?, name_ar),
+              name = COALESCE(?, name)
+          WHERE asin = ?
+        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.asin)
       );
     }
     

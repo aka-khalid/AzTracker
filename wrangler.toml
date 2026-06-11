@@ -84,4 +84,4 @@ max_retries = 3
 [env.production.triggers]
 #crons = []
 #crons = ["* * * * *", "0 0 * * *"]
-crons = ["*/5 * * * *"] // daily rate-limit emergency survival
+crons = ["*/5 * * * *"] # daily rate-limit emergency survival
