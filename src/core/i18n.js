@@ -21,7 +21,7 @@ const dict = {
   },
   "chrome.ad_disclaimer": {
     en: "As an Amazon Associate I earn from qualifying purchases.",
-    ar: "كشريك أمازون، بكسب عمولة من المشتريات المؤهلة."
+    ar: "بناخد عمولة من أمازون على المشتريات."
   },
   "chrome.currency_egp": {
     en: "EGP",
@@ -63,7 +63,7 @@ const dict = {
   },
   "access.queue_full_body": {
     en: "The access queue is currently full. Please try again in 24 hours.",
-    ar: "المكان مليان دلوقتي. حاول بعد يوم."
+    ar: "المكان متلwyn دلوقتي. حاول بعد يوم."
   },
   "access.admin_new_request_head": {
     en: "🔔 <b>New Access Request</b>",
@@ -71,7 +71,7 @@ const dict = {
   },
   "access.admin_new_request_body": {
     en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> ‏<code>{id}</code>‏\n\n<i>This user is requesting authorization to access the server.</i>",
-    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>الرقم:</b> ‏<code>{id}</code>‏\n\n<i>الشخص ده عايز يدخل.</i>"
+    ar: "👤 **الاسم:** {name}\n🆔 **الرقم:** {code}\n\n<i>الشخص ده عايز يدخل.</i>"
   },
   "access.admin_new_request_btn_approve": {
     en: "✅ Approve",
@@ -87,19 +87,19 @@ const dict = {
   },
   "access.admin_rejected": {
     en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been denied access by {admin}.",
-    ar: "🚫 <b>الطلب اترفض</b>\nالشخص رقم ‏<code>{id}</code>‏ اترفض من {admin}."
+    ar: "🚫 **الطلب اترفض**\nالشخص رقم {id} اترفض من {admin}."
   },
   "access.admin_rejected_manual": {
     en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been explicitly denied access.",
-    ar: "🚫 <b>الطلب اترفض</b>\nالرقم ‏<code>{id}</code>‏ اترفض بالظبط."
+    ar: "🚫 **الطلب اترفض**\nالرقم {id} اترفض بالظبط."
   },
   "access.handled_request": {
     en: "🚫 <b>Request Handled</b>\nUser ‏<code>{id}</code>‏ was rejected by {admin}.",
-    ar: "🚫 <b>خلصنا الموضوع</b>\nالرقم ‏<code>{id}</code>‏ اترفض من {admin}."
+    ar: "🚫 **خلصنا الموضوع**\nالرقم {id} اترفض من {admin}."
   },
   "access.handled_approved": {
     en: "✅ <b>Request Handled</b>\nUser ‏<code>{id}</code>‏ was approved by {admin}.",
-    ar: "✅ <b>خلصنا الموضوع</b>\nالرقم ‏<code>{id}</code>‏ اتوافق عليه من {admin}."
+    ar: "✅ **خلصنا الموضوع**\nالرقم {id} اتوافق عليه من {admin}."
   },
 
   // ── Welcome Message ───────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ const dict = {
   },
   "welcome.step4": {
     en: "<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.",
-    ar: "<b>4️⃣ استرخي واستنى</b>\nالبوت هيفضل يتابع السوق في الخلفية. أول ما السعر ينزل أو المنتج يرجع المخزون، هيجيلك إشعار أوتوماتيك. حتى لو في بديل مستعمل أرخص من أمازون ريسيل، هتعرف."
+    ar: "<b>4️⃣ استرخي واستنى</b>\nالبوت هيفضل يتابع السوق في الخلفية. أول ما السعر ينزل أو المنتج يرجع يبقى متاح، هيجيلك إشعار. حتى لو في بديل مستعمل أرخص من أمازون ريسيل، هتعرف."
   },
   "welcome.step5": {
     en: "<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>{limit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).",
@@ -191,6 +191,14 @@ const dict = {
     en: "🌐 Language / اللغة",
     ar: "🌐 اللغة / Language"
   },
+  "menu.unlimited": {
+    en: "∞",
+    ar: "∞"
+  },
+  "menu.error": {
+    en: "⚠️ Error",
+    ar: "⚠️ خطأ"
+  },
 
   // ── How to Add ────────────────────────────────────────────────────────────
   "howto.head": {
@@ -199,11 +207,11 @@ const dict = {
   },
   "howto.body": {
     en: "Copy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.",
-    ar: "انسخ أي لينك منتج أمازون مصر من المتصفح أو الأبلكيشن وابعته في الشات ده مباشرة."
+    ar: "انسخ أي لينك منتج أمازون مصر من البراوزر أو الأبلكيشن وحطه في الشات ده على طول."
   },
   "howto.shortlinks": {
     en: "📱 <b>Short links shared directly from the mobile app are fully supported!</b>",
-    ar: "📱 <b>لينكات أمازون المختصرة من الأبلكيشن شغالة عادي!</b>"
+    ar: "📱 **لينكات أمازون المختصرة من الأبلكيشن شغالة عادي!**"
   },
 
   // ── Product Link Processing ───────────────────────────────────────────────
@@ -225,7 +233,7 @@ const dict = {
   },
   "link.system_error": {
     en: "⚠️ <b>System Error:</b> Global item limit is unconfigured. Please contact an admin.",
-    ar: "⚠️ <b>فيه مشكلة:</b> الحد الأقصى للمنتجات مش متحدد. كلم الأدمن."
+    ar: "⚠️ **فيه مشكلة:** الحد الأقصى للمنتجات مش متحدد. كلم الأدمن."
   },
   "link.limit_reached_head": {
     en: "⛔ <b>Limit Reached</b>",
@@ -245,7 +253,7 @@ const dict = {
   },
   "link.registered_head": {
     en: "✅ <b>Product Registered!</b>",
-    ar: "✅ <b>أضفنا المنتج!</b>"
+    ar: "✅ **أضفنا المنتج!**"
   },
   "link.registered_status": {
     en: "This item is now saved. It will pull the live price during the next automated check.",
@@ -255,9 +263,13 @@ const dict = {
     en: "⏳ Pending initial scan...",
     ar: "⏳ مستنيين نعرف السعر..."
   },
+  "link.status_label": {
+    en: "Status:",
+    ar: "الحالة:"
+  },
   "link.invalid_command": {
     en: "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.",
-    ar: "⚠️ <b>مش فاهم اللي انت كاتبه!</b>\n\nاستخدم الخيارات اللي تحت أو حط لينك أمازون صحيح."
+    ar: "⚠️ **مش فاهم اللي انت كاتبه!**\n\nاستخدم الخيارات اللي تحت أو حط لينك أمازون صحيح."
   },
 
   // ── Product List ──────────────────────────────────────────────────────────
@@ -279,7 +291,7 @@ const dict = {
   },
   "list.select_hint": {
     en: "Select an item below to modify its checking parameters:",
-    ar: "اختار منتج تحت عشان تشوف تفاصيله:"
+    ar: "اختار منتج تحت عشان تعدل إعدادات المتابعة:"
   },
   "list.prev": {
     en: "⬅️ Prev",
@@ -335,6 +347,14 @@ const dict = {
     en: "(Used)",
     ar: "(مستعمل)"
   },
+  "product.amazon_product": {
+    en: "Amazon Product",
+    ar: "منتج أمازون"
+  },
+  "product.unknown_product": {
+    en: "Unknown Product",
+    ar: "منتج غير معروف"
+  },
   "product.other_options_head": {
     en: "💡 <b>Other Options:</b>",
     ar: "💡 <b>خيارات تانية:</b>"
@@ -351,7 +371,15 @@ const dict = {
     en: "(Check Stock)",
     ar: "(شيّك على المخزون)"
   },
-
+  "product.asin_row": {
+    en: "└ 🆔 <code>{asin}</code>",
+    ar: "\u200F┘ 🆔 \u200E<code>{asin}</code>\u200E"
+  },
+  "product.asin_inline": {
+    en: "🆔 <code>{asin}</code>",
+    ar: "\u200F🆔 \u200E<code>{asin}</code>\u200E"
+  },
+  
   // ── Product View Buttons ──────────────────────────────────────────────────
   "product.btn.open_amazon": {
     en: "🛒 Open in Amazon.eg",
@@ -389,7 +417,7 @@ const dict = {
   // ── Set Target Flow ───────────────────────────────────────────────────────
   "target.set_head": {
     en: "🎯 <b>Set Target Price</b>",
-    ar: "🎯 <b>قوله السعر اللي عايزه</b>"
+    ar: "🎯 <b>قول السعر اللي عايزه</b>"
   },
   "target.set_prompt": {
     en: "ASIN: <code>{asin}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).",
@@ -1004,6 +1032,128 @@ const dict = {
   "crm.refresh": {
     en: "Refresh",
     ar: "تحديث"
+  },
+
+  // ── CRM Admin Action Notifications ────────────────────────────────────────
+  "crm.notify_approved": {
+    en: "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin.",
+    ar: "✅ <b>طلبك اتقبل!</b>\n\nدلوقتي تقدر تستخدم AzTracker. ابعت /start عشان تبدأ."
+  },
+  "crm.notify_rejected": {
+    en: "❌ <b>Your access request was REJECTED.</b>",
+    ar: "❌ <b>طلبك اترفض.</b>"
+  },
+  "crm.notify_revoked": {
+    en: "⛔ <b>Your access has been REVOKED.</b>",
+    ar: "⛔ <b>متقدرش تستخدم البوت تاني.</b>"
+  },
+  "crm.notify_restored": {
+    en: "✅ <b>Your access has been RESTORED.</b>",
+    ar: "✅ <b>دلوقتي تقدر تستخدم البوت مرة تانية.</b>"
+  },
+  "crm.notify_promoted": {
+    en: "👑 <b>You have been PROMOTED to Admin!</b>",
+    ar: "👑 <b>اترقيت لـ Admin!</b>"
+  },
+  "crm.notify_demoted": {
+    en: "🔽 <b>You have been DEMOTED to standard user.</b>",
+    ar: "🔽 <b>رجعت يوزر عادي.</b>"
+  },
+  "crm.notify_limit_updated": {
+    en: "📈 <b>Your tracking limit has been updated to {limit} items.</b>",
+    ar: "📈 <b>ليميت المتابعة اتغير لـ {limit} منتجات.</b>"
+  },
+  "crm.notify_direct_message": {
+    en: "💬 <b>Message from Admin:</b>\n\n{message}",
+    ar: "💬 <b>رسالة من الأدمن:</b>\n\n{message}"
+  },
+  "crm.seller_unknown": {
+    en: "Unknown",
+    ar: "مش معروف"
+  },
+  "crm.unknown_user": {
+    en: "Unknown User ({id})",
+    ar: "مستخدم غير معروف ({id})"
+  },
+  "crm.global_broadcast": {
+    en: "Global Broadcast",
+    ar: "برودكاست"
+  },
+  "crm.loading_audit": {
+    en: "Loading audit log...",
+    ar: "بنحمل سجل المراجعة..."
+  },
+  "crm.loading_items": {
+    en: "Loading items...",
+    ar: "بنحمل المنتجات..."
+  },
+  "crm.requested_label": {
+    en: "Requested:",
+    ar: "تاريخ الطلب:"
+  },
+  "crm.id_label": {
+    en: "ID:",
+    ar: "آي دي:"
+  },
+  "crm.never": {
+    en: "Never",
+    ar: "أبداً"
+  },
+  "crm.current_label": {
+    en: "current:",
+    ar: "الحالي:"
+  },
+  "crm.local_mode_toast": {
+    en: "Local mode: Telegram verification bypassed (Read Only)",
+    ar: "وضع محلي: تم تجاوز تليجرام (قراءة فقط)"
+  },
+  "crm.migrate_success": {
+    en: "Successfully migrated {subscriptions} subscriptions and {users} users!",
+    ar: "تم ترحيل {subscriptions} اشتراك و {users} مستخدم بنجاح!"
+  },
+  "crm.broadcast_prefix": {
+    en: "📢 <b>Global Broadcast</b>\n\n{message}",
+    ar: "📢 <b>برودكاست</b>\n\n{message}"
+  },
+  "crm.chart_loading": {
+    en: "Loading chart data...",
+    ar: "بنحمل بيانات الرسم البياني..."
+  },
+
+  // ── Fallback Strings ─────────────────────────────────────────────────────
+  "fallback.unknown_product": {
+    en: "Unknown Product",
+    ar: "منتج غير معروف"
+  },
+  "fallback.unknown_seller": {
+    en: "Unknown",
+    ar: "مش معروف"
+  },
+  "fallback.unknown_user": {
+    en: "Unknown User ({id})",
+    ar: "مستخدم غير معروف ({id})"
+  },
+
+  // ── Broadcast Strings ────────────────────────────────────────────────────
+  "broadcast.snapshot": {
+    en: "🚨 Snapshot 🚨",
+    ar: "🚨 لقطة 🚨"
+  },
+  "broadcast.buy_here": {
+    en: "🛒 Buy from here ←",
+    ar: "🛒 اشتري من هنا ←"
+  },
+  "broadcast.catch_deal": {
+    en: "👉 Catch the deal from here ←",
+    ar: "👉 الحق العرض من هنا ←"
+  },
+  "broadcast.follow_more": {
+    en: "🔗 Follow more deals",
+    ar: "🔗 تابع عروض أكتر"
+  },
+  "broadcast.ad_disclosure": {
+    en: "#ad",
+    ar: "#إعلان"
   },
 };
 
