@@ -199,7 +199,7 @@ export async function fetchAPI(request, env, ctx) {
           const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
           accessToken = await getAmazonAccessToken(clientId, clientSecret);
         }
-        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG);
+        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
         const items = await parser.getItems([asin]);
         const arabicNames = await parser.getItemsWithArabic([asin]);
         const response2 = await fetch(parser.endpoint, {

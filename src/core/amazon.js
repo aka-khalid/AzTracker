@@ -30,11 +30,12 @@ function containsArabic(text) {
 }
 
 export class AmazonEdgeParser {
-  constructor(accessToken, partnerTag, endpointHost = 'www.amazon.eg') {
+  constructor(accessToken, partnerTag, endpointHost = 'www.amazon.eg', env = null) {
     this.accessToken = accessToken;
     this.partnerTag = partnerTag;
     this.endpoint = `https://creatorsapi.amazon/catalog/v1/getItems`;
     this.endpointHost = endpointHost;
+    this.env = env;
   }
 
   async getItems(asins) {
@@ -185,8 +186,8 @@ export class AmazonEdgeParser {
       parsed.name = itemInfo.title.displayValue;
     }
     
-    const amazonEgMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_EG_MERCHANT_ID || 'A1ZVRGNO5AYLOV') : 'A1ZVRGNO5AYLOV';
-    const amazonResaleMid = typeof process !== 'undefined' && process.env ? (process.env.AMZN_RESALE_MERCHANT_ID || 'A2N2MP47XAP1MK') : 'A2N2MP47XAP1MK';
+    const amazonEgMid = (this.env?.AMZN_EG_MERCHANT_ID) || 'A1ZVRGNO5AYLOV';
+    const amazonResaleMid = (this.env?.AMZN_RESALE_MERCHANT_ID) || 'A2N2MP47XAP1MK';
 
     const offers = rawItem.OffersV2 || rawItem.Offers || rawItem.offersV2 || rawItem.offers;
     const listings = offers?.Listings || offers?.listings;

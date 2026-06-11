@@ -225,7 +225,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
       if (clientId && clientSecret) {
         const token = await getAmazonAccessToken(clientId, clientSecret);
-        const parser = new AmazonEdgeParser(token, env.AMZN_ASSOCIATES_TAG);
+        const parser = new AmazonEdgeParser(token, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
         const arabicMap = await parser.getItemsWithArabic([pid]);
         if (arabicMap.has(pid)) {
           arabicName = arabicMap.get(pid);
