@@ -21,6 +21,17 @@ export function truncateName(name, maxLength = 60) {
   return name.substring(0, maxLength) + "...";
 }
 
+export function resolveProductName(item, lang, fallback) {
+  if (lang === 'ar' && item.name_ar) return item.name_ar;
+  return item.name || item.asin || fallback || "Unknown Product";
+}
+
+export function convertHindiToArabic(text) {
+  if (!text) return "";
+  const hindiToAr = { '٠':'0', '١':'1', '٢':'2', '٣':'3', '٤':'4', '٥':'5', '٦':'6', '٧':'7', '٨':'8', '٩':'9' };
+  return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
+}
+
 export function getCairoTime(now) {
   const formatter = new Intl.DateTimeFormat('en-GB', { 
     timeZone: 'Africa/Cairo', 

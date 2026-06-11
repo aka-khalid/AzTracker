@@ -1,20 +1,12 @@
 import { getUserRoles, logAudit, resolveUserProfile } from '../core/db.js';
 import { t, resolveLanguageCode, getWelcomeMessage } from '../core/i18n.js';
 import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
+import { escapeHtml, convertHindiToArabic, resolveProductName } from '../core/utils.js';
 
 const QUEUE_MAX_DEPTH = 25;
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 const ALT_SELLER_TTL_MS = 86400000;
-
-/**
- * Resolve the product name based on user language preference.
- * Falls back to English name if Arabic is not available.
- */
-function resolveProductName(item, lang) {
-  if (lang === 'ar' && item.name_ar) return item.name_ar;
-  return item.name || item.asin || t('product.unknown_product', lang);
-}
 
 export async function handleTelegramWebhook(request, env, ctx) {
   const url = new URL(request.url);
@@ -835,7 +827,7 @@ async function renderProductList(env, chatId, messageId, page = 0, lang = 'en') 
   const keyboard = { inline_keyboard: [] };
 
   pagedProducts.forEach((p) => {
-    const resolved = resolveProductName(p, lang);
+    const resolved = resolveProductName(p, lang, t('product.unknown_product', lang));
     let name = resolved || p.asin;
     if (name.length > 30) name = name.substring(0, 27) + "...";
 
@@ -920,7 +912,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
         sellerInfo = "";
       }
 
-      if (pData.name || pData.name_ar) title = resolveProductName(pData, lang);
+      if (pData.name || pData.name_ar) title = resolveProductName(pData, lang, t('product.unknown_product', lang));
 
       smartAlts = buildSmartAlternatives(pData, pid, env, lang);
     } else {
@@ -999,16 +991,6 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
 
 
 // ── Core Helpers ────────────────────────────────────────────────────────────
-
-function escapeHtml(unsafe) {
-    if (!unsafe) return "";
-    return String(unsafe)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
 
 async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();
@@ -1132,12 +1114,6 @@ function buildSmartAlternatives(pData, pid, env, lang = 'en') {
   }
 
   return "";
-}
-
-function convertHindiToArabic(text) {
-  if (!text) return "";
-  const hindiToAr = { '٠':'0', '١':'1', '٢':'2', '٣':'3', '٤':'4', '٥':'5', '٦':'6', '٧':'7', '٨':'8', '٩':'9' };
-  return text.replace(/[٠-٩]/g, match => hindiToAr[match]);
 }
 
 async function syncUserNames(env, chatId, from, baseUrl) {

@@ -1,14 +1,6 @@
 import { AmazonEdgeParser, getAmazonAccessToken } from '../core/amazon.js';
 import { t } from '../core/i18n.js';
-
-/**
- * Resolve the product name based on user language preference.
- * Falls back to English name if Arabic is not available.
- */
-function resolveProductName(item, lang) {
-  if (lang === 'ar' && item.name_ar) return item.name_ar;
-  return item.name || item.asin || t('product.unknown_product', lang);
-}
+import { escapeHtml, formatEGP, getCairoTime, resolveProductName, truncateName } from '../core/utils.js';
 
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
@@ -23,39 +15,6 @@ function truncateMessage(msg) {
   let cut = msg.lastIndexOf('\n', TELEGRAM_MSG_LIMIT - 20);
   if (cut < TELEGRAM_MSG_LIMIT / 2) cut = TELEGRAM_MSG_LIMIT - 20;
   return msg.substring(0, cut) + '\n\n…';
-}
-
-function truncateName(name, maxLength = 60) {
-  if (!name) return null;
-  if (name.length <= maxLength) return name;
-  return name.substring(0, maxLength) + "...";
-}
-
-function formatEGP(price) {
-  if (price === null || price === undefined) return "";
-  return price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-}
-
-function getCairoTime(now) {
-  const formatter = new Intl.DateTimeFormat('en-GB', { 
-    timeZone: 'Africa/Cairo', 
-    year: 'numeric', month: '2-digit', day: '2-digit', 
-    hour: '2-digit', minute: '2-digit', second: '2-digit' 
-  });
-  const parts = formatter.formatToParts(new Date(now));
-  const p = {};
-  parts.forEach(part => { p[part.type] = part.value; });
-  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} EET`;
-}
-
-function escapeHtml(unsafe) {
-    if (typeof unsafe !== 'string') return unsafe;
-    return unsafe
-         .replace(/&/g, "&amp;")
-         .replace(/</g, "&lt;")
-         .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
-         .replace(/'/g, "&#039;");
 }
 
 export async function executeScrapeEngine(env, offset = 0) {
