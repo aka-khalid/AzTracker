@@ -744,8 +744,18 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
-        tg.expand(); 
-        tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
+        tg.expand();
+        if (tg.setHeaderColor) tg.setHeaderColor(tg.themeParams.bg_color || '#ffffff');
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return "";
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
 
         async function loadAudit() {
             try {
@@ -771,32 +781,31 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
                     const actionEsc = escapeHtml(log.action);
                     const detailsEsc = escapeHtml(log.details || '');
 
+                    const adminHandleEsc = log.adminHandle ? escapeHtml(log.adminHandle) : '';
                     const adminDisplay = log.adminHandle
-                        ? \`\${escapeHtml(log.adminHandle)} <span style="font-size:10px;opacity:0.6;">(\${adminIdEsc})</span>\`
-                        : \`<code>\${adminIdEsc}</code>\`;
+                        ? adminHandleEsc + ' <span style="font-size:10px;opacity:0.6;">(' + adminIdEsc + ')</span>'
+                        : '<code>' + adminIdEsc + '</code>';
 
-                    let targetDisplay = \`<code>\${targetEsc}</code>\`;
+                    let targetDisplay = '<code>' + targetEsc + '</code>';
                     if (log.targetHandle) {
-                        targetDisplay = \`\${escapeHtml(log.targetHandle)} <span style="font-size:10px;opacity:0.6;">(\${targetEsc})</span>\`;
+                        targetDisplay = escapeHtml(log.targetHandle) + ' <span style="font-size:10px;opacity:0.6;">(' + targetEsc + ')</span>';
                     }
 
                     const card = document.createElement('div');
                     card.className = 'audit-card';
-                    card.innerHTML = \`
-                        <div class="audit-header">
-                            <span>🕒 \${timeStr}</span>
-                            <span>\${adminDisplay}</span>
-                        </div>
-                        <div class="audit-action">\${actionEsc}</div>
-                        <div class="audit-row">
-                            <span class="audit-label">Target:</span>
-                            <span class="audit-data">\${targetDisplay}</span>
-                        </div>
-                            <div class="audit-row">
-                                <span class="audit-label">Details:</span>
-                                <span class="audit-data">\${detailsEsc}</span>
-                            </div>
-                        \`;
+                    card.innerHTML = '<div class="audit-header">' +
+                            '<span>🕒 ' + timeStr + '</span>' +
+                            '<span>' + adminDisplay + '</span>' +
+                        '</div>' +
+                        '<div class="audit-action">' + actionEsc + '</div>' +
+                        '<div class="audit-row">' +
+                            '<span class="audit-label">Target:</span>' +
+                            '<span class="audit-data">' + targetDisplay + '</span>' +
+                        '</div>' +
+                        '<div class="audit-row">' +
+                            '<span class="audit-label">Details:</span>' +
+                            '<span class="audit-data">' + detailsEsc + '</span>' +
+                        '</div>';
                         container.appendChild(card);
                     });
                 } catch (err) {
@@ -1021,24 +1030,34 @@ export function renderCrmHTML(lang = 'en') {
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.ready();
-        tg.setHeaderColor('#030712');
-        tg.setBackgroundColor('#030712');
+        if (tg.setHeaderColor) tg.setHeaderColor('#030712');
+        if (tg.setBackgroundColor) tg.setBackgroundColor('#030712');
 
         const initData = tg.initData || '';
         let appData = { users: [], joinQueue: [] };
         let activeTab = 'users';
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return "";
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
 
         async function fetchAPI(path, method = 'GET', body = null) {
             if(!initData) return showToast("${t('crm.local_mode_toast', lang)}", "error");
             try {
                 const opts = {
                     method,
-                    headers: { 'Authorization': \`Bearer \${initData}\`, 'Content-Type': 'application/json' }
+                    headers: { 'Authorization': 'Bearer ' + initData, 'Content-Type': 'application/json' }
                 };
                 if (body) opts.body = JSON.stringify(body);
                 
-                const res = await fetch(\`/api/crm\${path}\`, opts);
-                if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+                const res = await fetch('/api/crm' + path, opts);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 
                 if (res.status === 202) return { status: 'queued' };
                 const json = await res.json();
@@ -1149,10 +1168,11 @@ export function renderCrmHTML(lang = 'en') {
             activeTab = tab;
             const tabs = ['users', 'queue', 'banned', 'admins'];
             tabs.forEach(t => {
-                const el = document.getElementById(\`tab-\${t}\`);
+                const el = document.getElementById('tab-' + t);
                 if (el) {
                     const isBanned = t === 'banned';
-                    el.className = \`px-4 pb-3 text-sm font-medium transition whitespace-nowrap relative \${t === tab ? 'tab-active' : (isBanned ? 'tab-inactive text-red-400/80' : 'tab-inactive')}\`;
+                    const cls = t === tab ? 'tab-active' : (isBanned ? 'tab-inactive text-red-400/80' : 'tab-inactive');
+                    el.className = 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap relative ' + cls;
                 }
             });
             
@@ -1173,32 +1193,36 @@ export function renderCrmHTML(lang = 'en') {
                 list.innerHTML = appData.joinQueue.map(u => {
                     const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     const isUnban = u.request_type === 'unban';
-                    const typeBadge = isUnban
-                        ? '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/20">🔓 ' + "${t('crm.queue_type_unban', lang)}" + '</span>'
-                        : '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-400 border border-brand-500/20">🆕 ' + "${t('crm.queue_type_access', lang)}" + '</span>';
+                    const typeLabel = isUnban ? ${JSON.stringify(t('crm.queue_type_unban', lang))} : ${JSON.stringify(t('crm.queue_type_access', lang))};
+                    const typeColor = isUnban ? 'bg-orange-500/15 text-orange-400 border-orange-500/20' : 'bg-brand-500/15 text-brand-400 border-brand-500/20';
+                    const typeIcon = isUnban ? '🔓' : '🆕';
                     const idEsc = escapeHtml(String(u.id));
-                    const rejectBtn = isUnban
-                        ? `<button onclick="performAction('reject', '\${idEsc}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition" title="${t('crm.btn_deny', lang) || 'Deny'}"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`
-                        : `<button onclick="performAction('reject', '\${idEsc}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
-                    const approveBtn = isUnban
-                        ? `<button onclick="performAction('unban', '\${idEsc}')" class="h-8 px-3 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition text-xs font-medium border border-emerald-500/20">✅ ${t('crm.btn_unban', lang)}</button>`
-                        : `<button onclick="performAction('approve', '\${idEsc}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>`;
-                    return \`
-                    <div class="glass rounded-xl p-3 flex justify-between items-center \${isUnban ? 'border-l-2 border-l-orange-500/40' : ''}">
-                        <div>
-                            <div class="flex items-center gap-2 mb-0.5">
-                                <div class="font-medium text-sm truncate max-w-[250px]">\${escapeHtml(u.first_name) || 'User'} (\${u.username ? '@' + escapeHtml(u.username) : idEsc})</div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                \${typeBadge}
-                                <div class="text-xs text-gray-500">${t('crm.requested_label', lang)} \${time}</div>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            \${rejectBtn}
-                            \${approveBtn}
-                        </div>
-                    </div>\`;
+                    const firstEsc = escapeHtml(u.first_name) || 'User';
+                    const userDisplay = u.username ? '@' + escapeHtml(u.username) : idEsc;
+                    const borderClass = isUnban ? 'border-l-2 border-l-orange-500/40' : '';
+                    const actionApprove = isUnban ? 'unban' : 'approve';
+                    const approveLabel = isUnban ? ${JSON.stringify(t('crm.btn_unban', lang))} : '';
+                    const approveClass = isUnban ? 'h-8 px-3 text-xs font-medium border border-emerald-500/20' : 'w-8 h-8';
+                    const approveInner = isUnban
+                        ? '✅ ' + approveLabel
+                        : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+                    const rejectTitle = isUnban ? (${JSON.stringify(t('crm.btn_deny', lang))} || 'Deny') : '';
+                    const rejectAttr = isUnban ? ' title="' + rejectTitle + '"' : '';
+                    return '<div class="glass rounded-xl p-3 flex justify-between items-center ' + borderClass + '">' +
+                        '<div>' +
+                            '<div class="flex items-center gap-2 mb-0.5">' +
+                                '<div class="font-medium text-sm truncate max-w-[250px]">' + firstEsc + ' (' + userDisplay + ')</div>' +
+                            '</div>' +
+                            '<div class="flex items-center gap-2">' +
+                                '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ' + typeColor + ' border">' + typeIcon + ' ' + typeLabel + '</span>' +
+                                '<div class="text-xs text-gray-500">' + ${JSON.stringify(t('crm.requested_label', lang))} + ' ' + time + '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="flex gap-2">' +
+                            '<button onclick="performAction(\'reject\', \'' + idEsc + '\')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"' + rejectAttr + '><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>' +
+                            '<button onclick="performAction(\'' + actionApprove + '\', \'' + idEsc + '\')" class="' + approveClass + ' rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition">' + approveInner + '</button>' +
+                        '</div>' +
+                    '</div>';
                 }).join('');
             } else {
                 filterUsers();
@@ -1222,10 +1246,10 @@ export function renderCrmHTML(lang = 'en') {
             filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)));
             
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">${t("crm.no_users_found", lang)}</div>';
+                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${JSON.stringify(t('crm.no_users_found', lang))} + '</div>';
                 return;
             }
-            
+
             list.innerHTML = filtered.map(u => {
                 const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800', 'rejected': 'text-red-400 border-red-400/20 bg-red-400/10' };
                 const roleStyle = roleColors[u.role] || roleColors['rejected'];
@@ -1235,40 +1259,45 @@ export function renderCrmHTML(lang = 'en') {
                 const roleEsc = escapeHtml(u.role);
                 const firstNameJsEsc = escapeHtml(u.first_name || '').replace(/'/g, "\\'");
                 const usernameJsEsc = escapeHtml(u.username || '').replace(/'/g, "\\'");
+                const isRoot = u.role === 'root';
+                const isAdmin = u.role === 'admin';
+                const isApproved = u.role === 'approved';
+                const isRejected = u.role === 'rejected';
+                const isPrivileged = isAdmin || isRoot;
+                const itemLimit = isPrivileged ? '∞' : u.item_limit;
+                const joinedDate = new Date(u.created_at).toLocaleDateString();
 
-                return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">
-                    \${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
+                let rootGlow = '';
+                if (isRoot) rootGlow = '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>';
 
-                    <!-- Top Row: Name and View Items -->
-                    <div class="flex justify-between items-center mb-2 relative z-10">
-                        <div class="font-medium text-sm font-semibold truncate">
-                            \${firstNameEsc} (\${usernameEsc})
-                        </div>
-                        <button onclick="openDrawer('\${chatIdEsc}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">${t('crm.btn_view_items', lang)}</button>
-                    </div>
+                let roleBadge = '';
+                if (isPrivileged) roleBadge = '<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border ' + roleStyle + '">' + roleEsc + '</span>';
 
-                    <!-- Second Row: Tags & Info -->
-                    <div class="flex items-center gap-2 mb-3 relative z-10">
-                        \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${roleEsc}</span>\` : ''}
-                        <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} items</span>
-                        <span class="text-xs text-gray-500">•</span>
-                        <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
-                    </div>
+                let actionBtns = '';
+                if (isRejected) {
+                    actionBtns += '<button onclick="performAction(\'unban\', \'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">' + ${JSON.stringify(t('crm.btn_unban', lang))} + '</button>';
+                } else {
+                    actionBtns += '<button onclick="messageUser(\'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${JSON.stringify(t('crm.btn_message', lang))} + '</button>';
+                    if (!isPrivileged) actionBtns += '<button onclick="changeLimit(\'' + chatIdEsc + '\', ' + u.item_limit + ', \'' + firstNameJsEsc + '\', \'' + usernameJsEsc + '\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">' + ${JSON.stringify(t('crm.btn_edit_limit', lang))} + '</button>';
+                    if (isApproved) actionBtns += '<button onclick="performAction(\'promote\', \'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${JSON.stringify(t('crm.btn_promote', lang))} + '</button>';
+                    if (isAdmin) actionBtns += '<button onclick="performAction(\'demote\', \'' + chatIdEsc + '\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">' + ${JSON.stringify(t('crm.btn_demote_drawer', lang))} + '</button>';
+                }
+                if (!isRoot) actionBtns += '<button onclick="performAction(\'revoke\', \'' + chatIdEsc + '\')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
 
-                    <!-- Third Row: Actions -->
-                    <div class="flex gap-2 relative z-10">
-                        \${u.role === 'rejected' ?
-                            \`<button onclick="performAction('unban', '\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">${t('crm.btn_unban', lang)}</button>\`
-                        :
-                            \`<button onclick="messageUser('\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_message', lang)}</button>
-                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${chatIdEsc}', \${u.item_limit}, '\${firstNameJsEsc}', '\${usernameJsEsc}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">${t('crm.btn_edit_limit', lang)}</button>\`}
-                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_promote', lang)}</button>\` : ''}
-                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">${t('crm.btn_demote_drawer', lang)}</button>\` : ''}
-                            \${u.role !== 'root' ? \`<button onclick="performAction('revoke', '\${chatIdEsc}')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
-                        }
-                    </div>
-                </div>\`;
+                return '<div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">' +
+                    rootGlow +
+                    '<div class="flex justify-between items-center mb-2 relative z-10">' +
+                        '<div class="font-medium text-sm font-semibold truncate">' + firstNameEsc + ' (' + usernameEsc + ')</div>' +
+                        '<button onclick="openDrawer(\'' + chatIdEsc + '\')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">' + ${JSON.stringify(t('crm.btn_view_items', lang))} + '</button>' +
+                    '</div>' +
+                    '<div class="flex items-center gap-2 mb-3 relative z-10">' +
+                        roleBadge +
+                        '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' items</span>' +
+                        '<span class="text-xs text-gray-500">•</span>' +
+                        '<span class="text-xs text-gray-500">Joined: ' + joinedDate + '</span>' +
+                    '</div>' +
+                    '<div class="flex gap-2 relative z-10">' + actionBtns + '</div>' +
+                '</div>';
             }).join('');
         }
 
@@ -1284,50 +1313,56 @@ export function renderCrmHTML(lang = 'en') {
             const content = document.getElementById('drawer-content');
             const itemsCont = document.getElementById('drawer-items');
             
-            document.getElementById('drawer-subtitle').innerText = "${t('crm.id_label', lang)} " + userId;
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>${t("crm.loading_items", lang)}</div>';
+            document.getElementById('drawer-subtitle').innerText = ${JSON.stringify(t('crm.id_label', lang))} + ' ' + userId;
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${JSON.stringify(t('crm.loading_items', lang))} + '</div>';
             
             drawer.classList.remove('hidden');
             setTimeout(() => {
                 content.style.transform = 'translateY(0)';
             }, 10);
             
-            const products = await fetchAPI(\`/user/\${userId}/products\`);
-            
+            const products = await fetchAPI('/user/' + userId + '/products');
+
             if (!products || products.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">${t("crm.no_saved_products", lang)}</div>';
+                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${JSON.stringify(t('crm.no_saved_products', lang))} + '</div>';
                 return;
             }
-            
+
             itemsCont.innerHTML = products.map(p => {
                 const isPaused = p.is_paused === 1;
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
-                const statusText = isPaused ? '${t("crm.user_paused", lang)}' : '${t("crm.user_active", lang)}';
+                const statusText = isPaused ? ${JSON.stringify(t('crm.user_paused', lang))} : ${JSON.stringify(t('crm.user_active', lang))};
                 const rawName = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
                 const nameEsc = escapeHtml(rawName);
                 const asinEsc = escapeHtml(p.asin);
-                const price = p.new_price ? \`\${p.new_price} EGP\` : (p.used_price ? '${t("crm.user_used_only", lang)}' : '${t("crm.user_out_of_stock", lang)}');
+                const price = p.new_price ? p.new_price + ' EGP' : (p.used_price ? ${JSON.stringify(t('crm.user_used_only', lang))} : ${JSON.stringify(t('crm.user_out_of_stock', lang))});
                 const userIdEsc = escapeHtml(String(userId));
+                const actionType = isPaused ? 'resume_product' : 'pause_product';
+                const pauseIcon = isPaused ? '▶️' : '⏸️';
+                const pauseLabel = isPaused ? ${JSON.stringify(t('crm.btn_resume', lang))} : ${JSON.stringify(t('crm.btn_pause_drawer', lang))};
+                const hasTarget = !!p.target_price;
+                const targetBadge = hasTarget
+                    ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: ' + p.target_price + '</div>'
+                    : '';
 
-                return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">
-                    <div class="flex justify-between items-start mb-2">
-                        <div class="pe-6">
-                            <a href="https://www.amazon.eg/dp/\${asinEsc}" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">\${nameEsc}</a>
-                            <div class="text-xs text-gray-500 mt-1 font-mono">\${asinEsc}</div>
-                        </div>
-                        <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${statusColor} whitespace-nowrap">\${statusText}</span>
-                    </div>
-                    <div class="flex justify-between items-end mb-3">
-                        <div class="text-sm font-semibold">\${price}</div>
-                        \${p.target_price ? \`<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: \${p.target_price}</div>\` : ''}
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userIdEsc}', {asin: '\${asinEsc}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ ${t("crm.btn_resume", lang)}' : '⏸️ ${t("crm.btn_pause_drawer", lang)}'}</button>
-                        <button onclick="openChartModal('\${asinEsc}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ${t('crm.btn_chart', lang)}</button>
-                        <button onclick="performAction('delete_product', '\${userIdEsc}', {asin: '\${asinEsc}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ${t('crm.btn_delete_drawer', lang)}</button>
-                    </div>
-                </div>\`;
+                return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +
+                    '<div class="flex justify-between items-start mb-2">' +
+                        '<div class="pe-6">' +
+                            '<a href="https://www.amazon.eg/dp/' + asinEsc + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">' + nameEsc + '</a>' +
+                            '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
+                        '</div>' +
+                        '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap">' + statusText + '</span>' +
+                    '</div>' +
+                    '<div class="flex justify-between items-end mb-3">' +
+                        '<div class="text-sm font-semibold">' + price + '</div>' +
+                        targetBadge +
+                    '</div>' +
+                    '<div class="flex gap-2">' +
+                        '<button onclick="performAction(\'' + actionType + '\', \'' + userIdEsc.replace(/'/g, "\\'") + '\', {asin: \'' + asinEsc.replace(/'/g, "\\'") + '\'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">' + pauseIcon + ' ' + pauseLabel + '</button>' +
+                        '<button onclick="openChartModal(\'' + asinEsc.replace(/'/g, "\\'") + '\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${JSON.stringify(t('crm.btn_chart', lang))} + '</button>' +
+                        '<button onclick="performAction(\'delete_product\', \'' + userIdEsc.replace(/'/g, "\\'") + '\', {asin: \'' + asinEsc.replace(/'/g, "\\'") + '\'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ' + ${JSON.stringify(t('crm.btn_delete_drawer', lang))} + '</button>' +
+                    '</div>' +
+                '</div>';
             }).join('');
         }
 
@@ -1554,8 +1589,8 @@ export function renderCrmHTML(lang = 'en') {
             const bg = type === 'error' ? 'bg-red-500/90 border-red-500' : 'bg-gray-800 border-gray-700';
             const icon = type === 'error' ? '❌' : '✅';
             
-            el.className = \`glass rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter \${bg}\`;
-            el.innerHTML = \`<span>\${icon}</span> <span>\${escapeHtml(message)}</span>\`;
+            el.className = 'glass rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter ' + bg;
+            el.innerHTML = '<span>' + icon + '</span> <span>' + escapeHtml(message) + '</span>';
             
             container.appendChild(el);
             
