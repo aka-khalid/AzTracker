@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS Users (
     first_name TEXT,
     username TEXT,
     lang TEXT, -- User language preference: 'en' or 'ar'
-    role TEXT NOT NULL DEFAULT 'approved', -- Roles: 'approved', 'admin', 'rejected', 'pending'
+    role TEXT NOT NULL DEFAULT 'pending', -- Roles: 'approved', 'admin', 'rejected', 'pending'
     item_limit INTEGER NOT NULL DEFAULT 5,
     approved_by TEXT,
     created_at INTEGER NOT NULL
