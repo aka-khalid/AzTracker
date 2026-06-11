@@ -153,6 +153,10 @@ async function handleMessage(message, env, baseUrl, ctx) {
     }
 
     const sentMsg = await sendAppMessage(env, chatId, t('link.processing', lang));
+    if (!sentMsg?.result?.message_id) {
+      console.error("sendAppMessage failed: no message_id", sentMsg);
+      return;
+    }
     const tempMessageId = sentMsg.result.message_id;
 
     const expandedUrl = await expandAmazonUrl(inputUrl);
