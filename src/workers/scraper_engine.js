@@ -105,8 +105,8 @@ export async function executeScrapeEngine(env, offset = 0) {
   const queueBatch = [];
   const now = Date.now();
   
-  // Failsafe Fix: Avoid 0-items returned outage trap
-  if (staleProducts.length >= 5 && liveItems.length === 0) {
+  // Failsafe: Avoid 0-items returned outage trap (any batch size)
+  if (staleProducts.length > 0 && liveItems.length === 0) {
     console.log(`Global failsafe: 0 items returned for batch at offset ${offset}. Assuming API Outage. Throwing to retry.`);
     throw new Error("0 items returned from Amazon");
   }
