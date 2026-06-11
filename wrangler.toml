@@ -48,6 +48,10 @@ GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
 
+# TODO: Create a separate production KV namespace in Cloudflare dashboard
+# and replace the ID below. Currently identical to dev — shared KV causes
+# data collision between environments (dev tokens leak to prod, etc.)
+# Run: npx wrangler kv:namespace create AZTRACKER_DB --env production
 [[env.production.kv_namespaces]]
 binding = "AZTRACKER_DB"
 id = "90fcfcb742fe4d7299087c076bd1ba4d"
