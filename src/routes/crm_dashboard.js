@@ -3,6 +3,7 @@ import { t, resolveLanguageCode } from '../core/i18n.js';
 import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
 import { executeScrapeEngine } from '../workers/scraper_engine.js';
 import { sendTelegramMessage as sendTelegram } from '../core/telegram.js';
+import { escapeHtml } from '../core/utils.js';
 
 async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();
@@ -175,6 +176,8 @@ export async function fetchAPI(request, env, ctx) {
 
 
     if (url.pathname === "/api/test-asin") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
       try {
         const asin = url.searchParams.get("asin") || "B094HJ4JSH";
         let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
@@ -278,7 +281,7 @@ export async function fetchAPI(request, env, ctx) {
              await env.DB.batch(allStmts.slice(i, i + 50));
           }
         }
-        return new Response(`Successfully migrated ${migratedCount} subscriptions and ${allValidUsers.length} users!`, { status: 200 });
+        return new Response(t('crm.migrate_success', 'en', { subscriptions: migratedCount, users: allValidUsers.length }), { status: 200 });
       } catch (err) {
         return new Response(`Migration failed: ${err.message}\n${err.stack}`, { status: 500 });
       }
@@ -430,6 +433,12 @@ export async function fetchAPI(request, env, ctx) {
       const adminLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(adminId).first();
       const adminLang = adminLangRow?.lang || auth.lang || 'en';
 
+      // Helper: resolve target user's language (falls back to admin lang, then 'en')
+      const resolveTargetLang = async (tid) => {
+        const row = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(tid).first();
+        return row?.lang || adminLang;
+      };
+
       if (action === "restore_kv") {
         if (!auth.isRootAdmin) {
           await sendTelegram(env, adminId, t('crm.action_unauthorized', adminLang));
@@ -564,9 +573,10 @@ export async function fetchAPI(request, env, ctx) {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         
         ctx.waitUntil((async () => {
-          const users = await env.DB.prepare("SELECT chat_id FROM Users WHERE role IN ('approved', 'admin')").all();
+          const users = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role IN ('approved', 'admin')").all();
           for (const row of users.results) {
-            await sendTelegram(env, row.chat_id, `📢 <b>Global Broadcast</b>\n\n${data.message}`);
+            const userLang = row.lang || 'en';
+            await sendTelegram(env, row.chat_id, t('crm.broadcast_prefix', userLang, { message: data.message }));
           }
           await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", "Sent global broadcast");
         })());
@@ -577,12 +587,12 @@ export async function fetchAPI(request, env, ctx) {
         const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT) || 3;
         await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', ?, ?, ?)").bind(targetId, defaultLimit, adminId, Date.now()).run();
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin."));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_approved', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "reject") {
         await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendTelegram(env, targetId, "❌ <b>Your access request was REJECTED.</b>"));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_rejected', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "revoke") {
@@ -591,34 +601,34 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(targetId),
           env.DB.prepare("UPDATE Users SET role = 'rejected' WHERE chat_id = ?").bind(targetId)
         ]);
-        ctx.waitUntil(sendTelegram(env, targetId, "⛔ <b>Your access has been REVOKED.</b>"));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_revoked', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and froze subscriptions"));
       } else if (action === "unban") {
         await env.DB.batch([
           env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId),
           env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId)
         ]);
-        ctx.waitUntil(sendTelegram(env, targetId, "✅ <b>Your access has been RESTORED.</b>"));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_restored', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user and resumed subscriptions"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendTelegram(env, targetId, "👑 <b>You have been PROMOTED to Admin!</b>"));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_promoted', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "demote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil(sendTelegram(env, targetId, "🔽 <b>You have been DEMOTED to standard user.</b>"));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_demoted', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "set_limit") {
         const newLimit = parseInt(data.limit);
         if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
         await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
-        ctx.waitUntil(sendTelegram(env, targetId, `📈 <b>Your tracking limit has been updated to ${newLimit} items.</b>`));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_limit_updated', tl, { limit: newLimit })); })());
         ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, `Changed limit to ${newLimit}`));
       } else if (action === "delete_product") {
         const asin = data.asin;
@@ -644,7 +654,7 @@ export async function fetchAPI(request, env, ctx) {
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
-        ctx.waitUntil(sendTelegram(env, targetId, `💬 <b>Message from Admin:</b>\n\n${data.message}`));
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_direct_message', tl, { message: data.message })); })());
         ctx.waitUntil(logAudit(env, adminId, "DIRECT_MESSAGE", targetId, "Sent direct message"));
       } else {
         return new Response("Unknown action", { status: 400 });
@@ -739,16 +749,21 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
 
                 logs.forEach(log => {
                     const date = new Date(log.ts);
-                    const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' + 
+                    const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' +
                                   date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                    
-                    const adminDisplay = log.adminHandle 
-                        ? \`\${log.adminHandle} <span style="font-size:10px;opacity:0.6;">(\${log.adminId})</span>\` 
-                        : \`<code>\${log.adminId}</code>\`;
 
-                    let targetDisplay = \`<code>\${log.target}</code>\`;
+                    const adminIdEsc = escapeHtml(log.adminId);
+                    const targetEsc = escapeHtml(log.target);
+                    const actionEsc = escapeHtml(log.action);
+                    const detailsEsc = escapeHtml(log.details || '');
+
+                    const adminDisplay = log.adminHandle
+                        ? \`\${escapeHtml(log.adminHandle)} <span style="font-size:10px;opacity:0.6;">(\${adminIdEsc})</span>\`
+                        : \`<code>\${adminIdEsc}</code>\`;
+
+                    let targetDisplay = \`<code>\${targetEsc}</code>\`;
                     if (log.targetHandle) {
-                        targetDisplay = \`\${log.targetHandle} <span style="font-size:10px;opacity:0.6;">(\${log.target})</span>\`;
+                        targetDisplay = \`\${escapeHtml(log.targetHandle)} <span style="font-size:10px;opacity:0.6;">(\${targetEsc})</span>\`;
                     }
 
                     const card = document.createElement('div');
@@ -758,14 +773,14 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
                             <span>🕒 \${timeStr}</span>
                             <span>\${adminDisplay}</span>
                         </div>
-                        <div class="audit-action">\${log.action}</div>
+                        <div class="audit-action">\${actionEsc}</div>
                         <div class="audit-row">
                             <span class="audit-label">Target:</span>
                             <span class="audit-data">\${targetDisplay}</span>
                         </div>
                             <div class="audit-row">
                                 <span class="audit-label">Details:</span>
-                                <span class="audit-data">\${log.details}</span>
+                                <span class="audit-data">\${detailsEsc}</span>
                             </div>
                         \`;
                         container.appendChild(card);
@@ -1000,7 +1015,7 @@ export function renderCrmHTML(lang = 'en') {
         let activeTab = 'users';
 
         async function fetchAPI(path, method = 'GET', body = null) {
-            if(!initData) return showToast("Local mode: Telegram verification bypassed (Read Only)", "error");
+            if(!initData) return showToast("${t('crm.local_mode_toast', lang)}", "error");
             try {
                 const opts = {
                     method,
@@ -1045,7 +1060,7 @@ export function renderCrmHTML(lang = 'en') {
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = appData.systemStats.activeWatchPool || 0;
             const ms = appData.systemStats.lastRunMs;
-            document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Never';
+            document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "${t('crm.never', lang)}";
             
             const badge = document.getElementById('badge-queue');
             if(appData.joinQueue.length > 0) {
@@ -1079,7 +1094,7 @@ export function renderCrmHTML(lang = 'en') {
         
         async function loadAuditTab() {
             const container = document.getElementById('audit-list');
-            container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-400">Loading audit log...</div>';
+            container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-400">${t("crm.loading_audit", lang)}</div>';
             
             const logs = await fetchAPI('/audit');
             if (!logs) {
@@ -1095,21 +1110,23 @@ export function renderCrmHTML(lang = 'en') {
             
             container.innerHTML = logs.map(log => {
                 const date = new Date(log.ts);
-                const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' + 
+                const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' +
                               date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                
-                const adminDisplay = log.adminHandle ? log.adminHandle + ' <span class="text-[10px] opacity-60">(' + log.adminId + ')</span>' : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + log.adminId + '</code>';
-                let targetDisplay = '<code class="bg-gray-800 px-1 py-0.5 rounded">' + log.target + '</code>';
-                if (log.targetHandle) targetDisplay = log.targetHandle + ' <span class="text-[10px] opacity-60">(' + log.target + ')</span>';
-                
+
+                const adminDisplay = log.adminHandle ? escapeHtml(log.adminHandle) + ' <span class="text-[10px] opacity-60">(' + escapeHtml(log.adminId) + ')</span>' : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.adminId) + '</code>';
+                let targetDisplay = '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.target) + '</code>';
+                if (log.targetHandle) targetDisplay = escapeHtml(log.targetHandle) + ' <span class="text-[10px] opacity-60">(' + escapeHtml(log.target) + ')</span>';
+                const actionEsc = escapeHtml(log.action);
+                const detailsEsc = escapeHtml(log.details || '');
+
                 return '<div class="glass rounded-xl p-4">' +
                     '<div class="flex justify-between items-center text-xs opacity-80 border-b border-gray-700/50 pb-2 mb-2">' +
-                        '<span>🕒 ' + timeStr + '</span>' +
+                        '<span>\u{1F552} ' + timeStr + '</span>' +
                         '<span>' + adminDisplay + '</span>' +
                     '</div>' +
-                    '<div class="text-brand-400 font-bold text-sm mb-2">' + log.action + '</div>' +
+                    '<div class="text-brand-400 font-bold text-sm mb-2">' + actionEsc + '</div>' +
                     '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold opacity-80 w-16">Target:</span><span class="break-all">' + targetDisplay + '</span></div>' +
-                    '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">Details:</span><span class="break-all">' + log.details + '</span></div>' +
+                    '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">Details:</span><span class="break-all">' + detailsEsc + '</span></div>' +
                 '</div>';
             }).join('');
         }
@@ -1144,12 +1161,12 @@ export function renderCrmHTML(lang = 'en') {
                     return \`
                     <div class="glass rounded-xl p-3 flex justify-between items-center">
                         <div>
-                            <div class="font-medium text-sm truncate max-w-[250px]">\${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.id})</div>
-                            <div class="text-xs text-gray-500 mt-0.5">Requested: \${time}</div>
+                            <div class="font-medium text-sm truncate max-w-[250px]">\${escapeHtml(u.first_name) || 'User'} (\${u.username ? '@' + escapeHtml(u.username) : escapeHtml(String(u.id))})</div>
+                            <div class="text-xs text-gray-500 mt-0.5">${t('crm.requested_label', lang)} \${time}</div>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="performAction('reject', '\${u.id}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                            <button onclick="performAction('approve', '\${u.id}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
+                            <button onclick="performAction('reject', '\${escapeHtml(String(u.id))}')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                            <button onclick="performAction('approve', '\${escapeHtml(String(u.id))}')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>
                         </div>
                     </div>\`;
                 }).join('');
@@ -1182,22 +1199,28 @@ export function renderCrmHTML(lang = 'en') {
             list.innerHTML = filtered.map(u => {
                 const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800', 'rejected': 'text-red-400 border-red-400/20 bg-red-400/10' };
                 const roleStyle = roleColors[u.role] || roleColors['rejected'];
-                
+                const firstNameEsc = escapeHtml(u.first_name) || 'User';
+                const usernameEsc = u.username ? '@' + escapeHtml(u.username) : escapeHtml(String(u.chat_id));
+                const chatIdEsc = escapeHtml(String(u.chat_id));
+                const roleEsc = escapeHtml(u.role);
+                const firstNameJsEsc = escapeHtml(u.first_name || '').replace(/'/g, "\\'");
+                const usernameJsEsc = escapeHtml(u.username || '').replace(/'/g, "\\'");
+
                 return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">
                     \${u.role === 'root' ? '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>' : ''}
-                    
+
                     <!-- Top Row: Name and View Items -->
                     <div class="flex justify-between items-center mb-2 relative z-10">
                         <div class="font-medium text-sm font-semibold truncate">
-                            \${u.first_name || 'User'} (\${u.username ? '@' + u.username : u.chat_id})
+                            \${firstNameEsc} (\${usernameEsc})
                         </div>
-                        <button onclick="openDrawer('\${u.chat_id}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">${t('crm.btn_view_items', lang)}</button>
+                        <button onclick="openDrawer('\${chatIdEsc}')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">${t('crm.btn_view_items', lang)}</button>
                     </div>
 
                     <!-- Second Row: Tags & Info -->
                     <div class="flex items-center gap-2 mb-3 relative z-10">
-                        \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${u.role}</span>\` : ''}
+                        \${(u.role === 'admin' || u.role === 'root') ? \`<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border \${roleStyle}">\${roleEsc}</span>\` : ''}
                         <span class="text-xs text-gray-500">\${u.active_items} / \${(u.role === 'admin' || u.role === 'root') ? '∞' : u.item_limit} items</span>
                         <span class="text-xs text-gray-500">•</span>
                         <span class="text-xs text-gray-500">Joined: \${new Date(u.created_at).toLocaleDateString()}</span>
@@ -1205,14 +1228,14 @@ export function renderCrmHTML(lang = 'en') {
 
                     <!-- Third Row: Actions -->
                     <div class="flex gap-2 relative z-10">
-                        \${u.role === 'rejected' ? 
-                            \`<button onclick="performAction('unban', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">${t('crm.btn_unban', lang)}</button>\`
+                        \${u.role === 'rejected' ?
+                            \`<button onclick="performAction('unban', '\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">${t('crm.btn_unban', lang)}</button>\`
                         :
-                            \`<button onclick="messageUser('\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_message', lang)}</button>
-                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${u.chat_id}', \${u.item_limit}, '\${u.first_name || ''}', '\${u.username || ''}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">${t('crm.btn_edit_limit', lang)}</button>\`}
-                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_promote', lang)}</button>\` : ''}
-                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${u.chat_id}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">${t('crm.btn_demote_drawer', lang)}</button>\` : ''}
-                            \${u.role !== 'root' ? \`<button onclick="performAction('revoke', '\${u.chat_id}')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
+                            \`<button onclick="messageUser('\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_message', lang)}</button>
+                            \${(u.role === 'admin' || u.role === 'root') ? '' : \`<button onclick="changeLimit('\${chatIdEsc}', \${u.item_limit}, '\${firstNameJsEsc}', '\${usernameJsEsc}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">${t('crm.btn_edit_limit', lang)}</button>\`}
+                            \${u.role === 'approved' ? \`<button onclick="performAction('promote', '\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">${t('crm.btn_promote', lang)}</button>\` : ''}
+                            \${u.role === 'admin' ? \`<button onclick="performAction('demote', '\${chatIdEsc}')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">${t('crm.btn_demote_drawer', lang)}</button>\` : ''}
+                            \${u.role !== 'root' ? \`<button onclick="performAction('revoke', '\${chatIdEsc}')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>\` : ''}\`
                         }
                     </div>
                 </div>\`;
@@ -1231,8 +1254,8 @@ export function renderCrmHTML(lang = 'en') {
             const content = document.getElementById('drawer-content');
             const itemsCont = document.getElementById('drawer-items');
             
-            document.getElementById('drawer-subtitle').innerText = \`ID: \${userId}\`;
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>Loading items...</div>';
+            document.getElementById('drawer-subtitle').innerText = "${t('crm.id_label', lang)} " + userId;
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>${t("crm.loading_items", lang)}</div>';
             
             drawer.classList.remove('hidden');
             setTimeout(() => {
@@ -1250,15 +1273,18 @@ export function renderCrmHTML(lang = 'en') {
                 const isPaused = p.is_paused === 1;
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
                 const statusText = isPaused ? '${t("crm.user_paused", lang)}' : '${t("crm.user_active", lang)}';
-                const name = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
+                const rawName = p.name ? (p.name.length > 35 ? p.name.substring(0, 32) + '...' : p.name) : p.asin;
+                const nameEsc = escapeHtml(rawName);
+                const asinEsc = escapeHtml(p.asin);
                 const price = p.new_price ? \`\${p.new_price} EGP\` : (p.used_price ? '${t("crm.user_used_only", lang)}' : '${t("crm.user_out_of_stock", lang)}');
-                
+                const userIdEsc = escapeHtml(String(userId));
+
                 return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">
                     <div class="flex justify-between items-start mb-2">
                         <div class="pe-6">
-                            <a href="https://www.amazon.eg/dp/\${p.asin}" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">\${name}</a>
-                            <div class="text-xs text-gray-500 mt-1 font-mono">\${p.asin}</div>
+                            <a href="https://www.amazon.eg/dp/\${asinEsc}" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">\${nameEsc}</a>
+                            <div class="text-xs text-gray-500 mt-1 font-mono">\${asinEsc}</div>
                         </div>
                         <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${statusColor} whitespace-nowrap">\${statusText}</span>
                     </div>
@@ -1267,9 +1293,9 @@ export function renderCrmHTML(lang = 'en') {
                         \${p.target_price ? \`<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: \${p.target_price}</div>\` : ''}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ ${t("crm.btn_resume", lang)}' : '⏸️ ${t("crm.btn_pause_drawer", lang)}'}</button>
-                        <button onclick="openChartModal('\${p.asin}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ${t('crm.btn_chart', lang)}</button>
-                        <button onclick="performAction('delete_product', '\${userId}', {asin: '\${p.asin}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ${t('crm.btn_delete_drawer', lang)}</button>
+                        <button onclick="performAction('\${isPaused ? 'resume_product' : 'pause_product'}', '\${userIdEsc}', {asin: '\${asinEsc}'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">\${isPaused ? '▶️ ${t("crm.btn_resume", lang)}' : '⏸️ ${t("crm.btn_pause_drawer", lang)}'}</button>
+                        <button onclick="openChartModal('\${asinEsc}')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ${t('crm.btn_chart', lang)}</button>
+                        <button onclick="performAction('delete_product', '\${userIdEsc}', {asin: '\${asinEsc}'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ${t('crm.btn_delete_drawer', lang)}</button>
                     </div>
                 </div>\`;
             }).join('');
@@ -1298,7 +1324,7 @@ export function renderCrmHTML(lang = 'en') {
             document.getElementById('chart-loading').style.display = 'block';
             document.getElementById('crmPriceChart').style.display = 'none';
             document.getElementById('chart-metrics').style.display = 'none';
-            document.getElementById('chart-loading').innerText = 'Loading chart data...';
+            document.getElementById('chart-loading').innerText = "${t('crm.chart_loading', lang)}";
             
             const data = await fetchAPI('/history/' + asin); // This actually maps to /api/crm/history/ASIN due to fetchAPI prefix
             document.getElementById('chart-loading').style.display = 'none';
@@ -1449,7 +1475,7 @@ export function renderCrmHTML(lang = 'en') {
                 ? (username ? firstName + ' (@' + username + ')' : firstName)
                 : userId;
             // Static i18n strings baked at render time; dynamic values appended at runtime
-            const promptMsg = "${t('crm.edit_limit_prompt', lang)} " + userLabel + " (current: " + currentLimit + "):";
+            const promptMsg = "${t('crm.edit_limit_prompt', lang)} " + userLabel + " (${t('crm.current_label', lang)} " + currentLimit + "):";
             const limit = prompt(promptMsg, currentLimit);
             if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
                 performAction('set_limit', userId, { limit: parseInt(limit) });
@@ -1499,7 +1525,7 @@ export function renderCrmHTML(lang = 'en') {
             const icon = type === 'error' ? '❌' : '✅';
             
             el.className = \`glass rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter \${bg}\`;
-            el.innerHTML = \`<span>\${icon}</span> <span>\${message}</span>\`;
+            el.innerHTML = \`<span>\${icon}</span> <span>\${escapeHtml(message)}</span>\`;
             
             container.appendChild(el);
             

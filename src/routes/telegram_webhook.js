@@ -13,7 +13,7 @@ const ALT_SELLER_TTL_MS = 86400000;
  */
 function resolveProductName(item, lang) {
   if (lang === 'ar' && item.name_ar) return item.name_ar;
-  return item.name || item.asin || 'Unknown Product';
+  return item.name || item.asin || t('product.unknown_product', lang);
 }
 
 export async function handleTelegramWebhook(request, env, ctx) {
@@ -253,9 +253,9 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     const successText = t('link.registered_head', lang) + '\n\n' +
                     `📌 <b>${cleanTitle}</b>\n` +
-                    `🆔 ‏<code>${pid}</code>‏\n\n` +
+                    `${t('product.asin_inline', lang, { asin: pid })}\n\n` +
                     t('link.registered_status', lang) + '\n\n' +
-                    `🕐 <b>Status:</b> ${t('link.pending_scan', lang)}\n\n#ad`;
+                    `🕐 <b>${t('link.status_label', lang)}</b> ${t('link.pending_scan', lang)}\n\n${t('alert.boosted_label', lang)}`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
         [{ text: "📦 View My Products", callback_data: "list_products_0" }],
@@ -341,17 +341,30 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (typeof queueObj.admin_messages === 'string') {
         try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
       }
+
+      // Answer callback FIRST to stop the spinner on the acting admin's button
+      ctx.waitUntil(fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callback_query_id: callback.id })
+      }).catch(() => {}));
+
+      // Capture other admin messages BEFORE deleting the queue row
+      const otherAdminMessages = {};
+      for (const [admId, msgId] of Object.entries(queueObj.admin_messages || {})) {
+        if (admId !== String(chatId)) otherAdminMessages[admId] = msgId;
+      }
+
       await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
 
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected', lang, { id: targetId, admin: escapeHtml(adminName) }));
 
-      if (queueObj && queueObj.admin_messages) {
-          for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
-              if (admId !== chatId) {
-                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, t('access.handled_request', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] }));
-              }
-          }
+      // Update ALL other admins' messages — sequential with error handling for reliability
+      for (const [admId, msgId] of Object.entries(otherAdminMessages)) {
+        try {
+          await editTelegramMessage(env, admId, msgId, t('access.handled_request', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
+        } catch(e) { console.error(`Failed to update admin ${admId} message:`, e); }
       }
 
       await env.DB.prepare(`
@@ -386,6 +399,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (typeof queueObj.admin_messages === 'string') {
         try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
       }
+
+      // Capture other admin messages BEFORE deleting the queue row
+      const otherAdminMessages = {};
+      for (const [admId, msgId] of Object.entries(queueObj.admin_messages || {})) {
+        if (admId !== String(chatId)) otherAdminMessages[admId] = msgId;
+      }
+
       await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
 
       const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
@@ -409,12 +429,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, t('admin.approved_result', lang, { id: targetId, admin: escapeHtml(adminName) }));
 
-      if (queueObj && queueObj.admin_messages) {
-          for (const [admId, msgId] of Object.entries(queueObj.admin_messages)) {
-              if (admId !== chatId) {
-                 ctx.waitUntil(editTelegramMessage(env, admId, msgId, t('access.handled_approved', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] }));
-              }
-          }
+      // Update ALL other admins' messages — sequential with error handling for reliability
+      for (const [admId, msgId] of Object.entries(otherAdminMessages)) {
+        try {
+          await editTelegramMessage(env, admId, msgId, t('access.handled_approved', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
+        } catch(e) { console.error(`Failed to update admin ${admId} message:`, e); }
       }
 
       // Send welcome message in the user's detected language
@@ -676,14 +695,14 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
       env.DB.prepare("SELECT item_limit FROM Users WHERE chat_id = ?").bind(chatId).first()
   ]);
 
-  let limitText = "∞";
+  let limitText = t('menu.unlimited', lang);
 
   if (!isAdmin) {
     const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT);
     if (!isNaN(defaultLimit)) {
         limitText = userRow && userRow.item_limit !== null ? parseInt(userRow.item_limit) : defaultLimit;
     } else {
-        limitText = "⚠️ Error";
+        limitText = t('menu.error', lang);
     }
   }
 
@@ -800,7 +819,7 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
   let lastUpdated = "";
   let sellerInfo = "";
   let smartAlts = "";
-  let title = product.name ? product.name : "Amazon Product";
+  let title = product.name ? product.name : t('product.amazon_product', lang);
 
   const { last_updated: systemCheckTime } = await env.DB.prepare("SELECT MAX(last_updated) as last_updated FROM Global_Products").first() || { last_updated: null };
 
@@ -868,12 +887,12 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
   if (queryString) productUrl += `?${queryString}`;
 
   const text = `📦 <b>${cleanTitle}</b>\n` +
-               `┘ 🆔 ‏<code>${pid}</code>‏\n\n` +
+               `${t('product.asin_row', lang, { asin: pid })}\n\n` +
                t('product.price_label', lang) + ` ${lastPrice}` +
                targetText +
                sellerInfo +
                smartAlts + '\n\n' +
-               t('product.status_label', lang) + ` ${statusStr}${lastUpdated}\n\n#ad`;
+               t('product.status_label', lang) + ` ${statusStr}${lastUpdated}\n\n${t('alert.boosted_label', lang)}`;
 
   const targetBtn = product.target_price
     ? { text: t('product.btn.clear_target', lang), callback_data: `confClearTgt_${pid}` }
@@ -906,7 +925,12 @@ async function renderProductView(env, chatId, messageId, pid, baseUrl, lang = 'e
 
 function escapeHtml(unsafe) {
     if (!unsafe) return "";
-    return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 async function generateSignature(secret, asin, exp) {

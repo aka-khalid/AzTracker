@@ -1,23 +1,57 @@
+# Environment & secrets
 .env
 .dev.vars
+
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 build/
+
+# Python leftovers
 __pycache__/
 *.pyc
+*.py
+requirements.txt
+setup.py
+price_tracker.py
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# Wrangler
 .wrangler/
+
+# Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# IDE
 .vscode/
 .idea/
 .claude/
 
+# TypeScript leftovers (V2 is JS only)
+src/api/
+*.ts
+
+# Generated migration artifacts
 kv_export.json
 d1_seed.sql
+d1_seed_*.sql
+seed_*.sql
+
+# GCP backup bridge (V1 artifact, not used in V2)
+gcp_backup_bridge/
 
 # Audit reports
 docs/i18n_masry_audit.md
+
+# Misc temp files
+*.bak
+*.tmp
+*.orig

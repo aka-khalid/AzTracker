@@ -65,14 +65,18 @@ D1 handles all relational queries, user management, and alert state flags. KV ex
 
 | Binding | ID | Shared? |
 |---|---|---|
-| `AZTRACKER_DB` | `90fcfcb742fe4d7299087c076bd1ba4d` | Yes — same ID in both environments |
+| `AZTRACKER_DB` | _your KV namespace ID_ | Yes — same ID in both environments |
+
+> **Note:** Create the KV namespace with `npx wrangler kv:namespace create AZTRACKER_DB` and paste the returned ID into `wrangler.toml`. Never commit actual namespace IDs to version control.
 
 ### 2.3 D1 Databases
 
 | Environment | Name | ID |
 |---|---|---|
-| Development | `aztracker-test-db` | `5ba01682-b844-447d-8498-bc0cac846edd` |
-| Production | `aztracker-prod-db` | `7998ba93-e8ef-42c5-b37b-580e233a2d6a` |
+| Development | `aztracker-test-db` | _your D1 database ID_ |
+| Production | `aztracker-prod-db` | _your D1 database ID_ |
+
+> **Note:** Create databases with `npx wrangler d1 create <name>` and paste the returned `database_id` into `wrangler.toml`. Never commit actual database IDs to version control.
 
 ### 2.4 Queues
 
@@ -99,15 +103,15 @@ The CRON array is commented out. To enable the Dynamic Governor, uncomment `* * 
 
 | Variable | Value | Used In |
 |---|---|---|
-| `GITHUB_OWNER` | `aka-khalid` | `crm_dashboard.js` (GitHub issue tracking) |
-| `GITHUB_REPO` | `AzTracker` | `crm_dashboard.js` |
+| `GITHUB_OWNER` | _your GitHub username_ | `crm_dashboard.js` (GitHub issue tracking) |
+| `GITHUB_REPO` | _your repo name_ | `crm_dashboard.js` |
 | `DEFAULT_USER_PRODUCT_LIMIT` | `"3"` | `telegram_webhook.js`, `crm_dashboard.js` |
 
 ---
 
 ## 3. D1 Schema — `schema.sql`
 
-Six tables (note: `Join_Queue` is **missing** from `schema.sql` but is actively used — see Section 3.7):
+Seven tables:
 
 ### 3.1 `Users`
 | Column | Type | Notes |
@@ -180,19 +184,17 @@ Six tables (note: `Join_Queue` is **missing** from `schema.sql` but is actively 
 - `idx_audit_actor` on `Audit_Logs(actor_id)`
 - `idx_bot_states_expires` on `Bot_States(expires_at)`
 
-### 3.7 Missing Table: `Join_Queue`
+### 3.7 `Join_Queue`
 
-The table `Join_Queue` is **referenced in queries** throughout `telegram_webhook.js` and `crm_dashboard.js` but is **NOT defined in `schema.sql`**. It must be created manually before deployment:
+Stores pending user access requests. Defined in `schema.sql` (Section 2 of the schema).
 
-```sql
-CREATE TABLE IF NOT EXISTS Join_Queue (
-    chat_id TEXT PRIMARY KEY,
-    first_name TEXT,
-    username TEXT,
-    requested_at INTEGER NOT NULL,
-    admin_messages TEXT
-);
-```
+| Column | Type | Notes |
+|---|---|---|
+| `chat_id` | TEXT PK | Telegram chat ID |
+| `first_name` | TEXT | User's first name |
+| `username` | TEXT | Telegram username |
+| `requested_at` | INTEGER | Unix ms |
+| `admin_messages` | TEXT | JSON array of admin messages |
 
 ---
 
@@ -265,16 +267,24 @@ npx wrangler deploy --env production
 node finalize_cutover.js
 ```
 
-Interactive steps:
-1. Select environment (1 = dev, 2 = prod)
-2. Enter 7 values: bot token, admin IDs, Amazon client ID/secret, partner tag, associates tag, worker URL
+Command-line flags:
+- `--env prod` — target production (default: dev)
+- `--db <name>` — D1 database name (default: `aztracker-test-db` for dev, `aztracker-prod-db` for prod)
+- `--skip-migration` — skip KV → D1 data migration
+- `--skip-secrets` — skip secret injection
+- `--skip-webhook` — skip Telegram webhook registration
+- `--dry-run` — print actions without making changes
+
+Steps performed:
+1. Checks prerequisites (Node.js, wrangler, auth, schema.sql, migration script)
+2. Prompts for required values (bot token, admin IDs, Amazon credentials, worker URL) — or reads from environment variables
 3. Generates a random `TELEGRAM_WEBHOOK_SECRET` (16-byte hex)
 4. Injects all 7 secrets via `npx wrangler secret put`
 5. Registers webhook with Telegram API (`setWebhook`)
 6. Runs `scripts/migrate_to_d1.js` to generate `d1_seed.sql` from `kv_export.json`
 7. Pushes `d1_seed.sql` to D1 via `npx wrangler d1 execute`
 
-**Note:** Step 6 (`scripts/export_kv.js`) is **commented out** in `finalize_cutover.js` with a warning not to uncomment (STDERR write EOF error). The migration runs from any existing `kv_export.json` file.
+**Note:** `scripts/export_kv.js` is **commented out** in `finalize_cutover.js` with a warning not to uncomment (STDERR write EOF error). The migration runs from any existing `kv_export.json` file.
 
 ---
 
@@ -410,6 +420,35 @@ node scripts/migrate_to_d1.js
 # Then: npx wrangler d1 execute aztracker-prod-db --remote --file=./d1_seed.sql
 ```
 
+### 9.3 `seed_d1.js` — Apply D1 SQL Seed via Cloudflare REST API
+
+Applies a SQL seed file to a D1 database via the Cloudflare REST API (no wrangler CLI required). Handles statement splitting, progress reporting, and per-statement error recovery.
+
+**Options:**
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--file <path>` | `./d1_seed.sql` | Path to SQL seed file |
+| `--account-id <id>` | `CF_ACCOUNT_ID` env | Cloudflare account ID |
+| `--db-id <id>` | `D1_DATABASE_ID` env | D1 database ID |
+| `--api-token <token>` | `CF_API_TOKEN` env | Cloudflare API token (D1: Read & Write) |
+
+**Usage:**
+```bash
+# Apply default d1_seed.sql (reads credentials from env):
+node scripts/seed_d1.js
+
+# Custom file + explicit credentials:
+node scripts/seed_d1.js --file ./d1_seed.sql --db-id abc123 --api-token YOUR_TOKEN
+```
+
+**Behavior:**
+1. Reads the seed file and splits into individual SQL statements (delimited by `;`)
+2. Executes each statement sequentially via `POST /client/v4/accounts/{id}/d1/database/{id}/query`
+3. Reports progress every 10 statements
+4. On error: logs the failed SQL and continues (does not abort)
+5. Exits with code 1 if any statements failed
+
 ---
 
 ## 10. CRM Dashboard — `src/routes/crm_dashboard.js`
@@ -470,3 +509,137 @@ Subscriptions older than 90 days are auto-paused with a notification sent to the
 ### 12.4 Amazon API Token Caching
 
 The Amazon access token is cached in KV (`amazon_access_token`) with a 55-minute TTL to avoid unnecessary token refreshes.
+
+---
+
+## 13. Fresh Deployment Checklist
+
+Use this checklist for a first-time deployment from scratch:
+
+- [ ] Install Node.js 18+ and wrangler (`npm install -g wrangler`)
+- [ ] Run `npx wrangler login` (opens browser for OAuth)
+- [ ] Clone repo and run `npm install`
+- [ ] Create KV namespace: `npx wrangler kv:namespace create AZTRACKER_DB`
+- [ ] Create D1 database: `npx wrangler d1 create aztracker-test-db`
+- [ ] Update `wrangler.toml` with the returned IDs
+- [ ] Apply schema: `npx wrangler d1 execute aztracker-test-db --local --file=./schema.sql`
+- [ ] Inject all secrets via `npx wrangler secret put` (see Section 4)
+- [ ] Deploy: `npx wrangler deploy`
+- [ ] Register Telegram webhook (see Section 6.5 or use `finalize_cutover.js`)
+- [ ] Test with `/start` in Telegram
+- [ ] Verify CRM dashboard at worker URL
+
+---
+
+## 14. Troubleshooting
+
+### "wrangler: command not found"
+
+```bash
+npm install -g wrangler
+```
+
+### "Not authenticated" Error
+
+```bash
+npx wrangler login
+```
+
+### "Database not found" Error
+
+Verify the `database_id` in `wrangler.toml`. List databases:
+
+```bash
+npx wrangler d1 list
+```
+
+### "Table already exists" Error
+
+The schema uses `CREATE TABLE IF NOT EXISTS` — safe to re-run.
+
+### "KV namespace not found"
+
+Verify the `id` in `wrangler.toml` under `[[kv_namespaces]]`. List namespaces:
+
+```bash
+npx wrangler kv:namespace list
+```
+
+### "Webhook not working"
+
+1. Check that the bot token is correct
+2. Check that the worker URL is accessible
+3. Verify the webhook secret matches between Telegram and your worker
+4. Check worker logs: `npx wrangler tail`
+
+### "Secrets not loading"
+
+Secrets are injected at deploy time. If you added secrets after deploying, re-deploy:
+
+```bash
+npx wrangler deploy
+```
+
+### "D1 foreign key errors"
+
+The seed file wraps inserts with `PRAGMA foreign_keys = OFF` / `ON`. If applying manually, add these pragmas.
+
+### Migration: "No kv_export.json found"
+
+Run with `--export-kv` to fetch from Cloudflare API:
+
+```bash
+node scripts/migrate_to_d1.js --export-kv --api-token YOUR_API_TOKEN
+```
+
+### Migration: "SQL syntax error in seed"
+
+The seed uses `INSERT OR IGNORE` which requires SQLite 3.24+. D1 supports this. Run with `--dry-run` to inspect the generated SQL.
+
+---
+
+## 15. Environment Variable Reference
+
+### Worker Runtime Secrets (set via `wrangler secret put`)
+
+| Secret | Required | Description |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot authentication |
+| `TELEGRAM_ROOT_ADMIN_IDS` | Yes | Root admin access (comma-separated) |
+| `TELEGRAM_WEBHOOK_SECRET` | Yes | Webhook HMAC verification |
+| `AMAZON_CLIENT_ID` | Yes | Amazon Creators API |
+| `AMAZON_CLIENT_SECRET` | Yes | Amazon Creators API |
+| `AMZN_ASSOCIATES_TAG` | Yes | Amazon Associates tag |
+| `AMAZON_PARTNER_TAG` | Yes | Amazon partner tag |
+| `TELEGRAM_PUBLIC_CHANNEL_ID` | No | Broadcast channel for deals |
+
+### For `finalize_cutover.js`
+
+| Variable | Required | Description |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token from @BotFather |
+| `TELEGRAM_ROOT_ADMIN_IDS` | Yes | Comma-separated admin chat IDs |
+| `AMAZON_CLIENT_ID` | Yes | Amazon Creators API client ID |
+| `AMAZON_CLIENT_SECRET` | Yes | Amazon Creators API client secret |
+| `AMAZON_PARTNER_TAG` | Yes | Amazon partner tag for affiliate links |
+| `AMZN_ASSOCIATES_TAG` | Yes | Amazon Associates tag |
+| `WORKER_URL` | Yes | Full worker URL (without https://) |
+| `CF_ACCOUNT_ID` | For migration | Cloudflare account ID |
+| `CF_API_TOKEN` | For migration | Cloudflare API token |
+| `CF_KV_NAMESPACE_ID` | For migration | KV namespace ID |
+
+### For `migrate_to_d1.js`
+
+| Variable | Required | Description |
+|---|---|---|
+| `CF_ACCOUNT_ID` | For --export-kv | Cloudflare account ID |
+| `CF_API_TOKEN` | For --export-kv | Cloudflare API token (KV Read) |
+| `CF_KV_NAMESPACE_ID` | For --export-kv | KV namespace to export |
+
+### For `seed_d1.js`
+
+| Variable | Required | Description |
+|---|---|---|
+| `CF_ACCOUNT_ID` | Yes | Cloudflare account ID |
+| `D1_DATABASE_ID` | Yes | D1 database ID |
+| `CF_API_TOKEN` | Yes | Cloudflare API token (D1 Read & Write) |

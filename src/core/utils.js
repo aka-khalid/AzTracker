@@ -1,6 +1,11 @@
 export function escapeHtml(unsafe) {
     if (!unsafe) return "";
-    return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 export function formatEGP(price) {
@@ -11,7 +16,7 @@ export function formatEGP(price) {
 export const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export function truncateName(name, maxLength = 60) {
-  if (!name) return "Unknown Product";
+  if (!name) return null;
   if (name.length <= maxLength) return name;
   return name.substring(0, maxLength) + "...";
 }

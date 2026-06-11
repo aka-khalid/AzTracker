@@ -7,14 +7,14 @@ import { t } from '../core/i18n.js';
  */
 function resolveProductName(item, lang) {
   if (lang === 'ar' && item.name_ar) return item.name_ar;
-  return item.name || item.asin || 'Unknown Product';
+  return item.name || item.asin || t('product.unknown_product', lang);
 }
 
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 
 function truncateName(name, maxLength = 60) {
-  if (!name) return "Unknown Product";
+  if (!name) return null;
   if (name.length <= maxLength) return name;
   return name.substring(0, maxLength) + "...";
 }
@@ -138,7 +138,7 @@ export async function executeScrapeEngine(env, offset = 0) {
       };
 
       const safe_name = escapeHtml(truncateName(resolveProductName(liveItem, lang)));
-      const safe_seller = escapeHtml(seller || "Unknown");
+      const safe_seller = escapeHtml(seller || t('crm.seller_unknown', lang));
       const sellerLower = (seller || "").toLowerCase();
 
       let historical_links = [];
@@ -183,7 +183,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           const down_text = diff > 0 ? ` (${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })})` : "";
           msg = `${atl_banner}${t('alert.target_met_head', lang)} ${condLabel}\n\n` +
                 `📦 <b>${safe_name}</b>\n` +
-                `┘ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
+                `${t('product.asin_row', lang, { asin: liveItem.asin })}\n\n` +
                 `${t('alert.target_met_current', lang, { price: formatEGP(price) })}\n` +
                 `${t('alert.target_met_target', lang, { price: formatEGP(targetPrice) })}${down_text}\n` +
                 `${t('alert.target_met_seller', lang, { seller: safe_seller })}` +
@@ -193,7 +193,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           if (lastPrice === null) {
               msg = `${atl_banner}${t('alert.restock_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
-                    `┘ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
+                    `${t('product.asin_row', lang, { asin: liveItem.asin })}\n\n` +
                     `${t('alert.restock_price', lang, { price: formatEGP(price) })}\n` +
                     `${t('alert.restock_seller', lang, { seller: safe_seller })}` +
                     `${final_smart_alts}\n\n` +
@@ -203,7 +203,7 @@ export async function executeScrapeEngine(env, offset = 0) {
               const pct = lastPrice ? (diff / lastPrice * 100) : 0;
               msg = `${atl_banner}${t('alert.price_drop_head', lang)} ${condLabel}\n\n` +
                     `📦 <b>${safe_name}</b>\n` +
-                    `┘ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
+                    `${t('product.asin_row', lang, { asin: liveItem.asin })}\n\n` +
                     `${t('alert.price_drop_new', lang, { price: formatEGP(price) })}\n` +
                     `${t('alert.price_drop_dropped', lang, { diff: formatEGP(diff) })} (${pct.toFixed(1)}% off)\n` +
                     `${t('alert.price_drop_was', lang, { price: formatEGP(lastPrice) })}\n` +
@@ -342,20 +342,20 @@ export async function executeScrapeEngine(env, offset = 0) {
         d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
         
         // Gap 9.4: Python-parity rich message — differentiate target-price vs general expiry
-        const safeProductName = escapeHtml(truncateName(resolveProductName(liveItem, subLang)));
         const subLang = sub.lang || 'en';
+        const safeProductName = escapeHtml(truncateName(resolveProductName(liveItem, subLang)));
         let expiryMsg;
         if (sub.target_price) {
           expiryMsg =
             t('alert.stale_target_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
-            `┘ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
+            `${t('product.asin_row', subLang, { asin: liveItem.asin })}\n\n` +
             t('alert.stale_target_with_price', subLang, { target: Number(sub.target_price).toLocaleString(), days: 90 });
         } else {
           expiryMsg =
             t('alert.tracking_expired_head', subLang) + `\n\n` +
             `📦 <b>${safeProductName}</b>\n` +
-            `┘ 🆔 ‏<code>${liveItem.asin}</code>‏\n\n` +
+            `${t('product.asin_row', subLang, { asin: liveItem.asin })}\n\n` +
             t('alert.tracking_expired_body', subLang, { asin: liveItem.asin, days: 90 });
         }
 
@@ -527,23 +527,23 @@ export async function executeScrapeEngine(env, offset = 0) {
 
   // Final Broadcast (public channel — organic Egyptian Arabic)
   if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
-      const safe_name = escapeHtml(truncateName(bestDeal.name_ar || bestDeal.name || bestDeal.asin));
+      const safe_name = escapeHtml(truncateName(bestDeal.name_ar || bestDeal.name || bestDeal.asin) || t('product.unknown_product', 'ar'));
       const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
       const qParams = new URLSearchParams();
       const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
 
-      const safe_broadcast_seller = escapeHtml(bestDeal.seller || "غير معروف");
+      const safe_broadcast_seller = escapeHtml(bestDeal.seller || t('fallback.unknown_seller', 'ar'));
 
-      const broadcast_msg = `🚨 لقطة 🚨\n\n` +
+      const broadcast_msg = `${t('broadcast.snapshot', 'ar')}\n\n` +
           `<b>${safe_name}</b>\n\n` +
           `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n` +
           `🏬 ${safe_broadcast_seller}\n\n` +
-          `👉 <a href="${broadcast_url}">الحق العرض من هنا ←</a>\n\n` +
+          `👉 <a href="${broadcast_url}">${t('broadcast.catch_deal', 'ar')}</a>\n\n` +
           `🤖 @AzTrackerr_bot\n\n` +
-          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">🔗 تابع عروض أكتر</a>\n\n` +
-          `#ad`;
+          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">${t('broadcast.follow_more', 'ar')}</a>\n\n` +
+          `${t('broadcast.ad_disclosure', 'ar')}`;
 
       queueBatch.push({
           type: 'telegram_alert',
@@ -552,7 +552,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           text: broadcast_msg,
           markup: {
               inline_keyboard: [
-                  [{ text: '🛒 اشتري من هنا ←', url: broadcast_url }]
+                  [{ text: t('broadcast.buy_here', 'ar'), url: broadcast_url }]
               ]
           }
       });
