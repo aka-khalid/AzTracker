@@ -137,6 +137,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
     const blockedUser = await env.DB.prepare("SELECT 1 FROM Users WHERE chat_id = ? AND role = 'blocked'").bind(chatId).first() !== null;
 
     const inQueue = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ?").bind(chatId).first() !== null;
+    console.error(`[JOIN_QUEUE] /start check: chatId=${chatId}, lang=${lang}, isRejected=${isRejected}, blockedUser=${blockedUser}, inQueue=${inQueue}`);
 
     if (inQueue) {
       await sendAppMessage(env, chatId, t('access.pending_head', lang) + '\n\n' + t('access.pending_body', lang));
@@ -156,6 +157,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
     }
 
     if (text === "/start") {
+      console.error(`[JOIN_QUEUE] New user /start: chatId=${chatId}, sending Request Access button`);
       await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang), {
         inline_keyboard: [[{ text: t('access.request_btn', lang), callback_data: `request_access_${chatId}` }]]
       });
@@ -375,6 +377,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
+  console.error(`[JOIN_QUEUE] handleCallback: data=${data}, chatId=${chatId}, isApproved=${isApproved}, isAdmin=${isAdmin}`);
   try {
     if (data.startsWith("request_access_")) {
       const targetId = data.replace("request_access_", "");
@@ -391,6 +394,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // ATOMIC INSERT FIRST — prevents race condition where concurrent clicks
       // send duplicate admin notifications. If row already exists, INSERT affects
       // 0 rows and we bail out.
+      console.error(`[JOIN_QUEUE] Attempting INSERT for chatId=${chatId}, first_name=${callback.from?.first_name}, username=${callback.from?.username}`);
       const insertResult = await env.DB.prepare(`
         INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type)
         VALUES (?, ?, ?, ?, '{}', 'access')
@@ -400,9 +404,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         callback.from ? callback.from.username : '',
         Date.now()
       ).run();
+      console.error(`[JOIN_QUEUE] INSERT result: changes=${insertResult.meta.changes}, last_row_id=${insertResult.meta.last_row_id}`);
 
       if (insertResult.meta.changes === 0) {
         // Already in queue — duplicate click, bail silently
+        console.error(`[JOIN_QUEUE] Duplicate request — chatId=${chatId} already in queue`);
         return;
       }
 
@@ -415,14 +421,16 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       };
 
       const allAdmins = [...new Set([...admins, ...rootAdmins])];
+      console.error(`[JOIN_QUEUE] Notifying ${allAdmins.length} admins: ${JSON.stringify(allAdmins)}`);
       let admin_messages = {};
       for (const adminId of allAdmins) {
         try {
           const sent = await sendTelegram(env, adminId, adminMsg, adminButtons);
+          console.error(`[JOIN_QUEUE] Admin ${adminId} notify: ok=${sent?.ok}, error=${sent?.description || 'none'}`);
           if (sent && sent.ok && sent.result) {
               admin_messages[adminId] = sent.result.message_id;
           }
-        } catch(e) { console.error("Failed to notify admin", adminId); }
+        } catch(e) { console.error("Failed to notify admin", adminId, e); }
       }
 
       // Persist admin message IDs for later "handled" updates
@@ -430,6 +438,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         JSON.stringify(admin_messages),
         chatId
       ).run();
+      console.error(`[JOIN_QUEUE] Done. Admin messages persisted: ${JSON.stringify(admin_messages)}`);
     }
     else if (data.startsWith("request_unban_")) {
       const targetId = data.replace("request_unban_", "");
