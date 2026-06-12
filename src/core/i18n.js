@@ -169,7 +169,7 @@ const dict = {
   },
   "welcome.step3": {
     en: "<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!",
-    masry: "<b>3️⃣ حط تارجت للسعر (لو حابب)</b>\nلو مستني السعر ينزل لرقم معين، دوس على <i>🎯 تحديد السعر</i> بعد ما تضيف المنتج. البوت مش هيصدعك غير لما السعر ينزل للرقم ده أو أقل!"
+    masry: "<b>3️⃣ حط تارجت للسعر (لو حابب)</b>\nلو مستني السعر ينزل لرقم معين، دوس على <i>🎯 قول السعر اللي عايزه</i> بعد ما تضيف المنتج. البوت مش هيصدعك غير لما السعر ينزل للرقم ده أو أقل!"
   },
   "welcome.step4": {
     en: "<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.",
