@@ -2,7 +2,7 @@
   "name": "aztracker",
   "version": "1.0.0",
   "description": "<div align=\"center\">",
-  "main": "worker.js",
+  "main": "src/index.js",
   "directories": {
     "doc": "docs"
   },

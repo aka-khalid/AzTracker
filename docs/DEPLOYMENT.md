@@ -36,15 +36,13 @@ AzTracker is structured using ES6 modules. The deployment process bundles the `s
 
 ```text
 src/
-├── index.js                 # Worker Entry Point (fetch, queue, scheduled)
-├── api/
-│   └── amazon.ts            # TypeScript interfaces & parsers
+├── index.js                 # Worker Entry Point
 ├── core/
-│   ├── amazon.js            # Creators API integration
-│   ├── db.js                # D1 queries & Auth
-│   ├── i18n.js              # Localization (en, ar)
-│   ├── telegram.js          # Telegram SDK
-│   └── utils.js             # General utilities
+│   ├── amazon.js            # Amazon Creators API Client
+│   ├── db.js                # D1 Database Operations
+│   ├── i18n.js              # Localization (en, masry)
+│   ├── telegram.js          # Telegram API SDK
+│   └── utils.js             # Shared Utilities
 ├── routes/
 │   ├── crm_dashboard.js     # Web App CRM Route
 │   └── telegram_webhook.js  # ChatOps Handler

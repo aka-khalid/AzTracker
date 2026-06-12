@@ -61,8 +61,8 @@ graph TD;
     Engine -- "Batched Creators API Call" --> CreatorsAPI[🛒 Amazon Creators API];
     CreatorsAPI -- "Live Prices + Arabic Names" --> Engine;
     Engine -- "Anti-Flap + Price Deltas" --> KV;
-    Engine -- "Updates Global State" --> D1;
-    Engine -- "Pushes Alerts + Broadcasts" --> TQ[📦 CF Queue: telegram-outbox];
+    Engine -- "Pushes Alerts to telegram-outbox" --> TQ[📦 CF Queue: telegram-outbox];
+    Engine -- "Commits State to D1 (On Success)" --> D1;
     TQ --> QW[⚙️ Queue Worker];
     QW -- "2PC: Update D1 on 200 OK" --> D1;
     QW -- "sendMessage" --> TG[📲 Telegram API];
@@ -79,11 +79,9 @@ The application is structured completely around an ES6 module design pattern und
 ```text
 src/
 ├── index.js                 # Worker Entry Point (fetch, queue, scheduled)
-├── api/
-│   └── amazon.ts            # TypeScript Amazon Creators API interfaces
 ├── core/
-│   ├── amazon.js            # Amazon Creators API Client & Parser
-│   ├── db.js                # D1 Database Operations & Audit Logging
+│   ├── amazon.js            # Amazon Creators API Client, Parser, and Fallback Web Scraper
+│   ├── db.js                # D1 Database Operations, Audit Logging, and Cache API
 │   ├── i18n.js              # Localization Engine (English & Egyptian Arabic)
 │   ├── telegram.js          # Telegram API SDK Wrapper
 │   └── utils.js             # Shared Utilities (Formatting, Time, Delay)
@@ -98,13 +96,13 @@ src/
 
 ### 🚏 Core Routes (`src/routes/`)
 All HTTP requests are routed by the `fetch` handler in `src/index.js` to their appropriate domain:
-- `POST /webhook/*`: Sent to `telegram_webhook.js` for ChatOps interaction.
-- `GET /crm`, `GET /audit`, `GET /api/*`, `POST /api/*`: Sent to `crm_dashboard.js` to serve the Admin UI and API.
+- `POST /webhook` and `POST /webhook/*`: Sent to `telegram_webhook.js` for ChatOps interaction.
+- All other routes (e.g., `GET /crm`, `GET /api/crm/*`, `POST /api/crm/*`): Fall through to `fetchAPI` in `crm_dashboard.js`, which serves both the Edge-Rendered Admin UI and JSON endpoints (handling its own 404s).
 
 ### 🔧 Core Modules (`src/core/`)
 State-agnostic libraries used universally:
-- `amazon.js`: Native JS execution for Amazon's Creators API token management and schema parsing.
-- `db.js`: Contains shared D1 operations like role verification and audit logging.
+- `amazon.js`: Native JS execution for Amazon's Creators API token management, schema parsing, and a fallback HTTP scraper (`scrapeArabicTitle`) for extracting native Arabic titles from `amazon.eg` pages.
+- `db.js`: Contains shared D1 operations like role verification and audit logging, backed by Cloudflare's in-memory Cache API (`caches.default`) to prevent D1 read exhaustion.
 - `telegram.js`: Native REST wrapper over Telegram's Bot API.
 - `i18n.js`: Comprehensive string resolution dictionaries supporting English (en) and Egyptian Arabic (masry), complete with emoji layout adjustments.
 - `utils.js`: Helpers for EGP currency formatting, HTML escaping, and time manipulation.
@@ -134,6 +132,9 @@ Detailed documentation for various aspects of the system can be found in the `do
 | Variable | Description |
 |----------|-------------|
 | `DEFAULT_USER_PRODUCT_LIMIT` | Global limit on concurrent tracks per user (default: `"3"`). |
+| `DAILY_QUEUE_LIMIT` | Global limit for queued executions (default: `"10000"`). |
+| `AMZN_EG_MERCHANT_ID` | Amazon.eg Retail merchant ID (default: `'A1ZVRGNO5AYLOV'`). |
+| `AMZN_RESALE_MERCHANT_ID` | Amazon Resale merchant ID (default: `'A2N2MP47XAP1MK'`). |
 | `GITHUB_OWNER` | GitHub owner for the project. |
 | `GITHUB_REPO` | GitHub repository name. |
 
@@ -156,7 +157,7 @@ Detailed documentation for various aspects of the system can be found in the `do
 |---------|------|---------|
 | `DB` | D1 Database | Relational models. |
 | `AZTRACKER_DB` | KV Namespace | Time-series metrics and tokens. |
-| `MESSAGE_QUEUE` | Queue Producer | Pushes alerts to `telegram-outbox`. |
+| `MESSAGE_QUEUE` | Queue Producer | Pushes alerts to `telegram-outbox` (internally logged as `message-queue`). |
 | `SCRAPER_QUEUE` | Queue Producer | Pushes offsets to `scraper-queue`. |
 
 ---

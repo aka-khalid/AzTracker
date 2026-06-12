@@ -45,9 +45,6 @@ d1_seed.sql
 d1_seed_*.sql
 seed_*.sql
 
-# GCP backup bridge (V1 artifact, not used in V2)
-gcp_backup_bridge/
-
 # Audit reports
 docs/i18n_masry_audit.md
 

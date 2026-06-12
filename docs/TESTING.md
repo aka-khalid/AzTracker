@@ -35,6 +35,9 @@ Alerts are fully asynchronous. `telegram-outbox` isolates the scraping logic fro
 | **TC-203** | 403 Blocked Bot Pause | Mock Telegram API returning `403 Forbidden` | `queue_worker.js` auto-pauses user via `UPDATE User_Subscriptions SET is_paused = 1` and calls `msg.ack()`. |
 | **TC-204** | Atomic 2PC Commitment | Mock a 200 OK delivery for `telegram_alert_new` | Queue worker executes `UPDATE User_Subscriptions SET alert_sent_new = 1` ONLY after a successful HTTP 200. This Two-Phase Commit ensures zero duplicate alerts. |
 
+> [!NOTE]
+> **DLQ & Retry Limits:** The `queue_worker.js` contains a manual fallback to write to a Dead Letter Queue (DLQ) in D1 if `msg.attempts >= 5`. However, Cloudflare Queues natively enforce `max_retries` before discarding a message. By default, `wrangler.toml` caps `max_retries = 3` (4 total attempts), meaning the DLQ logic is natively unreachable. To test the DLQ, you must temporarily set `max_retries = 5` in `wrangler.toml`.
+
 ---
 
 ## 3. Localization & CRM Integration (Phase 6.11)
@@ -43,8 +46,8 @@ Tests for the bilingual localization engine and ES6 route structures.
 
 | Test ID | Feature Target | Diagnostic Vector / Execution Method | Expected Success Criterion |
 | :--- | :--- | :--- | :--- |
-| **TC-301** | Bilingual Alert Payload | Trigger a price drop for a user with `lang = 'ar'` | Alert payload pushed to `telegram-outbox` is completely rendered in Arabic, including currency symbols (ج.م) and button text. |
-| **TC-302** | Dashboard Routing | Send `GET /crm?lang=ar` to worker | Worker routes request to `crm_dashboard.js` and renders full HTML with `dir="rtl"` and `lang="ar"`. |
+| **TC-301** | Bilingual Alert Payload | Trigger a price drop for a user with `lang = 'masry'` | Alert payload pushed to `telegram-outbox` is completely rendered in Arabic, including currency symbols (ج.م) and button text. |
+| **TC-302** | Dashboard Routing | Send `GET /crm?lang=masry` to worker | Worker routes request to `crm_dashboard.js` and renders full HTML with `dir="rtl"` and `lang="masry"`. |
 | **TC-303** | CRM Action Endpoint | Send `POST /api/crm/action` with action `force_scrape` | Validates HMAC signature, sends `{ offset: 0 }` to `SCRAPER_QUEUE`, starts recursive async chain, and returns 202 queued. |
 
 ---
