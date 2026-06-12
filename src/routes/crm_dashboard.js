@@ -1037,7 +1037,7 @@ export function renderCrmHTML(lang = 'en') {
         <div class="flex gap-4 border-b border-gray-800 mb-6" id="main-tabs">
             <button onclick="switchMainTab('system-view')" id="main-tab-system-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">🔧 ${t('crm.tab_system', lang)}</button>
             <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">👥 ${t('crm.users_title', lang)}</button>
-            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">🛡️ ${t('crm.security_audit', lang)}</button>
+            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">${t('crm.security_audit', lang)}</button>
         </div>
 
         <!-- ═══ SYSTEM TAB ═══ -->
@@ -1047,14 +1047,14 @@ export function renderCrmHTML(lang = 'en') {
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_overview', lang)}</h2>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="glass rounded-xl p-4 flex flex-col justify-center">
-                        <div class="text-gray-400 text-sm mb-1">${t('crm.users_title', lang)}</div>
-                        <div class="text-2xl font-bold" id="stat-users">--</div>
-                    </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.products_title', lang)}</div>
                         <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition" onclick="openTopChartsDrawer()" role="button" tabindex="0">
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20" onclick="openTopChartsDrawer()" role="button" tabindex="0">
+                        <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
+                        <div class="text-sm font-bold text-brand-400 mt-1">View ➡️</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
                         <div class="text-2xl font-bold text-amber-400" id="stat-paused">--</div>
                     </div>
@@ -1123,6 +1123,10 @@ export function renderCrmHTML(lang = 'en') {
 
         <!-- ═══ USERS TAB ═══ -->
         <div id="users-view-container" class="hidden space-y-6">
+            <div class="glass rounded-xl p-4 flex items-center justify-between border-b-2 border-brand-500">
+                <div class="text-gray-400 text-sm font-medium">${t('crm.users_title', lang)}</div>
+                <div class="text-2xl font-bold text-white" id="stat-users">--</div>
+            </div>
             <!-- DIRECTORY NAVIGATION -->
             <section>
                 <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
@@ -1376,8 +1380,8 @@ export function renderCrmHTML(lang = 'en') {
             const maxRuns = Math.floor(8640 / batches);
             const intervalMs = Math.floor(86400000 / maxRuns);
 
-            // Format interval for display
-            const intervalMin = Math.round(intervalMs / 60000);
+            // Format interval for display, clamping to hardware cron limit (5)
+            const intervalMin = Math.max(5, Math.round(intervalMs / 60000));
             document.getElementById('engine-interval').innerText = intervalMin + ' min';
 
             // Daily operations = maxRuns * batches * 10 (approximate products per day)
@@ -1789,7 +1793,7 @@ export function renderCrmHTML(lang = 'en') {
             hideLoader();
 
             if (res && res.success) {
-                showToast(${js('crm.graveyard_purged_ok', { count: 'REPLACE_COUNT' })}).replace('REPLACE_COUNT', res.purged), 'success');
+                showToast(${js('crm.graveyard_purged_ok', { count: 'REPLACE_COUNT' })}.replace('REPLACE_COUNT', res.purged), 'success');
                 closeGraveyardDrawer();
                 refreshData();
             } else {
