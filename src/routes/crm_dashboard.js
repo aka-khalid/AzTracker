@@ -1692,7 +1692,9 @@ export function renderCrmHTML(lang = 'en') {
 
             const html = chunk.map((item) => {
                 const name = (item.name || item.asin);
-                const handle = escapeHtml(item.username ? '@' + item.username : item.first_name);
+                const userName = escapeHtml(item.first_name || 'User');
+                const userDetails = item.username ? \`(@\${item.username}/\${item.chat_id})\` : \`(\${item.chat_id})\`;
+                const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
                 const price = item.new_price ? item.new_price + ' EGP' : (item.used_price ? 'Used Only' : 'Out of Stock');
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
@@ -1705,7 +1707,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
                         <code class="text-gray-400">\${item.asin}</code>
-                        <span class="text-brand-400">\${handle} (\${item.chat_id})</span>
+                        <span class="text-brand-400">\${displayUser}</span>
                     </div>
                     <div class="flex justify-between items-end mb-3">
                         <div class="text-sm font-semibold">\${price}</div>
@@ -1759,7 +1761,9 @@ export function renderCrmHTML(lang = 'en') {
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
                 const name = (item.name || item.asin);
-                const handle = escapeHtml(item.username ? '@' + item.username : item.first_name);
+                const userName = escapeHtml(item.first_name || 'User');
+                const userDetails = item.username ? \`(@\${item.username}/\${item.chat_id})\` : \`(\${item.chat_id})\`;
+                const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
                 const pausedAgo = item.paused_at ? Math.round((Date.now() - item.paused_at)/86400000) + 'd ago' : 'Unknown';
                 
                 return \`
@@ -1770,7 +1774,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
                         <code class="text-gray-400">\${item.asin}</code>
-                        <span class="text-brand-400">\${handle} (\${item.chat_id})</span>
+                        <span class="text-brand-400">\${displayUser}</span>
                     </div>
                     <div class="flex gap-2">
                         <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
