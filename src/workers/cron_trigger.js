@@ -40,8 +40,8 @@ export async function scheduled(event, env, ctx) {
         if ((now - lastRunMs) >= intervalMs) {
           console.log(`[GOVERNOR] Dispatching queue offset 0`);
           // Update lock and trigger the recursive chain reaction
-          await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('last_run_time', ?, ?)").bind(now.toString(), now + 86400000).run();
           await env.SCRAPER_QUEUE.send({ offset: 0 });
+          await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('last_run_time', ?, ?)").bind(now.toString(), now + 86400000).run();
         } else {
           console.log(`[GOVERNOR] Skipped: Interval not met.`);
         }
