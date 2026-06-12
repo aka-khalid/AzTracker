@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS Join_Queue (
     username TEXT,
     requested_at INTEGER NOT NULL,
     admin_messages TEXT,
-    request_type TEXT NOT NULL DEFAULT 'access' -- 'access' for new join requests, 'unban' for unban appeals
+    request_type TEXT NOT NULL DEFAULT 'access', -- 'access' for new join requests, 'unban' for unban appeals
+    lang TEXT -- Inherited from user's Telegram settings during /start
 );
 
 -- ============================================================================
@@ -82,6 +83,7 @@ CREATE TABLE IF NOT EXISTS User_Subscriptions (
     alert_sent_new INTEGER DEFAULT 0,
     alert_sent_used INTEGER DEFAULT 0,
     added_at INTEGER NOT NULL,
+    paused_at INTEGER,
 
     PRIMARY KEY (chat_id, asin),
     FOREIGN KEY (chat_id) REFERENCES Users(chat_id) ON DELETE CASCADE,

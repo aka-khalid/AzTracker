@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="AzTracker Logo" width="200">
+<img src="docs/assets/logo.png" alt="AzTracker Logo" width="200">
 
 ### The Serverless Amazon.eg Price Engine
 
@@ -16,8 +16,19 @@
 
 📢 **Live Demo (Public Deals Channel):** [@AzTrackerr](https://t.me/AzTrackerr)
 
-<img src="assets/StatsGraphDemo.jpg" alt="AzTracker Analytics Graph" width="400">
+
 </div>
+
+## 🖼️ Web App CRM Gallery
+
+AzTracker features a securely embedded Telegram WebApp CRM that natively supports both LTR (English) and RTL (Masry/Arabic) modes out-of-the-box.
+
+<a href="docs/GALLERY.md">
+  <img src="docs/assets/01_dashboard.png" width="800" alt="Dashboard Hero">
+</a>
+
+👉 **[View Full Screenshot Gallery](docs/GALLERY.md)**  
+*(Contains side-by-side LTR/RTL comparisons of all 13 interactive views, drawers, and charts!)*
 
 ---
 

@@ -55,3 +55,11 @@ docs/i18n_masry_audit.md
 *.bak
 *.tmp
 *.orig
+
+# Temp scripts & Wrangler backups
+wrangler.*.toml
+!wrangler.toml
+*.mjs
+*.sql
+!schema.sql
+!scripts/schema_seed.sql

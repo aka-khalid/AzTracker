@@ -10,7 +10,7 @@ export async function getUserRoles(chatId, env, ctx) {
     return await cached.json();
   }
 
-  const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
+  const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || "";
   const rootAdmins = rootAdminsRaw.split(",").filter(Boolean);
   let isRootAdmin = rootAdmins.includes(chatIdStr);
 

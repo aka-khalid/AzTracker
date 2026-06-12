@@ -8,6 +8,11 @@ export async function sendTelegramMessage(env, chatId, text, replyMarkup = null)
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Telegram API Error [sendMessage]: ${res.status} - ${errText}`);
+      return { ok: false, error_code: res.status, description: errText };
+    }
     return await res.json();
   } catch (e) {
     console.error("sendTelegramMessage fetch failed:", e);
@@ -65,6 +70,11 @@ export async function answerCallbackQuery(env, callbackQueryId, options = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Telegram API Error [answerCallbackQuery]: ${res.status} - ${errText}`);
+      return { ok: false, error_code: res.status, description: errText };
+    }
     return await res.json();
   } catch (e) {
     console.error("answerCallbackQuery failed", e);
