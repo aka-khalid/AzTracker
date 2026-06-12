@@ -1199,7 +1199,7 @@ export function renderCrmHTML(lang = 'en') {
             <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
             <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
                 <div>
-                    <h3 class="font-bold text-lg">🔥 ${t('crm.top_charts_title', lang)}</h3>
+                    <h3 class="font-bold text-lg">${t('crm.top_charts_title', lang)}</h3>
                     <p class="text-xs text-gray-400" id="drawer-top-charts-subtitle">${t('crm.click_to_expand', lang)}</p>
                 </div>
                 <button onclick="closeTopChartsDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
@@ -1219,7 +1219,7 @@ export function renderCrmHTML(lang = 'en') {
             <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
             <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
                 <div>
-                    <h3 class="font-bold text-lg">💀 ${t('crm.graveyard_title', lang)}</h3>
+                    <h3 class="font-bold text-lg">${t('crm.graveyard_title', lang)}</h3>
                     <p class="text-xs text-gray-400" id="drawer-graveyard-count">--</p>
                 </div>
                 <button onclick="closeGraveyardDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
@@ -1232,7 +1232,7 @@ export function renderCrmHTML(lang = 'en') {
                     <span class="text-xs text-gray-400" id="graveyard-select-all-label">Select All</span>
                 </label>
                 <button onclick="purgeSelectedGhosts()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
-                    🗑️ ${t('crm.graveyard_purge_btn', lang)}
+                    ${t('crm.graveyard_purge_btn', lang)}
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
@@ -1703,7 +1703,7 @@ export function renderCrmHTML(lang = 'en') {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
                 const price = item.amazon_price || item.new_price;
                 const priceStr = price ? 'EGP ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3">';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate">' + name + '</div>';
