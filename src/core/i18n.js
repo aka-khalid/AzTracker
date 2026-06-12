@@ -1081,6 +1081,10 @@ const dict = {
     en: "🔒 <b>Security Audit Log</b>",
     masry: "🔒 <b>سجل الأمان</b>"
   },
+  "crm.tab_system": {
+    en: "System",
+    masry: "النظام"
+  },
   "crm.rolling_retention": {
     en: "📅 7-Day Rolling Retention",
     masry: "📅 آخر 7 أيام"
@@ -1174,6 +1178,98 @@ const dict = {
   "crm.chart_loading": {
     en: "Loading chart data...",
     masry: "بنحمل بيانات الرسم البياني..."
+  },
+
+  // ── System Overview: New Stats ──────────────────────────────────────────────
+  "crm.paused_products": {
+    en: "Paused Products",
+    masry: "منتجات موقوفة"
+  },
+  "crm.ghost_products": {
+    en: "Ghost Products",
+    masry: "منتجات أشباح"
+  },
+  "crm.click_to_expand": {
+    en: "Tap to view details",
+    masry: "اضغط عشان تشوف التفاصيل"
+  },
+
+  // ── Engine Health Widget ─────────────────────────────────────────────────────
+  "crm.engine_health": {
+    en: "Engine Health",
+    masry: "حالة المحرك"
+  },
+  "crm.engine_interval": {
+    en: "Current Interval",
+    masry: "الفترة الحالية"
+  },
+  "crm.engine_daily_ops": {
+    en: "Daily Queue Load",
+    masry: "حمل اليوم على القائمة"
+  },
+  "crm.engine_batches": {
+    en: "Batches/Run",
+    masry: "دفعات/تشغيل"
+  },
+  "crm.engine_status_ok": {
+    en: "Healthy",
+    masry: "سليم"
+  },
+  "crm.engine_status_warn": {
+    en: "Approaching Limit",
+    masry: "قربت من الحد"
+  },
+  "crm.engine_status_critical": {
+    en: "Critical",
+    masry: "حرج"
+  },
+
+  // ── Top Charts Drawer ────────────────────────────────────────────────────────
+  "crm.top_charts_title": {
+    en: "🔥 Most Popular Products",
+    masry: "🔥 أكثر المنتجات متابعة"
+  },
+  "crm.top_charts_trackers": {
+    en: "trackers",
+    masry: "متابع"
+  },
+  "crm.top_charts_no_data": {
+    en: "No subscription data yet.",
+    masry: "مفيش بيانات متابعين لسه."
+  },
+
+  // ── Graveyard Drawer ─────────────────────────────────────────────────────────
+  "crm.graveyard_title": {
+    en: "💀 Ghost & Delisted Products",
+    masry: "💀 منتجات أشباح ومش متوفرة"
+  },
+  "crm.graveyard_purge_btn": {
+    en: "🗑️ Purge Selected",
+    masry: "🗑️ امسح المختار"
+  },
+  "crm.graveyard_purge_confirm": {
+    en: "Are you sure? This will permanently delete the selected products from the database. This cannot be undone.",
+    masry: "متأكد؟ المنتجات المختارة هتتمسح من قاعدة البيانات نهائياً. مش هتقدر ترجعها."
+  },
+  "crm.graveyard_purged_ok": {
+    en: "Successfully purged {count} products.",
+    masry: "تم مسح {count} منتج بنجاح."
+  },
+  "crm.graveyard_empty": {
+    en: "No ghost products found. Database is clean!",
+    masry: "مفيش منتجات أشباح. قاعدة البيانات نظيفة!"
+  },
+  "crm.graveyard_subs": {
+    en: "active subscribers",
+    masry: "متابع نشط"
+  },
+  "crm.graveyard_delisted": {
+    en: "Delisted",
+    masry: "مش متوفر"
+  },
+  "crm.graveyard_all_missing": {
+    en: "Missing in all conditions",
+    masry: "مش موجود في أي حالة"
   },
 
   // ── Fallback Strings ─────────────────────────────────────────────────────
