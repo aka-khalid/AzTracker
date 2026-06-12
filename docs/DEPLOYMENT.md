@@ -104,10 +104,4 @@ curl -F "url=https://aztracker-v2-prod.<your-cloudflare-subdomain>.workers.dev/w
 ```
 *(Replace placeholders with your actual production domain and secret.)*
 
----
 
-## 4. Disaster Recovery (GCP Bridge)
-
-Because Workers have memory limitations that prevent large SQLite exports, backups are handled by a GCP Cloud Function (2nd Gen).
-
-The `gcp_backup_bridge/` service invokes the Cloudflare D1 Export API, polls until completion, and streams the `.sqlite` backup directly to Google Drive via service account OIDC authentication. This runs on an automated Cloud Scheduler schedule.
