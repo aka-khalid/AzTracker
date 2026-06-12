@@ -70,8 +70,8 @@ const dict = {
     ar: "🔔 <b>في حد جديد عايز يدخل</b>"
   },
   "access.admin_new_request_body": {
-    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> ‏<code>{id}</code>‏\n\n<i>This user is requesting authorization to access the server.</i>",
-    ar: "👤 **الاسم:** {name}\n🆔 **الرقم:** {code}\n\n<i>الشخص ده عايز يدخل.</i>"
+    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user is requesting authorization to access the server.</i>",
+    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>الرقم:</b> <code>{id}</code>\n\n<i>الشخص ده عايز يدخل.</i>"
   },
   "access.admin_new_request_btn_approve": {
     en: "✅ Approve",
@@ -105,17 +105,37 @@ const dict = {
     en: "⏳ <b>Unban Request Pending</b>\n\nYou already have a pending unban request. An administrator will review it shortly.\n\nPlease be patient — sending multiple requests will not speed up the process.",
     ar: "⏳ <b>طلب إلغاء الحظر قيد الانتظار</b>\n\nعندك طلب إلغاء حظر منتظر المراجعة. حد من الادمنز هيشوفه قريب.\n\nلو سمحت استنى — إرسال طلبات مش هيسرع العملية."
   },
+  "access.unban_rejected": {
+    en: "🚫 <b>Access Denied</b>\n\nYour unban request was rejected. You cannot request again at this time.",
+    ar: "🚫 <b>الوصول مرفوض</b>\n\nطلب إلغاء الحظر اترفض. مش هتقدر تطلب تاني دلوقتي."
+  },
   "admin.unban_request_head": {
-    en: "🔔 <b>Unban Request</b>",
-    ar: "🔔 <b>في حد عايز يلغي الحظر</b>"
+    en: "🔒 <b>Unban Request</b>",
+    ar: "🔒 <b>في حد عايز يلغي الحظر</b>"
   },
   "admin.unban_request_body": {
-    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> ‏<code>{id}</code>‏\n\n<i>This user was previously blocked (bot banned/unreachable) and is requesting to be unbanned.</i>",
-    ar: "👤 **الاسم:** {name}\n🆔 **الرقم:** {code}\n\n<i>الشخص ده كان مقفول (حظر البوت أو مش قادر يوصلك) وعايز يلغي الحظر.</i>"
+    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user was previously blocked (bot banned/unreachable) and is requesting to be unbanned.</i>",
+    ar: "👤 <b>الاسم:</b> {name}\n🆔 <b>الرقم:</b> <code>{id}</code>\n\n<i>الشخص ده كان محظور (حظر البوت أو مكنش قادر يوصل له) وعايز يلغي الحظر.</i>"
   },
   "admin.unban_request_btn_unban": {
     en: "✅ Unban",
     ar: "✅ الغي الحظر"
+  },
+  "access.unban_notify": {
+    en: "✅ <b>Your account has been unbanned.</b>\n\nSend /start to continue.",
+    ar: "✅ <b>الحظر اتشال.</b>\n\nابعت /start عشان تكمل."
+  },
+  "admin.unban_request_btn_keep": {
+    en: "🚫 Keep Banned",
+    ar: "🚫 سيبه محظور"
+  },
+  "admin.unban_request_dashboard_hint": {
+    en: "📋 Handle this request in the admin dashboard.",
+    ar: "📋 تعامل مع الطلب ده من لوحة تحكم الأدمن."
+  },
+  "crm.btn_deny": {
+    en: "Deny",
+    ar: "ارفض"
   },
   "access.admin_rejected": {
     en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been denied access by {admin}.",
@@ -847,7 +867,7 @@ const dict = {
   },
   "crm.no_users_found": {
     en: "No users found",
-    ar: "مفيش مستخدمين اتلقوا"
+    ar: "مفيش حد هنا"
   },
   "crm.no_saved_products": {
     en: "No saved products",
