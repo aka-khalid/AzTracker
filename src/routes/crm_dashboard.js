@@ -1,5 +1,5 @@
 import { getUserRoles, logAudit } from '../core/db.js';
-import { t } from '../core/i18n.js';
+import { t, getWelcomeMessage } from '../core/i18n.js';
 import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
 import { executeScrapeEngine } from '../workers/scraper_engine.js';
 import { sendTelegramMessage as sendTelegram, editTelegramMessage } from '../core/telegram.js';
@@ -656,7 +656,7 @@ export async function fetchAPI(request, env, ctx) {
           queueRow?.lang || 'en'
         ).run();
 
-        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_approved', tl)); })());
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, getWelcomeMessage(tl, defaultLimit)); })());
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
         // Invalidate other admins' inline messages so buttons disappear automatically

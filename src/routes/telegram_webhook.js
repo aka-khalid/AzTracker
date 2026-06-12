@@ -787,9 +787,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
-      // Default to 'en' — user's Telegram language_code is not available in callback queries.
-      // User should send /start (which sets lang from their OS) or use the toggle button.
-      const targetLang = 'en';
+      const targetUserRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
+      const targetLang = targetUserRow?.lang || 'en';
       await env.DB.prepare("INSERT INTO Users (chat_id, role, approved_by, item_limit, created_at, lang) VALUES (?, 'approved', ?, ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by, lang = COALESCE(lang, excluded.lang)").bind(targetId, chatId, env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), targetLang).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       await editTelegramMessage(env, chatId, messageId, t('admin.approved_manual_result', lang, { id: targetId }));
