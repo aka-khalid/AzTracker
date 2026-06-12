@@ -332,7 +332,7 @@ export async function fetchAPI(request, env, ctx) {
       let response = await cache.match(cacheUrl);
       
       if (!response) {
-        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes] = await Promise.all([
+        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes, hardwareCronRes] = await Promise.all([
           env.DB.prepare(`
             SELECT u.*, COUNT(s.asin) as active_items
             FROM Users u
@@ -343,7 +343,8 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as pausedCount FROM User_Subscriptions WHERE is_paused = 1").first(),
-          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_missing_since > 0 AND used_missing_since > 0 AND amazon_missing_since > 0)").first()
+          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_missing_since > 0 AND used_missing_since > 0 AND amazon_missing_since > 0)").first(),
+          env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value')
         ]);
         
         const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
@@ -394,7 +395,8 @@ export async function fetchAPI(request, env, ctx) {
             activeWatchPool: totalProductsRes ? totalProductsRes.activeWatchPool : 0,
             lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null,
             pausedProducts: pausedRes ? pausedRes.pausedCount : 0,
-            ghostProducts: ghostRes ? ghostRes.ghostCount : 0
+            ghostProducts: ghostRes ? ghostRes.ghostCount : 0,
+            hardwareIntervalMs: hardwareCronRes || "300000"
           },
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
@@ -1380,13 +1382,17 @@ export function renderCrmHTML(lang = 'en') {
             const maxRuns = Math.floor(8640 / batches);
             const intervalMs = Math.floor(86400000 / maxRuns);
 
-            // Format interval for display, clamping to hardware cron limit (5)
-            const intervalMin = Math.max(5, Math.round(intervalMs / 60000));
+            // Fetch dynamic hardware cron interval from systemStats (default 5 mins)
+            const hardwareIntervalMs = parseInt(appData.systemStats.hardwareIntervalMs || '300000', 10);
+            const hardwareIntervalMin = Math.round(hardwareIntervalMs / 60000);
+
+            // Format interval for display, clamping to actual hardware cron limit
+            const intervalMin = Math.max(hardwareIntervalMin, Math.round(intervalMs / 60000));
             document.getElementById('engine-interval').innerText = intervalMin + ' ' + ${js('crm.minutes_short')};
 
-            // Actual engine runs per day are strictly bounded by the 5-minute hardware cron trigger (300,000 ms)
-            // 86,400,000 ms per day / 300,000 ms = 288 max hardware wake-ups per day.
-            const actualRunsPerDay = Math.floor(86400000 / Math.max(300000, intervalMs));
+            // Actual engine runs per day are strictly bounded by the dynamic hardware cron trigger
+            // 86,400,000 ms per day / hardwareIntervalMs = max hardware wake-ups per day.
+            const actualRunsPerDay = Math.floor(86400000 / Math.max(hardwareIntervalMs, intervalMs));
 
             // Daily Queue Operations = actual runs * batches * 3 (1 message = write + read + delete)
             const dailyOps = actualRunsPerDay * batches * 3;

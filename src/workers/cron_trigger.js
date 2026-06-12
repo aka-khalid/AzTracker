@@ -1,11 +1,22 @@
 export async function scheduled(event, env, ctx) {
     console.log(`[CRON START] Received event for schedule: ${event.cron}`);
-    if (event.cron === "*/5 * * * *") { //daily rate-limit emergency survival
-    //if (event.cron === "* * * * *") {
+    
+    // Dynamically parse the hardware cron interval from the event
+    let hardwareMinutes = 5; // fallback
+    if (event.cron) {
+        const minPart = event.cron.split(' ')[0];
+        if (minPart.startsWith('*/')) {
+            hardwareMinutes = parseInt(minPart.substring(2), 10);
+        } else if (minPart === '*') {
+            hardwareMinutes = 1;
+        }
+    }
+    const hardwareCronMs = hardwareMinutes * 60000;
     try {
         const now = Date.now();
-        // 1. D1 Garbage Collection for Bot_States
+        // 1. D1 Garbage Collection & Save Hardware Cron
         await env.DB.prepare("DELETE FROM Bot_States WHERE expires_at < ?").bind(now).run();
+        await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('hardware_cron_interval', ?, ?)").bind(hardwareCronMs.toString(), now + 86400000 * 30).run();
 
         // 2. Dynamic Governor Logic
         const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');
@@ -37,5 +48,4 @@ export async function scheduled(event, env, ctx) {
       } catch (e) {
         console.error("Scheduled execution failed:", e);
       }
-    }
 }
