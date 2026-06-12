@@ -181,7 +181,7 @@ const dict = {
   },
   "welcome.protip": {
     en: "💡 <i>Pro-Tip: You can always click \"📦 My Products\" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>",
-    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على "📦 منتجاتي" عشان تشوف رسم بياني لأسعار حاجتك، أو توقف متابعة حاجة اشتريتها خلاص عشان تفضي مكان.</i>"
+    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على '📦 منتجاتي' عشان تشوف رسم بياني لأسعار حاجتك، أو توقف متابعة حاجة اشتريتها خلاص عشان تفضي مكان.</i>"
   },
 
   // ── Language Command ──────────────────────────────────────────────────────
@@ -1219,7 +1219,7 @@ const dict = {
     en: "min",
     masry: "دقيقة"
   },
-\n  // ── Engine Health Widget ─────────────────────────────────────────────────────
+  // ── Engine Health Widget ─────────────────────────────────────────────────────
   "crm.engine_health": {
     en: "Engine Health",
     masry: "حالة المحرك"
