@@ -1639,11 +1639,14 @@ export function renderCrmHTML(lang = 'en') {
                         <span class="text-brand-400">\${handle} (\${item.chat_id})</span>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="handleAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition">
+                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' })" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
                             \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
                         </button>
-                        <button onclick="handleAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition">
+                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' })" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
                             \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
+                        </button>
+                        <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
+                            \${isMasry ? '📊 الرسم' : '📊 Chart'}
                         </button>
                     </div>
                 </div>\`;
