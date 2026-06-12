@@ -1318,7 +1318,7 @@ export function renderCrmHTML(lang = 'en') {
                 filtered = filtered.filter(u => u.role === 'approved');
             }
             
-            filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)));
+            filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)) || (u.username && u.username.toLowerCase().includes(query)));
             
             if (filtered.length === 0) {
                 list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_users_found')} + '</div>';
