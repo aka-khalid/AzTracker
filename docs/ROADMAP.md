@@ -52,90 +52,20 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ---
 
-## Phase 7.0: V1→V2 Production Cutover
+## 🔮 Phase 7: Continuous Improvement & R&D
 
-<details>
-<summary><b>View Comprehensive Cutover Checklist</b></summary>
-
-### 🧪 Phase 1: Development Testing (AzTracker Test)
-
-In this phase, we will safely test the new architecture using your `AzTracker Test` bot without touching your live V1 production bot.
-
-- [ ] **Step 1: Start the Automation Script**
-  Open your terminal in the `AzTracker` project folder and run:
-  ```bash
-  node finalize_cutover.js
-  ```
-- [ ] **Step 2: Select Development Environment**
-  When prompted by the script, press **`1`** for Development.
-- [ ] **Step 3: Provide the "AzTracker Test" Credentials**
-  - **Telegram Token:** Paste the HTTP API Token for your **AzTracker Test** bot.
-  - **Admin IDs:** Paste your numeric `TELEGRAM_ROOT_ADMIN_IDS`.
-  - **Worker URL:** Paste `aztracker-v2.khalid-ibrahim-dev.workers.dev`.
-  - **Amazon Keys:** Paste your `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`, and `AMZN_ASSOCIATES_TAG`.
-- [ ] **Step 4: Verify the Development Migration**
-  The script will automatically register your Test bot with the new V2 worker, export a snapshot of your live data from the `AZTRACKER_DB` KV store, and safely seed it into your `aztracker-test-db`.
-- [ ] **Step 5: Smoke Test the Bot**
-  Open Telegram, talk to your **AzTracker Test** bot, run `/start`, verify the CRM loads, and ensure product alerts trigger correctly. Your V1 `AzTracker` bot remains completely untouched and online during this.
-
-### 🚀 Phase 2: Final Production Cutover (AzTracker)
-
-- [ ] **Step 1: Start the Automation Script**
-  Run the script one final time:
-  ```bash
-  node finalize_cutover.js
-  ```
-- [ ] **Step 2: Select Production Environment**
-  When prompted by the script, press **`2`** for Production.
-- [ ] **Step 3: Provide the Live "AzTracker" Credentials**
-  - **Telegram Token:** Paste the HTTP API Token for your live, V1 **AzTracker** bot.
-  - **Admin IDs:** Paste your numeric `TELEGRAM_ROOT_ADMIN_IDS` again.
-  - **Worker URL:** Paste `aztracker-v2-prod.khalid-ibrahim-dev.workers.dev`.
-  - **Amazon Keys:** Paste your `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`, and `AMZN_ASSOCIATES_TAG` again.
-- [ ] **Step 4: Execute the Final Migration**
-  The script will securely inject the secrets into `aztracker-v2-prod`, automatically swap the Webhook to route your live bot traffic to the new V2 infrastructure, pull the absolute latest state from the `AZTRACKER_DB` KV store, and permanently seed it into the `aztracker-prod-db`.
-
-### 🆘 Phase 2.5: The V1 Fail-Safe (Abort Switch)
-
-Because V2 uses the new `D1` database and completely ignores the old `KV` store, **your legacy V1 data is never deleted or corrupted.** This means if anything goes wrong during the Phase 2 production cutover, you can instantly abort and rollback to V1 with zero data loss.
-
-To abort the cutover and instantly revert your live bot back to the old V1 worker (`aztracker-bot`):
-1. Locate your old `TELEGRAM_WEBHOOK_SECRET` from your V1 environment.
-2. Paste this exact URL into your browser, substituting your tokens:
-   ```
-   https://api.telegram.org/bot<YOUR_LIVE_BOT_TOKEN>/setWebhook?url=https://aztracker-bot.khalid-ibrahim-dev.workers.dev/webhook&secret_token=<YOUR_OLD_V1_SECRET>
-   ```
-As soon as you that, Telegram will instantly sever the connection to V2 and start routing all user messages back to your V1 infrastructure.
-
-### ☁️ Phase 3: GCP Backup Bridge Provisioning
-
-- [ ] **Step 1: Test the API Schema**
-  Use Postman or `curl` to execute a manual `POST` request to your Cloudflare D1 Export endpoint. Inspect the JSON response and verify whether Cloudflare returned the tracking ID as `result.at_id`, `result.at_bookmark`, or `result.task_id`. Open `gcp_backup_bridge/index.js` and update line 29 to match your specific API response.
-- [ ] **Step 2: Google Secret Manager**
-  Create three secrets:
-  - `GDRIVE_SERVICE_ACCOUNT_JSON`: Your Service Account key.
-  - `GDRIVE_FOLDER_ID`: The ID of the Drive folder.
-  - `CF_API_TOKEN`: Your Cloudflare API Token.
-- [ ] **Step 3: Deploy the Cloud Function**
-  Create a 2nd Gen Node.js 20 Cloud Function. Timeout: `900 seconds`. Require Authentication (OIDC). Mount secrets. Upload from `gcp_backup_bridge/`.
-- [ ] **Step 4: Configure the Scheduler**
-  Create a Cloud Scheduler job running at `0 0 * * *`, HTTP target, OIDC auth header.
-
-</details>
-
----
-
-## 📋 Backlog & Pending Milestones
-
-- [ ] **Phase 7.1: Documentation Accuracy Audit** — All docs cross-referenced against codebase with 100% accuracy.
+- [ ] **Phase 7.1: Multi-Region Support Exploration**
+  - Research acquiring Amazon Creators API credentials for additional marketplaces (`amazon.sa`, `amazon.ae`).
+  - Explore multi-tenant queuing or sharded deployments to handle separate regions.
+  - Currently blocked by the lack of verified partner credentials for regions outside Egypt.
 
 ---
 
 ## 🛑 Intentional Architectural Boundaries
 *Features explicitly rejected to preserve the core product vision.*
 
-- **Massive Interactive Setup Pipeline:** Rejected. We intentionally scrapped plans to build a complex, multi-stage provisioning suite (`setup.py`, KV auto-creators, GitHub secret auto-injectors). By consolidating the entire V2 migration into the streamlined `finalize_cutover.js` automation script, we drastically reduced deployment overhead and tooling complexity.
-- **Multi-Region Scaling (Amazon.ae / .sa):** Rejected. We intentionally scrapped plans to support multiple geographic Amazon marketplaces. Supporting multiple regions required managing distinct Creators API credentials and complex regional queues. The engine is strictly hardcoded to dominate the Amazon Egypt (Amazon.eg) marketplace.
+- **Massive Interactive Setup Pipeline:** Rejected. We intentionally scrapped plans to build a complex, multi-stage provisioning suite (`setup.py`, KV auto-creators, GitHub secret auto-injectors). By consolidating the entire V2 architecture to standard Wrangler D1/Queue commands, we drastically reduced deployment overhead and tooling complexity.
+
 - **Containerized Deployment (Docker/K8s):** Rejected. We intentionally avoided packaging the engine into a Docker container or Kubernetes cluster. By strictly leveraging Cloudflare Workers, D1, Queues, and KV, we maintain a true "Serverless Edge" architecture.
 - **Separate Frontend Framework (React/Next.js):** Rejected. We intentionally avoided a decoupled frontend repository for the CRM dashboard. Generating raw HTML directly from the Cloudflare Worker (`crm_dashboard.js`) maintains our strict zero-build-step, edge-native deployment philosophy.
 - **Synchronous CRM History Loading:** Rejected. We intentionally excluded historical KV data from the primary `/api/crm/data` endpoint. Price history is strictly "lazy-loaded" via a dedicated route ONLY when an admin explicitly opens a product drawer, preventing catastrophic KV read exhaustion.

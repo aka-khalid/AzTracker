@@ -10,7 +10,7 @@
 [![Cloudflare KV](https://img.shields.io/badge/Cloudflare-KV-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/kv/)
 [![Telegram API](https://img.shields.io/badge/Telegram-ChatOps-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-> A highly scalable, multi-tenant price tracking architecture built purely on Cloudflare Workers, D1 SQL, and Queues. It features an interactive ChatOps UI, dual-hysteresis anti-flap protection, and dynamic queue-based scheduling.
+> A highly scalable, multi-tenant price tracking architecture built purely on Cloudflare Workers, D1 SQL, and Queues. It features a fully localized (English/Egyptian Arabic) interactive Admin CRM Web App, dual-hysteresis anti-flap protection, and dynamic queue-based scheduling.
 
 🔗 **Try the Bot:** [@AzTrackerr_bot](https://t.me/AzTrackerr_bot)
 
@@ -24,19 +24,16 @@
 ## 🚀 Key Engineering Achievements
 
 ### 🗄️ Hybrid Database Architecture (D1 + KV)
-AzTracker strictly separates relational state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all user tracking, subscriptions, concurrency locks, audit logs, and the Hysteresis Engine via the `DB` binding. **Cloudflare KV** (bound as `AZTRACKER_DB`) serves as a NoSQL document store for massive time-series arrays (`history:{asin}`), the Omnichannel Global Matrix (`global:history_all_new`), and cached Amazon access tokens — dropping database read-exhaustion to near zero.
+AzTracker strictly separates relational state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all user tracking, subscriptions, concurrency locks, audit logs, and the Hysteresis Engine. **Cloudflare KV** serves as a NoSQL document store for massive time-series arrays and cached Amazon access tokens, avoiding database read-exhaustion.
 
 ### 🛡️ Edge-Rendered CRM & SIEM Auditing
-The **👑 Admin Panel** button within the `/start` menu opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256 against `TELEGRAM_BOT_TOKEN`. The `/audit` route serves a forensic SIEM ledger page, secured via HMAC-SHA256 signature tokens verified against `TELEGRAM_WEBHOOK_SECRET`. The `/api/crm/audit` endpoint returns the 50 most recent audit log entries from D1.
+The Admin Panel opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
 
 ### ⚛️ Decoupled Async Message Delivery
-Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`, bound as `MESSAGE_QUEUE`). The queue worker updates D1 `alert_sent_new` / `alert_sent_used` flags **only** on a successful HTTP 200 Telegram delivery — creating a Two-Phase Commit (2PC) that prevents duplicate alerts. Failed deliveries trigger automatic retry with exponential backoff, and Telegram 429 rate-limit responses are handled with `retry_after` respect.
-
-### 📦 Smart Alternatives & Hidden Warehouse Deals
-The engine parses complex condition sub-schemas from the Amazon Creators API (New, Used, Refurbished, Renewed, Collectible, and sub-conditions like Like New, Very Good, Good, Acceptable, Open Box) to unearth hidden "Amazon Resale" (Warehouse) deals. The `buildSmartAlternatives()` function renders contextual checkout buttons for Amazon.eg and Amazon Resale alternatives directly in alert messages and the product view UI.
+Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The queue worker implements a Two-Phase Commit (2PC) that prevents duplicate alerts by updating D1 flags only upon a successful HTTP 200 Telegram delivery. Failed deliveries trigger automatic retry with exponential backoff.
 
 ### 📉 Distributed Scraping with Dynamic Governor Logic
-The scraper engine processes products in batches of 10 via Cloudflare Queues (`scraper-queue`, bound as `SCRAPER_QUEUE`). A dynamic Governor in the cron trigger calculates optimal batch sizes and distribution intervals based on the total active subscription pool: `batches = ceil(poolSize / 10)`, `maxRuns = floor(8640 / batches)`, `intervalMs = floor(86400000 / maxRuns)`. Each batch recursively enqueues the next with a 1-second linear delay, creating a self-perpetuating chain reaction.
+The scraper engine processes products in batches of 10 via Cloudflare Queues (`scraper-queue`). A dynamic Governor in the cron trigger calculates optimal batch sizes and distribution intervals based on the total active subscription pool.
 
 ---
 
@@ -62,61 +59,50 @@ graph TD;
 
 ---
 
-## ✨ System Features
+## ⚙️ V2 Modular Architecture (ES6)
 
-* 👥 **Automated Join Queue:** Built-in ChatOps approval pipeline with a strict depth limit of 25 (`QUEUE_MAX_DEPTH`). Users request access via an inline button; admins approve or reject with full audit logging. Duplicate clicks are safely deduplicated.
-* 🌍 **Dynamic Geofencing:** Automatically parses incoming links and hard-rejects non-supported regions. The database is securely locked to `amazon.eg` — only links resolving to `amazon.eg` are accepted.
-* 🎯 **Strict Boolean Target Locks:** Users set specific budget targets. The engine uses `alert_sent_new` and `alert_sent_used` boolean flags to alert exactly once per condition type when the target price is met or beaten. Targets auto-reset when price rises above target.
-* 📦 **Deduplicated Batch Processing:** The scraper uses `SELECT DISTINCT` across all active subscriptions — 10 users tracking the same ASIN triggers only 1 API request. Results are fan-out to all matching subscribers in-memory.
-* 🔄 **Anti-Flap Hysteresis:** In-memory timers (2.5h for new/used, 1h for Amazon.eg) prevent phantom price oscillations from triggering false alerts when the API temporarily returns null for a listing.
-* 🌐 **Bilingual UI (EN/AR):** Full i18n localization engine with Professional Masry Egyptian Arabic. Every user-facing string — menus, alerts, CRM dashboard — is rendered in the user's preferred language. Language is persisted in the `Users.lang` column and resolved per-message: DB value takes priority, falling back to Telegram's `language_code` for unapproved users.
-* 📊 **Price History Charts:** The CRM dashboard renders interactive price history charts (Chart.js) using KV-stored time-series data, with ATH/ATL/Avg metrics.
-* 📢 **Public Deal Broadcasting:** The best deal of each scrape cycle (determined by z-score and drop percentage) is broadcast to a public Telegram channel in organic Egyptian Arabic.
+The application is structured completely around an ES6 module design pattern under `src/`, eliminating massive monolithic files and promoting logical separation of concerns.
 
----
+### Directory Structure
 
-## ⚙️ Routing Logic & Architecture
-
-The application is structured entirely using ES6 Modules within the `src/` directory, exporting fetch, queue, and scheduled handlers through [`src/index.js`](src/index.js).
+```text
+src/
+├── index.js                 # Worker Entry Point (fetch, queue, scheduled)
+├── api/
+│   └── amazon.ts            # TypeScript Amazon Creators API interfaces
+├── core/
+│   ├── amazon.js            # Amazon Creators API Client & Parser
+│   ├── db.js                # D1 Database Operations & Audit Logging
+│   ├── i18n.js              # Localization Engine (English & Egyptian Arabic)
+│   ├── telegram.js          # Telegram API SDK Wrapper
+│   └── utils.js             # Shared Utilities (Formatting, Time, Delay)
+├── routes/
+│   ├── crm_dashboard.js     # Admin CRM Web App & API Endpoints
+│   └── telegram_webhook.js  # Telegram Bot Command & Callback Router
+└── workers/
+    ├── cron_trigger.js      # Dynamic Governor & D1 Garbage Collection
+    ├── queue_worker.js      # Consumer for Telegram Outbox & Scraper Engine
+    └── scraper_engine.js    # Core Price Evaluation & Anti-Flap Hysteresis
+```
 
 ### 🚏 Core Routes (`src/routes/`)
-
-| File | Route | Description |
-|------|-------|-------------|
-| [`telegram_webhook.js`](src/routes/telegram_webhook.js) | `POST /webhook`, `POST /webhook/*` | Primary Telegram Bot interface. Handles messages (link parsing, ASIN extraction, product registration, target setting) and callbacks (join queue, admin actions, product management, language toggle). Secured via `X-Telegram-Bot-Api-Secret-Token` header. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /crm` | Serves the edge-rendered Admin Command Center Web App (Tailwind CSS, Chart.js, Telegram Web App). |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /api/crm/data` | Returns system stats, user directory, and join queue. Cached at edge (60s). Auth via Telegram `initData`. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /api/crm/user/:id` | Returns a specific user's tracked products with live pricing. Auth via Telegram `initData`. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `POST /api/crm/action` | Administrative mutations: approve, reject, revoke, unban, promote, demote, set_limit, delete_product, pause_product, resume_product, set_target, direct_message, broadcast, restore_kv, force_scrape. Auth via Telegram `initData`. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /api/crm/history/:asin` | Returns KV-stored price history for chart rendering. Auth via Telegram `initData`. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /audit` | Serves the SIEM audit ledger HTML page. Secured via HMAC-SHA256 signature (`TELEGRAM_WEBHOOK_SECRET`). |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /api/audit` | Returns the 50 most recent audit log entries from D1. Secured via HMAC-SHA256 signature. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /api/test-asin` | Debug endpoint: fetches live ASIN data from Creators API with Arabic name resolution. |
-| [`crm_dashboard.js`](src/routes/crm_dashboard.js) | `GET /api/migrate-kv` | One-time migration endpoint: imports legacy KV user/product data into D1. Root admin only. |
+All HTTP requests are routed by the `fetch` handler in `src/index.js` to their appropriate domain:
+- `POST /webhook/*`: Sent to `telegram_webhook.js` for ChatOps interaction.
+- `GET /crm`, `GET /audit`, `GET /api/*`, `POST /api/*`: Sent to `crm_dashboard.js` to serve the Admin UI and API.
 
 ### 🔧 Core Modules (`src/core/`)
-
-| File | Description |
-|------|-------------|
-| [`amazon.js`](src/amazon.js) | Amazon Creators API client. OAuth2 token management, `getItems()` (batch ASIN lookup, max 10), `getItemsWithArabic()` (Arabic title via `languagesOfPreference: ar_AE`), `scrapeArabicTitle()` (fallback HTML scrape), and `parseItem()` (condition sub-schema parsing for New/Used/Resale/Amazon.eg). |
-| [`db.js`](src/core/db.js) | Database helpers: `getUserRoles()` (role resolution with edge caching), `resolveUserProfile()` (Telegram getChat with caching), `logAudit()` (writes to `Audit_Logs` table), `cleanupDatabase()` (Bot_States GC). |
-| [`telegram.js`](src/core/telegram.js) | Telegram API wrappers: `sendTelegramMessage()`, `editTelegramMessage()`, `deleteMessage()`, `answerCallbackQuery()`. |
-| [`i18n.js`](src/core/i18n.js) | Localization engine with 200+ keys supporting EN and Professional Masry Egyptian Arabic. Flat key structure: `t('category.key', lang, {vars})`. Includes `resolveLanguageCode()` and `getWelcomeMessage()`. |
-| [`utils.js`](src/core/utils.js) | Shared utilities: `escapeHtml()`, `formatEGP()`, `truncateName()`, `getCairoTime()`, `delay()`. |
+State-agnostic libraries used universally:
+- `amazon.js`: Native JS execution for Amazon's Creators API token management and schema parsing.
+- `db.js`: Contains shared D1 operations like role verification and audit logging.
+- `telegram.js`: Native REST wrapper over Telegram's Bot API.
+- `i18n.js`: Comprehensive string resolution dictionaries supporting English (en) and Egyptian Arabic (masry), complete with emoji layout adjustments.
+- `utils.js`: Helpers for EGP currency formatting, HTML escaping, and time manipulation.
 
 ### 🔄 Background Jobs (`src/workers/`)
-
-| File | Trigger | Description |
-|------|---------|-------------|
-| [`cron_trigger.js`](src/workers/cron_trigger.js) | Cloudflare Cron (currently disabled) | Performs D1 garbage collection on expired `Bot_States`. Calculates dynamic scraping interval based on active pool size. Dispatches the first batch to `scraper-queue` when the interval has elapsed. |
-| [`scraper_engine.js`](src/workers/scraper_engine.js) | `scraper-queue` messages | Core Creators API consumer. Fetches 10 products per batch, resolves Arabic names, applies anti-flap hysteresis, evaluates price changes against target locks, pushes history to KV, updates D1, and enqueues alerts to `telegram-outbox`. Broadcasts the best deal to the public channel. |
-| [`queue_worker.js`](src/workers/queue_worker.js) | Both queues | Consumer for `scraper-queue` (triggers `executeScrapeEngine`) and `telegram-outbox` (delivers via Telegram API). Implements 2PC: D1 alert flags updated only on successful delivery. Handles 429 rate limits, 403 blocked users (auto-pause), and automatic retries. |
-
-### 📦 API Module (`src/api/`)
-
-| File | Description |
-|------|-------------|
-| [`amazon.ts`](src/api/amazon.ts) | TypeScript mirror of `src/core/amazon.js` with typed interfaces (`AmazonItem`). Contains identical `AmazonEdgeParser` class and `getAmazonAccessToken()` function. |
+Decoupled logic for queue consumers and crons:
+- `scraper_engine.js`: The complex business logic that queries the Amazon API, applies hysteresis timers, checks bounds against User Subscriptions, updates KV price histories, and enqueues alerts.
+- `queue_worker.js`: Cloudflare Queue consumer for both `scraper-queue` (for triggering the scraper engine) and `telegram-outbox` (for delivering alerts reliably via 2PC).
+- `cron_trigger.js`: Generates the dynamic interval calculations and issues the first batch of scrapes.
 
 ---
 
@@ -127,30 +113,30 @@ The application is structured entirely using ES6 Modules within the `src/` direc
 | Variable | Description |
 |----------|-------------|
 | `DEFAULT_USER_PRODUCT_LIMIT` | Global limit on concurrent tracks per user (default: `"3"`). |
-| `GITHUB_OWNER` | GitHub owner for the project (default: `"aka-khalid"`). |
-| `GITHUB_REPO` | GitHub repository name (default: `"AzTracker"`). |
+| `GITHUB_OWNER` | GitHub owner for the project. |
+| `GITHUB_REPO` | GitHub repository name. |
 
 ### Secrets (must be injected via `wrangler secret put`)
 
 | Variable | Description |
 |----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot API token. Used for all Telegram API calls and Web App initData verification. |
-| `TELEGRAM_WEBHOOK_SECRET` | Secret token to validate incoming Telegram webhook requests (`X-Telegram-Bot-Api-Secret-Token` header). Also used for HMAC-SHA256 audit route signatures. |
-| `TELEGRAM_ROOT_ADMIN_IDS` | Comma-separated list of root-level Telegram user IDs. Root admins cannot be revoked/demoted and have access to KV restoration and broadcasting. |
-| `AMAZON_CLIENT_ID` | Amazon Creators API Credential ID. Also read from `AMZN_CREATORS_ACCESS_KEY` or `AWS_ACCESS_KEY_ID` as fallback. |
-| `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret. Also read from `AMZN_CREATORS_SECRET_KEY` or `AWS_SECRET_ACCESS_KEY` as fallback. |
-| `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs (used in affiliate link generation). |
-| `AMZN_ASSOCIATES_TAG` | Amazon Associates Tracking ID for the Creators API payload (`partnerTag` field). |
-| `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting (e.g., `@AzTrackerr`). |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot API token. |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret token to validate incoming Telegram webhook requests and CRM auth. |
+| `TELEGRAM_ROOT_ADMIN_IDS` | Comma-separated list of root-level Telegram user IDs. |
+| `AMAZON_CLIENT_ID` | Amazon Creators API Credential ID. |
+| `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret. |
+| `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs. |
+| `AMZN_ASSOCIATES_TAG` | Amazon Associates Tracking ID for the Creators API payload. |
+| `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting. |
 
 ### Cloudflare Bindings (configured in `wrangler.toml`)
 
-| Binding | Type | Name |
-|---------|------|------|
-| `DB` | D1 Database | `aztracker-test-db` (dev) / `aztracker-prod-db` (prod) |
-| `AZTRACKER_DB` | KV Namespace | `90fcfcb742fe4d7299087c076bd1ba4d` |
-| `MESSAGE_QUEUE` | Queue Producer | `telegram-outbox` |
-| `SCRAPER_QUEUE` | Queue Producer | `scraper-queue` |
+| Binding | Type | Purpose |
+|---------|------|---------|
+| `DB` | D1 Database | Relational models. |
+| `AZTRACKER_DB` | KV Namespace | Time-series metrics and tokens. |
+| `MESSAGE_QUEUE` | Queue Producer | Pushes alerts to `telegram-outbox`. |
+| `SCRAPER_QUEUE` | Queue Producer | Pushes offsets to `scraper-queue`. |
 
 ---
 
