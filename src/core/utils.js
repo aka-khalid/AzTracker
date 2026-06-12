@@ -22,7 +22,7 @@ export function truncateName(name, maxLength = 60) {
 }
 
 export function resolveProductName(item, lang, fallback) {
-  if (lang === 'ar' && item.name_ar) return item.name_ar;
+  if (lang === 'masry' && item.name_ar) return item.name_ar;
   return item.name || item.asin || fallback || "Unknown Product";
 }
 

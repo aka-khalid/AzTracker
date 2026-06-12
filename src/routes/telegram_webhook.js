@@ -45,7 +45,7 @@ async function checkRateLimit(chatId, env) {
     const resetMs = RATE_LIMIT_WINDOW_MS - elapsed;
     if (data.count <= RATE_LIMIT_MAX_MESSAGES) {
       await env.AZTRACKER_DB.put(key, JSON.stringify(data), {
-        expirationTtl: Math.ceil(resetMs / 1000) + 1,
+        expirationTtl: Math.max(60, Math.ceil(resetMs / 1000) + 1),
       });
     }
     return { allowed: data.count <= RATE_LIMIT_MAX_MESSAGES, remaining, resetMs };
@@ -117,18 +117,29 @@ async function handleMessage(message, env, baseUrl, ctx) {
     if (isRejected) {
       // Check if user already has a pending unban request in Join_Queue
       const existingUnban = await env.DB.prepare("SELECT 1 FROM Join_Queue WHERE chat_id = ? AND request_type = 'unban'").bind(chatId).first();
+      // Check the permanent ban flag on the Users table (single source of truth)
+      const userRow = await env.DB.prepare("SELECT unban_rejected FROM Users WHERE chat_id = ?").bind(chatId).first();
+      const isPermBanned = userRow && userRow.unban_rejected === 1;
       if (text === "/start") {
-        if (existingUnban) {
+        if (isPermBanned) {
+          // Permanently banned — unban request was rejected. NO re-request possible.
+          // Only recovery: admin uses CRM banned tab → "Unban User"
+          await sendAppMessage(env, chatId, t('access.unban_rejected', lang));
+        } else if (existingUnban) {
           // Already requested unban — show pending state, not the button again
-          await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.unban_pending', lang));
+          await sendAppMessage(env, chatId, t('access.unban_pending', lang));
         } else {
-          // Rejected users see an "unban request" button
+          // Rejected but not permanently banned — show unban request button
           await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang), {
             inline_keyboard: [[{ text: t('access.unban_btn', lang), callback_data: `request_unban_${chatId}` }]]
           });
         }
       } else {
-        await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang) + '\n\n' + t('access.denied_hint_start', lang));
+        if (isPermBanned) {
+          await sendAppMessage(env, chatId, t('access.unban_rejected', lang));
+        } else {
+          await sendAppMessage(env, chatId, t('access.denied_head', lang) + '\n\n' + t('access.denied_body_private', lang) + '\n\n' + t('access.denied_hint_start', lang));
+        }
       }
       return;
     }
@@ -413,17 +424,30 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
 
       const { label } = await resolveUserProfile(env, chatId, ctx);
-      const adminMsg = t('access.admin_new_request_head', lang) + '\n\n' + t('access.admin_new_request_body', lang, { name: escapeHtml(label), id: chatId });
-      const adminButtons = {
-        inline_keyboard: [
-          [{ text: t('access.admin_new_request_btn_approve', lang), callback_data: `queueApprove_${chatId}` }, { text: t('access.admin_new_request_btn_reject', lang), callback_data: `queueReject_${chatId}` }]
-        ]
-      };
 
       const allAdmins = [...new Set([...admins, ...rootAdmins])];
+      // Fetch each admin's language preference for per-admin localized notifications
+      const adminLangMap = {};
+      if (allAdmins.length > 0) {
+        const placeholders = allAdmins.map(() => '?').join(',');
+        const { results: adminRows } = await env.DB.prepare(
+          `SELECT chat_id, lang FROM Users WHERE chat_id IN (${placeholders})`
+        ).bind(...allAdmins).all();
+        for (const row of adminRows) {
+          adminLangMap[row.chat_id] = row.lang || 'en';
+        }
+      }
+
       console.error(`[JOIN_QUEUE] Notifying ${allAdmins.length} admins: ${JSON.stringify(allAdmins)}`);
       let admin_messages = {};
       for (const adminId of allAdmins) {
+        const adminLang = adminLangMap[adminId] || 'en';
+        const adminMsg = t('access.admin_new_request_head', adminLang) + '\n\n' + t('access.admin_new_request_body', adminLang, { name: escapeHtml(label), id: chatId });
+        const adminButtons = {
+          inline_keyboard: [
+            [{ text: t('access.admin_new_request_btn_approve', adminLang), callback_data: `queueApprove_${chatId}` }, { text: t('access.admin_new_request_btn_reject', adminLang), callback_data: `queueReject_${chatId}` }]
+          ]
+        };
         try {
           const sent = await sendTelegram(env, adminId, adminMsg, adminButtons);
           console.error(`[JOIN_QUEUE] Admin ${adminId} notify: ok=${sent?.ok}, error=${sent?.description || 'none'}`);
@@ -463,17 +487,27 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
 
       const { label } = await resolveUserProfile(env, chatId, ctx);
-      const adminMsg = t('admin.unban_request_head', lang) + '\n\n' + t('admin.unban_request_body', lang, { name: escapeHtml(label), id: chatId });
-      const adminButtons = {
-        inline_keyboard: [
-          [{ text: t('admin.unban_request_btn_unban', lang), callback_data: `unban_${chatId}` }]
-        ]
-      };
 
       const allAdmins = [...new Set([...admins, ...rootAdmins])];
+      // Fetch each admin's language for per-admin localized notifications
+      const adminLangMap = {};
+      if (allAdmins.length > 0) {
+        const placeholders = allAdmins.map(() => '?').join(',');
+        const { results: adminRows } = await env.DB.prepare(
+          `SELECT chat_id, lang FROM Users WHERE chat_id IN (${placeholders})`
+        ).bind(...allAdmins).all();
+        for (const row of (adminRows || [])) {
+          adminLangMap[row.chat_id] = row.lang || 'en';
+        }
+      }
+
+      // Notify ALL admins — plain message, no inline buttons.
+      // Admins handle this from the CRM dashboard.
       for (const adminId of allAdmins) {
+        const adminLang = adminLangMap[adminId] || 'en';
+        const adminMsg = t('admin.unban_request_head', adminLang) + '\n\n' + t('admin.unban_request_body', adminLang, { name: escapeHtml(label), id: chatId }) + '\n\n' + t('admin.unban_request_dashboard_hint', adminLang);
         try {
-          await sendTelegram(env, adminId, adminMsg, adminButtons);
+          await sendTelegram(env, adminId, adminMsg);
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
     }
@@ -481,19 +515,19 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetId = data.replace("queueReject_", "");
       let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
       if (!queueObj) {
-        await editTelegramMessage(env, chatId, messageId, t('admin.request_expired', lang));
+        // Another admin already handled this — answer callback and update this message
+        const expiredText = t('admin.request_expired', lang);
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callback_query_id: callback.id, text: expiredText, show_alert: true })
+        }).catch(() => {});
+        await editTelegramMessage(env, chatId, messageId, expiredText, { inline_keyboard: [] }).catch(() => {});
         return;
       }
       if (typeof queueObj.admin_messages === 'string') {
         try { queueObj.admin_messages = JSON.parse(queueObj.admin_messages); } catch(e) { queueObj.admin_messages = {}; }
       }
-
-      // Answer callback FIRST to stop the spinner on the acting admin's button
-      ctx.waitUntil(fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ callback_query_id: callback.id })
-      }).catch(() => {}));
 
       // Capture other admin messages BEFORE deleting the queue row
       const otherAdminMessages = {};
@@ -501,45 +535,90 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         if (admId !== String(chatId)) otherAdminMessages[admId] = msgId;
       }
 
-      await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+      // ATOMIC DELETE with change detection — prevents race condition
+      // when two admins act on the same queue item simultaneously
+      const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+      if (deleteResult.meta.changes === 0) {
+        // Another admin already deleted the row — update this message + answer callback
+        const expiredText = t('admin.request_expired', lang);
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callback_query_id: callback.id, text: expiredText, show_alert: true })
+        }).catch(() => {});
+        await editTelegramMessage(env, chatId, messageId, expiredText, { inline_keyboard: [] }).catch(() => {});
+        return;
+      }
 
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected', lang, { id: targetId, admin: escapeHtml(adminName) }));
 
-      // Update ALL other admins' messages — sequential with error handling for reliability
+      // Update ALL other admins' messages in their own language preference
       for (const [admId, msgId] of Object.entries(otherAdminMessages)) {
         try {
-          await editTelegramMessage(env, admId, msgId, t('access.handled_request', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
+          const aLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(admId).first();
+          const aLang = aLangRow?.lang || 'en';
+          await editTelegramMessage(env, admId, msgId, t('access.handled_request', aLang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
         } catch(e) { console.error(`Failed to update admin ${admId} message:`, e); }
       }
 
-      await env.DB.prepare(`
-         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang)
-         VALUES (?, ?, ?, 'rejected', ?, ?, ?, ?)
-         ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
-      `).bind(
-        targetId,
-        queueObj ? (queueObj.first_name || '') : '',
-        queueObj ? (queueObj.username || '') : '',
-        chatId,
-        env.DEFAULT_USER_PRODUCT_LIMIT || "3",
-        Date.now(),
-        resolveLanguageCode(queueObj?.language_code) || 'en'
-      ).run();
+      // Set role and handle unban_rejected flag based on request type
+      if (queueObj?.request_type === 'unban') {
+        // Rejecting an unban request → permanently ban the user (unban_rejected=1)
+        await env.DB.prepare(`
+          INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang, unban_rejected)
+          VALUES (?, ?, ?, 'rejected', ?, ?, ?, ?, 1)
+          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected', unban_rejected = 1
+        `).bind(
+          targetId,
+          queueObj ? (queueObj.first_name || '') : '',
+          queueObj ? (queueObj.username || '') : '',
+          chatId,
+          env.DEFAULT_USER_PRODUCT_LIMIT || "3",
+          Date.now(),
+          resolveLanguageCode(queueObj?.language_code) || 'en'
+        ).run();
+      } else {
+        // Rejecting initial access request → role='rejected', unban_rejected stays 0
+        await env.DB.prepare(`
+          INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang)
+          VALUES (?, ?, ?, 'rejected', ?, ?, ?, ?)
+          ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'
+        `).bind(
+          targetId,
+          queueObj ? (queueObj.first_name || '') : '',
+          queueObj ? (queueObj.username || '') : '',
+          chatId,
+          env.DEFAULT_USER_PRODUCT_LIMIT || "3",
+          Date.now(),
+          resolveLanguageCode(queueObj?.language_code) || 'en'
+        ).run();
+      }
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
       // Notify rejected user in their detected language
       const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
-      await sendTelegram(env, targetId, t('access.denied_notify', targetLang));
+
+      if (queueObj?.request_type === 'unban') {
+        await sendTelegram(env, targetId, t('access.unban_rejected', targetLang));
+      } else {
+        await sendTelegram(env, targetId, t('access.denied_notify', targetLang));
+      }
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Rejected via Join Queue"));
+      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, `Rejected via Join Queue${queueObj?.request_type === 'unban' ? ' (unban — permanent)' : ''}`));
     }
     else if (data.startsWith("queueApprove_") && isAdmin) {
       const targetId = data.replace("queueApprove_", "");
       let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
       if (!queueObj) {
-        await editTelegramMessage(env, chatId, messageId, t('admin.request_expired', lang));
+        const expiredText = t('admin.request_expired', lang);
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callback_query_id: callback.id, text: expiredText, show_alert: true })
+        }).catch(() => {});
+        await editTelegramMessage(env, chatId, messageId, expiredText, { inline_keyboard: [] }).catch(() => {});
         return;
       }
       if (typeof queueObj.admin_messages === 'string') {
@@ -552,15 +631,27 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         if (admId !== String(chatId)) otherAdminMessages[admId] = msgId;
       }
 
-      await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+      // ATOMIC DELETE with change detection — prevents race condition
+      const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+      if (deleteResult.meta.changes === 0) {
+        const expiredText = t('admin.request_expired', lang);
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callback_query_id: callback.id, text: expiredText, show_alert: true })
+        }).catch(() => {});
+        await editTelegramMessage(env, chatId, messageId, expiredText, { inline_keyboard: [] }).catch(() => {});
+        return;
+      }
 
       const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
 
+      // Approve user and clear permanent ban flag (if approving an unban request)
       await env.DB.prepare(`
-         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang)
-         VALUES (?, ?, ?, 'approved', ?, ?, ?, ?)
-         ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by, lang = COALESCE(lang, excluded.lang)
+         INSERT INTO Users (chat_id, first_name, username, role, approved_by, item_limit, created_at, lang, unban_rejected)
+         VALUES (?, ?, ?, 'approved', ?, ?, ?, ?, 0)
+         ON CONFLICT(chat_id) DO UPDATE SET role = 'approved', approved_by = excluded.approved_by, lang = COALESCE(lang, excluded.lang), unban_rejected = 0
       `).bind(
         targetId,
         queueObj ? (queueObj.first_name || '') : '',
@@ -572,13 +663,20 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       ).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
+      // Unpause subscriptions if this was an unban approval
+      if (queueObj?.request_type === 'unban') {
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId).run();
+      }
+
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
       await editTelegramMessage(env, chatId, messageId, t('admin.approved_result', lang, { id: targetId, admin: escapeHtml(adminName) }));
 
-      // Update ALL other admins' messages — sequential with error handling for reliability
+      // Update ALL other admins' messages in their own language preference
       for (const [admId, msgId] of Object.entries(otherAdminMessages)) {
         try {
-          await editTelegramMessage(env, admId, msgId, t('access.handled_approved', lang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
+          const aLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(admId).first();
+          const aLang = aLangRow?.lang || 'en';
+          await editTelegramMessage(env, admId, msgId, t('access.handled_approved', aLang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
         } catch(e) { console.error(`Failed to update admin ${admId} message:`, e); }
       }
 
@@ -655,12 +753,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // Handle both 'rejected' and 'blocked' roles
       const userRow = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(targetId).first();
       if (userRow && (userRow.role === 'rejected' || userRow.role === 'blocked')) {
-        // Reset role to 'pending' so user can request access again
-        await env.DB.prepare("UPDATE Users SET role = 'pending' WHERE chat_id = ?").bind(targetId).run();
-        // Unpause subscriptions if they were blocked
-        if (userRow.role === 'blocked') {
-          await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId).run();
-        }
+        // Restore access: set role to 'approved', clear permanent ban flag, unpause subscriptions
+        await env.DB.batch([
+          env.DB.prepare("UPDATE Users SET role = 'approved', unban_rejected = 0 WHERE chat_id = ?").bind(targetId),
+          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId)
+        ]);
       }
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
@@ -675,7 +772,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const targetUserRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
       const targetUnbanLang = targetUserRow?.lang || 'en';
       try {
-        await sendTelegram(env, targetId, t('access.unban_notify', targetUnbanLang) || "✅ Your account has been unbanned. Send /start to continue.");
+        await sendTelegram(env, targetId, t('access.unban_notify', targetUnbanLang));
       } catch(e) { /* user may still have bot blocked */ }
 
       // AUDIT LOG
@@ -709,13 +806,18 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
-      await env.DB.prepare("DELETE FROM Users WHERE chat_id = ?").bind(targetId).run();
+      // Soft revoke: preserve user + subscriptions, pause subs, keep history.
+      // User gets their one unban chance (unban_rejected=0).
+      await env.DB.batch([
+        env.DB.prepare("UPDATE Users SET role = 'rejected', unban_rejected = 0 WHERE chat_id = ?").bind(targetId),
+        env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(targetId)
+      ]);
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
       await editTelegramMessage(env, chatId, messageId, t('admin.revoked_result', lang, { id: targetId }));
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "REVOKE_USER", targetId, "Revoked access and purged profile"));
+      ctx.waitUntil(logAudit(env, chatId, "REVOKE_USER", targetId, "Revoked access (soft) — subscriptions paused"));
     }
     else if (data.startsWith("promote_") && isRootAdmin) {
       const targetId = data.replace("promote_", "");
@@ -825,9 +927,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         inline_keyboard: [[{ text: t('product.btn.back_to_products', lang), callback_data: "list_products_0" }]]
       });
     }
+    // ── Back to Directory (same as /start — re-renders main menu) ──────────
+    else if (data === "admin_panel" && isAdmin) {
+      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, lang);
+    }
     // ── Language Toggle ────────────────────────────────────────────────────
     else if (data === "toggle_lang") {
-      const newLang = lang === 'en' ? 'ar' : 'en';
+      const newLang = lang === 'en' ? 'masry' : 'en';
       await env.DB.prepare("UPDATE Users SET lang = ? WHERE chat_id = ?").bind(newLang, chatId).run();
       await caches.default.delete(new Request(`https://auth.internal/roles/${chatId}`));
       await editTelegramMessage(env, chatId, messageId, t('lang.changed', newLang));

@@ -26,7 +26,7 @@ export async function scheduled(event, env, ctx) {
 
         console.log(`[GOVERNOR] Calc -> intervalMs: ${intervalMs} | Time since last run: ${now - lastRunMs}`);
 
-        if ((now - lastRunMs) >= intervalMs) {s
+        if ((now - lastRunMs) >= intervalMs) {
           console.log(`[GOVERNOR] Dispatching queue offset 0`);
           // Update lock and trigger the recursive chain reaction
           await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('last_run_time', ?, ?)").bind(now.toString(), now + 86400000).run();

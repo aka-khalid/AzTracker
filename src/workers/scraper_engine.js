@@ -558,23 +558,23 @@ export async function executeScrapeEngine(env, offset = 0) {
 
   // Final Broadcast (public channel — organic Egyptian Arabic)
   if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
-      const safe_name = escapeHtml(truncateName(bestDeal.name_ar || bestDeal.name || bestDeal.asin) || t('product.unknown_product', 'ar'));
+      const safe_name = escapeHtml(truncateName(bestDeal.name_ar || bestDeal.name || bestDeal.asin) || t('product.unknown_product', 'masry'));
       const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
       const qParams = new URLSearchParams();
       const pTag = env.AMAZON_PARTNER_TAG;
       if (pTag) qParams.append("tag", pTag);
       const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
 
-      const safe_broadcast_seller = escapeHtml(bestDeal.seller || t('fallback.unknown_seller', 'ar'));
+      const safe_broadcast_seller = escapeHtml(bestDeal.seller || t('fallback.unknown_seller', 'masry'));
 
-      const broadcast_msg = `${t('broadcast.snapshot', 'ar')}\n\n` +
+      const broadcast_msg = `${t('broadcast.snapshot', 'masry')}\n\n` +
           `<b>${safe_name}</b>\n\n` +
           `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n` +
           `🏬 ${safe_broadcast_seller}\n\n` +
-          `👉 <a href="${broadcast_url}">${t('broadcast.catch_deal', 'ar')}</a>\n\n` +
+          `👉 <a href="${broadcast_url}">${t('broadcast.catch_deal', 'masry')}</a>\n\n` +
           `🤖 @AzTrackerr_bot\n\n` +
-          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">${t('broadcast.follow_more', 'ar')}</a>\n\n` +
-          `${t('broadcast.ad_disclosure', 'ar')}`;
+          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">${t('broadcast.follow_more', 'masry')}</a>\n\n` +
+          `${t('broadcast.ad_disclosure', 'masry')}`;
 
       queueBatch.push({
           type: 'telegram_alert',
@@ -583,7 +583,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           text: truncateMessage(broadcast_msg),
           markup: {
               inline_keyboard: [
-                  [{ text: t('broadcast.buy_here', 'ar'), url: broadcast_url }]
+                  [{ text: t('broadcast.buy_here', 'masry'), url: broadcast_url }]
               ]
           }
       });

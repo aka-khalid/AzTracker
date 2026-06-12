@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS Users (
     role TEXT NOT NULL DEFAULT 'pending', -- Roles: 'approved', 'admin', 'rejected', 'pending'
     item_limit INTEGER NOT NULL DEFAULT 5,
     approved_by TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    unban_rejected INTEGER DEFAULT 0 -- 1 = permanently banned (cannot re-request unban); only overridable from CRM
 );
 
 -- ============================================================================
@@ -144,3 +145,5 @@ CREATE INDEX IF NOT EXISTS idx_audit_actor ON Audit_Logs(actor_id);
 CREATE INDEX IF NOT EXISTS idx_bot_states_expires ON Bot_States(expires_at);
 -- Optimizes Join_Queue chronological ordering for CRM display
 CREATE INDEX IF NOT EXISTS idx_join_queue_requested_at ON Join_Queue(requested_at DESC);
+-- Optimizes banned-user lookups for unban_rejected flag
+CREATE INDEX IF NOT EXISTS idx_users_unban_rejected ON Users(unban_rejected);

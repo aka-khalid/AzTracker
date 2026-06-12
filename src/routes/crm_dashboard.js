@@ -2,7 +2,7 @@ import { getUserRoles, logAudit } from '../core/db.js';
 import { t, resolveLanguageCode } from '../core/i18n.js';
 import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
 import { executeScrapeEngine } from '../workers/scraper_engine.js';
-import { sendTelegramMessage as sendTelegram } from '../core/telegram.js';
+import { sendTelegramMessage as sendTelegram, editTelegramMessage } from '../core/telegram.js';
 import { escapeHtml } from '../core/utils.js';
 
 async function generateSignature(secret, asin, exp) {
@@ -122,7 +122,7 @@ export async function fetchAPI(request, env, ctx) {
       }
 
       const langParam = url.searchParams.get("lang");
-      const lang = langParam === 'ar' ? 'ar' : 'en';
+      const lang = langParam === 'masry' ? 'masry' : 'en';
       const html = renderAuditHTML(exp, sig, lang);
       return new Response(html, {
         status: 200,
@@ -179,7 +179,7 @@ export async function fetchAPI(request, env, ctx) {
     if (url.pathname === "/crm" && request.method === "GET") {
       // Detect language from query param or default to English
       const langParam = url.searchParams.get("lang");
-      const lang = langParam === 'ar' ? 'ar' : 'en';
+      const lang = langParam === 'masry' ? 'masry' : 'en';
       return new Response(renderCrmHTML(lang), {
         status: 200,
         headers: { "Content-Type": "text/html;charset=UTF-8" }
@@ -401,12 +401,11 @@ export async function fetchAPI(request, env, ctx) {
         
         response = new Response(JSON.stringify(data), {
           status: 200,
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
-            "Cache-Control": "s-maxage=60" 
+            "Cache-Control": "no-cache"
           }
         });
-        ctx.waitUntil(cache.put(cacheUrl, response.clone()));
       }
       
       const clone = new Response(response.body, response);
@@ -451,6 +450,12 @@ export async function fetchAPI(request, env, ctx) {
       const resolveTargetLang = async (tid) => {
         const row = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(tid).first();
         return row?.lang || adminLang;
+      };
+      // Helper: resolve an admin's language preference (falls back to 'en')
+      const adminLangPref = async (aid) => {
+        if (aid === adminId) return adminLang;
+        const row = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(aid).first();
+        return row?.lang || 'en';
       };
 
       if (action === "restore_kv") {
@@ -598,32 +603,93 @@ export async function fetchAPI(request, env, ctx) {
       }
       
       if (action === "approve") {
+        // Read admin_messages BEFORE delete (needed to invalidate other admins' inline messages)
+        const queueRow = await env.DB.prepare("SELECT admin_messages FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Race guard: delete queue row first, check if another admin already handled it
+        const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+        if (deleteResult.meta.changes === 0) {
+          return new Response(JSON.stringify({ success: false, error: "already_handled", message: "Request was already processed by another admin" }), { status: 200 });
+        }
         const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT) || 3;
-        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at) VALUES (?, 'approved', ?, ?, ?)").bind(targetId, defaultLimit, adminId, Date.now()).run();
-        await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at, unban_rejected) VALUES (?, 'approved', ?, ?, ?, 0)").bind(targetId, defaultLimit, adminId, Date.now()).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_approved', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        // Invalidate other admins' inline messages so buttons disappear automatically
+        if (queueRow?.admin_messages) {
+          let adminMessages = {};
+          try { adminMessages = typeof queueRow.admin_messages === 'string' ? JSON.parse(queueRow.admin_messages) : queueRow.admin_messages; } catch(e) {}
+          for (const [admId, msgId] of Object.entries(adminMessages)) {
+            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
+          }
+        }
       } else if (action === "reject") {
-        await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
-        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_rejected', tl)); })());
-        ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, "Rejected join request"));
+        // Read request_type + user info BEFORE deleting (needed for UPSERT)
+        const queueRow = await env.DB.prepare("SELECT request_type, admin_messages, first_name, username, language_code FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Race guard: delete queue row, check if another admin already handled it
+        const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+        if (deleteResult.meta.changes === 0) {
+          // Another admin already handled the queue item — still ensure user role is set
+          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), resolveLanguageCode(queueRow?.language_code) || 'en').run();
+          return new Response(JSON.stringify({ success: false, error: "already_handled", message: "Request was already processed by another admin" }), { status: 200 });
+        }
+        // UPSERT user: INSERT if new (first rejection), UPDATE if unban was rejected after prior approval.
+        // Unlike plain UPDATE, INSERT ON CONFLICT ensures newly rejected users appear in the banned tab.
+        if (queueRow?.request_type === 'unban') {
+          // Rejecting an unban request → permanently ban the user (unban_rejected=1)
+          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang, unban_rejected) VALUES (?, ?, ?, 'rejected', ?, ?, ?, 1) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected', unban_rejected = 1").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), resolveLanguageCode(queueRow?.language_code) || 'en').run();
+          ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('access.unban_rejected', tl)); })());
+        } else {
+          // Rejecting initial access request — user can request unban (unban_rejected stays 0)
+          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), resolveLanguageCode(queueRow?.language_code) || 'en').run();
+          ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_rejected', tl)); })());
+        }
+        ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, `Rejected join request${queueRow?.request_type === 'unban' ? ' (unban — permanent)' : ''}`));
+        // Invalidate other admins' inline messages so buttons disappear automatically
+        if (queueRow?.admin_messages) {
+          let adminMessages = {};
+          try { adminMessages = typeof queueRow.admin_messages === 'string' ? JSON.parse(queueRow.admin_messages) : queueRow.admin_messages; } catch(e) {}
+          for (const [admId, msgId] of Object.entries(adminMessages)) {
+            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_request', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
+          }
+        }
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "revoke") {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
+        // Soft revoke: preserve user + subscriptions, pause subs.
+        // Explicitly set unban_rejected=0 so revoked users keep their one unban chance.
         await env.DB.batch([
           env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(targetId),
-          env.DB.prepare("UPDATE Users SET role = 'rejected' WHERE chat_id = ?").bind(targetId)
+          env.DB.prepare("UPDATE Users SET role = 'rejected', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_revoked', tl)); })());
-        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access and froze subscriptions"));
+        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access (soft) — subscriptions paused"));
       } else if (action === "unban") {
+        // Check if there's a pending unban request in Join_Queue (from user's unban request)
+        const queueRow = await env.DB.prepare("SELECT admin_messages FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        if (queueRow) {
+          // Race guard: delete queue row first, check if another admin already handled it
+          const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
+          if (deleteResult.meta.changes === 0) {
+            return new Response(JSON.stringify({ success: false, error: "already_handled", message: "Request was already processed by another admin" }), { status: 200 });
+          }
+        }
+        // If no queue row exists (direct revoke/unban, no pending request), skip to unban directly
+        // Unban: restore access, clear permanent ban flag, unpause subscriptions
         await env.DB.batch([
           env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId),
-          env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId)
+          env.DB.prepare("UPDATE Users SET role = 'approved', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_restored', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user and resumed subscriptions"));
+        // Invalidate other admins' inline messages so buttons disappear automatically
+        if (queueRow?.admin_messages) {
+          let adminMessages = {};
+          try { adminMessages = typeof queueRow.admin_messages === 'string' ? JSON.parse(queueRow.admin_messages) : queueRow.admin_messages; } catch(e) {}
+          for (const [admId, msgId] of Object.entries(adminMessages)) {
+            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
+          }
+        }
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
@@ -683,7 +749,7 @@ export async function fetchAPI(request, env, ctx) {
 export function renderAuditHTML(exp, sig, lang = 'en') {
   return `
 <!DOCTYPE html>
-<html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}">
+<html lang="${lang}" dir="${lang === 'masry' ? 'rtl' : 'ltr'}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -827,7 +893,7 @@ export function renderCrmHTML(lang = 'en') {
   // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
   const js = (key, vars) => JSON.stringify(t(key, lang, vars));
   return `<!DOCTYPE html>
-<html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}" class="dark">
+<html lang="${lang}" dir="${lang === 'masry' ? 'rtl' : 'ltr'}" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -1202,32 +1268,31 @@ export function renderCrmHTML(lang = 'en') {
                     const isUnban = u.request_type === 'unban';
                     const typeLabel = isUnban ? ${js('crm.queue_type_unban')} : ${js('crm.queue_type_access')};
                     const typeColor = isUnban ? 'bg-orange-500/15 text-orange-400 border-orange-500/20' : 'bg-brand-500/15 text-brand-400 border-brand-500/20';
-                    const typeIcon = isUnban ? '🔓' : '🆕';
                     const idEsc = escapeHtml(String(u.id));
                     const firstEsc = escapeHtml(u.first_name) || 'User';
                     const userDisplay = u.username ? '@' + escapeHtml(u.username) : idEsc;
                     const borderClass = isUnban ? 'border-l-2 border-l-orange-500/40' : '';
                     const actionApprove = isUnban ? 'unban' : 'approve';
-                    const approveLabel = isUnban ? ${js('crm.btn_unban')} : '';
-                    const approveClass = isUnban ? 'h-8 px-3 text-xs font-medium border border-emerald-500/20' : 'w-8 h-8';
+                    const approveTitle = isUnban ? (${js('crm.btn_unban')} || 'Unban') : 'Approve';
                     const approveInner = isUnban
-                        ? '✅ ' + approveLabel
+                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
                         : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
-                    const rejectTitle = isUnban ? (${js('crm.btn_deny')} || 'Deny') : '';
-                    const rejectAttr = isUnban ? ' title="' + rejectTitle + '"' : '';
+                    const approveAttr = isUnban ? ' title="' + approveTitle + '"' : '';
+                    const rejectTitle = isUnban ? (${js('crm.btn_deny')} || 'Deny') : 'Reject';
+                    const rejectAttr = ' title="' + rejectTitle + '"';
                     return '<div class="glass rounded-xl p-3 flex justify-between items-center ' + borderClass + '">' +
-                        '<div>' +
-                            '<div class="flex items-center gap-2 mb-0.5">' +
-                                '<div class="font-medium text-sm truncate max-w-[250px]">' + firstEsc + ' (' + userDisplay + ')</div>' +
+                        '<div class="min-w-0 flex-1">' +
+                            '<div class="flex items-center gap-2 mb-1">' +
+                                '<div class="font-medium text-sm truncate">' + firstEsc + ' (' + userDisplay + ')</div>' +
                             '</div>' +
-                            '<div class="flex items-center gap-2">' +
-                                '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ' + typeColor + ' border">' + typeIcon + ' ' + typeLabel + '</span>' +
-                                '<div class="text-xs text-gray-500">' + ${js('crm.requested_label')} + ' ' + time + '</div>' +
+                            '<div class="flex items-center gap-3">' +
+                                '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ' + typeColor + ' border">' + typeLabel + '</span>' +
+                                '<span class="text-xs text-gray-500 shrink-0">' + ${js('crm.requested_label')} + ' ' + time + '</span>' +
                             '</div>' +
                         '</div>' +
-                        '<div class="flex gap-2">' +
+                        '<div class="flex items-center gap-2 ml-3 shrink-0">' +
                             '<button onclick="performAction(\\'reject\\', \\'' + idEsc + '\\')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"' + rejectAttr + '><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>' +
-                            '<button onclick="performAction(\\'' + actionApprove + '\\', \\'' + idEsc + '\\')" class="' + approveClass + ' rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition">' + approveInner + '</button>' +
+                            '<button onclick="performAction(\\'' + actionApprove + '\\', \\'' + idEsc + '\\')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"' + approveAttr + '>' + approveInner + '</button>' +
                         '</div>' +
                     '</div>';
                 }).join('');
@@ -1288,8 +1353,8 @@ export function renderCrmHTML(lang = 'en') {
                     if (!isPrivileged) actionBtns += '<button onclick="changeLimit(\\'' + chatIdEsc + '\\', ' + u.item_limit + ', \\'' + firstNameJsEsc + '\\', \\'' + usernameJsEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">' + ${js('crm.btn_edit_limit')} + '</button>';
                     if (isApproved) actionBtns += '<button onclick="performAction(\\'promote\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${js('crm.btn_promote')} + '</button>';
                     if (isAdmin) actionBtns += '<button onclick="performAction(\\'demote\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">' + ${js('crm.btn_demote_drawer')} + '</button>';
+                    if (!isRoot) actionBtns += '<button onclick="performAction(\\'revoke\\', \\'' + chatIdEsc + '\\')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
                 }
-                if (!isRoot) actionBtns += '<button onclick="performAction(\\'revoke\\', \\'' + chatIdEsc + '\\')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
 
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">' +
                     rootGlow +
@@ -1514,6 +1579,10 @@ export function renderCrmHTML(lang = 'en') {
             if (res) {
                 if (res.status === 'queued') {
                     showToast(${js('crm.toast_action_queued')}, "success");
+                } else if (res.error === 'already_handled') {
+                    // Another admin already processed this queue item
+                    showToast(res.message || 'This request was already handled by another admin', 'warning');
+                    refreshData(); // Auto-refresh to remove stale item
                 } else {
                     showToast(${js('crm.toast_success')}, "success");
                     if(action.includes('_product')) {
