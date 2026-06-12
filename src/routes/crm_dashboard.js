@@ -497,6 +497,30 @@ export async function fetchAPI(request, env, ctx) {
       });
     }
 
+    if (url.pathname.startsWith("/api/crm/product-subs/") && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      
+      const parts = url.pathname.split("/").filter(Boolean);
+      const targetAsin = parts[3];
+      if (!targetAsin) return new Response("Invalid ASIN", { status: 400 });
+      
+      const subs = await env.DB.prepare(\`
+        SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at,
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin,
+               u.first_name, u.username
+        FROM User_Subscriptions s
+        JOIN Global_Products p ON s.asin = p.asin
+        LEFT JOIN Users u ON s.chat_id = u.chat_id
+        WHERE s.asin = ?
+      \`).bind(targetAsin).all();
+      
+      return new Response(JSON.stringify({ items: subs.results || [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     if (url.pathname.startsWith("/api/crm/user/") && request.method === "GET") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
@@ -1161,6 +1185,26 @@ export function renderCrmHTML(lang = 'en') {
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
+                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Subs Drawer -->
+    <div id="drawer-product-subs" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeProductSubsDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-product-subs-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg" id="drawer-product-subs-title">Subscribers</h3>
+                    <p class="text-xs text-gray-400" id="drawer-product-subs-count">--</p>
+                </div>
+                <button onclick="closeProductSubsDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-product-subs-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
@@ -1831,13 +1875,13 @@ export function renderCrmHTML(lang = 'en') {
                 } else if (allMissing) {
                     reasonBadge = '<span class="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-800/50">' + ${js('crm.graveyard_all_missing')} + '</span>';
                 }
-                const subsText = item.active_subs + ' ' + ${js('crm.graveyard_subs')};
+                const subsText = '<bdi>' + item.active_subs + '</bdi> ' + ${js('crm.graveyard_subs')};
 
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3">';
-                html += '<input type="checkbox" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
+                html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate">' + name + '</div>';
-                html += '<div class="text-xs text-gray-500 mt-0.5">' + escapeHtml(item.asin) + ' · ' + subsText + '</div>';
+                html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
                 html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
                 html += '</div></div>';
             });
@@ -1848,6 +1892,81 @@ export function renderCrmHTML(lang = 'en') {
             const content = document.getElementById('drawer-graveyard-content');
             content.style.transform = 'translateY(100%)';
             setTimeout(() => { document.getElementById('drawer-graveyard').classList.add('hidden'); }, 300);
+        }
+
+        async function openProductSubsDrawer(asin) {
+            const drawer = document.getElementById('drawer-product-subs');
+            const content = document.getElementById('drawer-product-subs-content');
+            const itemsCont = document.getElementById('drawer-product-subs-items');
+            
+            document.getElementById('drawer-product-subs-title').innerText = 'Subscribers for ' + asin;
+            document.getElementById('drawer-product-subs-count').innerText = '--';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-amber-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+
+            drawer.classList.remove('hidden');
+            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+
+            const data = await fetchAPI('/product-subs/' + asin);
+            if (!data || !data.items || data.items.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No subscribers found.</div>';
+                document.getElementById('drawer-product-subs-count').innerText = '0 items';
+                return;
+            }
+
+            document.getElementById('drawer-product-subs-count').innerText = data.items.length + ' items';
+            const lang = document.documentElement.lang || 'en';
+            
+            itemsCont.innerHTML = data.items.map((item) => {
+                const isMasry = lang === 'masry';
+                const name = (lang === 'masry' && item.name_ar) ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
+                const userName = escapeHtml(item.first_name || 'User');
+                const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
+                const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
+                const price = item.new_price ? item.new_price + ' EGP' : (item.used_price ? 'Used Only' : 'Out of Stock');
+                const hasTarget = !!item.target_price;
+                const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
+                
+                const actionBtnHtml = item.is_paused === 1
+                    ? \`
+                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
+                            \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
+                        </button>\`
+                    : \`
+                        <button onclick="performAction('pause_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50">
+                            \${isMasry ? '⏸️ ايقاف' : '⏸️ Pause'}
+                        </button>\`;
+
+                return \`
+                <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="font-medium text-sm truncate max-w-[60%]">\${escapeHtml(name)}</div>
+                        \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">Paused</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>'}
+                    </div>
+                    <div class="flex items-center justify-between text-xs mb-3">
+                        <code class="text-gray-400">\${item.asin}</code>
+                        <span class="text-brand-400">\${displayUser}</span>
+                    </div>
+                    <div class="flex justify-between items-end mb-3">
+                        <div class="text-sm font-semibold">\${price}</div>
+                        \${targetBadge}
+                    </div>
+                    <div class="flex gap-2">
+                        \${actionBtnHtml}
+                        <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
+                            \${isMasry ? '📊 الرسم' : '📊 Chart'}
+                        </button>
+                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
+                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
+                        </button>
+                    </div>
+                </div>\`;
+            }).join('');
+        }
+
+        function closeProductSubsDrawer() {
+            const content = document.getElementById('drawer-product-subs-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => { document.getElementById('drawer-product-subs').classList.add('hidden'); }, 300);
         }
 
         function toggleGraveyardSelectAll() {
