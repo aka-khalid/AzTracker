@@ -505,7 +505,7 @@ export async function fetchAPI(request, env, ctx) {
       const targetAsin = parts[3];
       if (!targetAsin) return new Response("Invalid ASIN", { status: 400 });
       
-      const subs = await env.DB.prepare(\`
+      const subs = await env.DB.prepare(`
         SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at,
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin,
                u.first_name, u.username
@@ -513,7 +513,7 @@ export async function fetchAPI(request, env, ctx) {
         JOIN Global_Products p ON s.asin = p.asin
         LEFT JOIN Users u ON s.chat_id = u.chat_id
         WHERE s.asin = ?
-      \`).bind(targetAsin).all();
+      `).bind(targetAsin).all();
       
       return new Response(JSON.stringify({ items: subs.results || [] }), {
         status: 200,
@@ -566,99 +566,6 @@ export async function fetchAPI(request, env, ctx) {
         const row = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(aid).first();
         return row?.lang || 'en';
       };
-
-      if (action === "restore_kv") {
-        if (!auth.isRootAdmin) {
-          await sendTelegram(env, adminId, t('crm.action_unauthorized', adminLang));
-          return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 403 });
-        }
-        ctx.waitUntil((async () => {
-          try {
-            const allUsers = await env.DB.prepare("SELECT chat_id, role FROM Users").all();
-            let count = 0;
-            const now = Date.now();
-
-            for (const row of allUsers.results) {
-              const products = await env.AZTRACKER_DB.get("user:" + row.chat_id + ":products", "json");
-              if (!products) continue;
-
-              // Get current D1 subscriptions for this user
-              const existingSubs = await env.DB.prepare("SELECT asin FROM User_Subscriptions WHERE chat_id = ?").bind(row.chat_id).all();
-              const existingAsins = new Set(existingSubs.results.map(s => s.asin));
-
-              for (const p of products) {
-                const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
-                const asin = asinMatch ? asinMatch[1] : null;
-                if (!asin) continue;
-
-                // Always overwrite Global_Products with pristine KV history to fix corrupted test data
-                const itemData = await env.AZTRACKER_DB.get("item:" + asin, "json");
-
-                if (itemData) {
-                    // Calculate derived stats from legacy history
-                    let histMean = 0;
-                    let histStdev = 0;
-                    let isAtlNew = 0;
-
-                    if (itemData.history_new && Array.isArray(itemData.history_new) && itemData.history_new.length >= 2) {
-                        const newPrices = itemData.history_new;
-                        const sum = newPrices.reduce((a, b) => a + b, 0);
-                        const mean = sum / newPrices.length;
-                        const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (newPrices.length - 1);
-                        histMean = mean;
-                        histStdev = Math.sqrt(variance);
-                        const atl = Math.min(...newPrices);
-                        isAtlNew = (itemData.new_price && itemData.new_price < atl) ? 1 : 0;
-
-                        // Migrate to new KV history format
-                        const migratedHistory = newPrices.map((price, idx) => ({
-                            t: Math.floor(now / 1000) - ((newPrices.length - idx) * 3600), // Fake hourly timestamps
-                            n: price,
-                            u: (itemData.history_used && itemData.history_used[idx]) ? itemData.history_used[idx] : null
-                        }));
-                        await env.AZTRACKER_DB.put("history:" + asin, JSON.stringify(migratedHistory));
-                    }
-
-                    await env.DB.prepare(`
-                      INSERT OR REPLACE INTO Global_Products
-                      (asin, name, new_price, used_price, amazon_price, hist_mean, hist_stdev, is_atl_new, last_updated, new_seller, used_seller, amazon_seller)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `).bind(
-                      asin,
-                      p.name || itemData.name || "Unknown Product",
-                      itemData.new_price || null,
-                      itemData.used_price || null,
-                      itemData.amazon_price || null,
-                      histMean,
-                      histStdev,
-                      isAtlNew,
-                      itemData.last_updated || now,
-                      itemData.new_seller || null,
-                      itemData.used_seller || null,
-                      itemData.amazon_seller || null
-                    ).run();
-                } else {
-                  await env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name || "Unknown Product", now).run();
-                }
-
-                if (!existingAsins.has(asin)) {
-                  const isPaused = (row.role === 'rejected' || p.paused) ? 1 : 0;
-                  await env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(
-                    row.chat_id, asin, p.target_price || null, isPaused, now
-                  ).run();
-                  count++;
-                }
-              }
-            }
-            await sendTelegram(env, adminId, t('crm.action_restoration_complete', adminLang) + `\n\nSuccessfully restored ${count} missing products (including their history and properties) from the main KV database.`);
-            await logAudit(env, adminId, "RESTORE_KV", "global", `Restored ${count} missing products`);
-          } catch (e) {
-            console.error("KV Restore error:", e);
-            await sendTelegram(env, adminId, t('crm.action_restoration_fail', adminLang) + `\n\nError: <code>${e.message}</code>`);
-          }
-        })());
-        return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
-      }
 
       if (action === "force_scrape") {
         // Enqueue to SCRAPER_QUEUE — the queue worker handles the self-perpetuating
@@ -962,7 +869,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20" onclick="openTopChartsDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
-                        <div class="text-sm font-bold text-brand-400 mt-1">${t('crm.btn_view', lang)}</div>
+                        <div class="text-sm font-bold text-brand-400 mt-1" id="stat-top-charts">--</div>
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-amber-500/20" onclick="openPausedDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
@@ -983,17 +890,17 @@ export function renderCrmHTML(lang = 'en') {
                             <span class="text-xs font-medium text-green-400" id="engine-status-text">--</span>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-2 text-center">
-                        <div class="bg-gray-800/50 rounded-lg p-2">
-                            <div class="text-[10px] text-gray-500 uppercase">${t('crm.engine_interval', lang)}</div>
+                    <div class="grid grid-cols-3 gap-2 text-center h-full">
+                        <div class="bg-gray-800/50 rounded-lg p-2 flex flex-col justify-between h-full min-h-[60px]">
+                            <div class="text-[10px] text-gray-500 uppercase mb-1">${t('crm.engine_interval', lang)}</div>
                             <div class="text-sm font-bold text-white" id="engine-interval">--</div>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-2">
-                            <div class="text-[10px] text-gray-500 uppercase">${t('crm.engine_daily_ops', lang)}</div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 flex flex-col justify-between h-full min-h-[60px]">
+                            <div class="text-[10px] text-gray-500 uppercase mb-1">${t('crm.engine_daily_ops', lang)}</div>
                             <div class="text-sm font-bold text-white" id="engine-daily-ops">--</div>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-2">
-                            <div class="text-[10px] text-gray-500 uppercase">${t('crm.engine_batches', lang)}</div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 flex flex-col justify-between h-full min-h-[60px]">
+                            <div class="text-[10px] text-gray-500 uppercase mb-1">${t('crm.engine_batches', lang)}</div>
                             <div class="text-sm font-bold text-white" id="engine-batches">--</div>
                         </div>
                     </div>
@@ -1004,13 +911,8 @@ export function renderCrmHTML(lang = 'en') {
                         <span class="text-gray-400 text-sm">${t('crm.last_sync', lang)}: </span>
                         <span class="text-sm font-medium" id="stat-sync">--</span>
                     </div>
-                    <div class="flex gap-2 w-full">
-                        <div id="restore-btn-container" class="flex-1">
-                        <button onclick="performAction('restore_kv', 'global')" class="w-full justify-center bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-emerald-500/20 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> ${t('crm.restore_products', lang)}
-                        </button>
-                        </div>
-                        <button onclick="triggerGlobalScrape()" class="flex-1 justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                    <div class="w-full">
+                        <button onclick="triggerGlobalScrape()" class="w-full justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> ${t('crm.force_check', lang)}
                         </button>
                     </div>
@@ -1309,11 +1211,12 @@ export function renderCrmHTML(lang = 'en') {
             if (appData.auth && !appData.auth.isRootAdmin) {
                 const broadcastEl = document.getElementById('broadcast-section');
                 if (broadcastEl) broadcastEl.style.display = 'none';
-                const restoreEl = document.getElementById('restore-btn-container');
-                if (restoreEl) restoreEl.style.display = 'none';
             }
+            const activeLength = appData.systemStats.activeWatchPool || 0;
+            const chartsLength = appData.topCharts ? appData.topCharts.length : 0;
+            document.getElementById('stat-top-charts').innerText = Math.round((chartsLength / Math.max(1, activeLength)) * 100) + '%';
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
-            document.getElementById('stat-pool').innerText = appData.systemStats.activeWatchPool || 0;
+            document.getElementById('stat-pool').innerText = activeLength;
             document.getElementById('stat-paused').innerText = appData.systemStats.pausedProducts || 0;
             document.getElementById('stat-ghost').innerText = appData.systemStats.ghostProducts || 0;
             const ms = appData.systemStats.lastRunMs;
@@ -1877,7 +1780,7 @@ export function renderCrmHTML(lang = 'en') {
                 }
                 const subsText = '<bdi>' + item.active_subs + '</bdi> ' + ${js('crm.graveyard_subs')};
 
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\'' + escapeHtml(item.asin) + '\')">';
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate">' + name + '</div>';
