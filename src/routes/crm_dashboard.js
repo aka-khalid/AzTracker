@@ -1384,8 +1384,12 @@ export function renderCrmHTML(lang = 'en') {
             const intervalMin = Math.max(5, Math.round(intervalMs / 60000));
             document.getElementById('engine-interval').innerText = intervalMin + ' min';
 
-            // Daily operations = maxRuns * batches * 10 (approximate products per day)
-            const dailyOps = maxRuns * batches * 10;
+            // Actual engine runs per day are strictly bounded by the 5-minute hardware cron trigger (300,000 ms)
+            // 86,400,000 ms per day / 300,000 ms = 288 max hardware wake-ups per day.
+            const actualRunsPerDay = Math.floor(86400000 / Math.max(300000, intervalMs));
+
+            // Daily Queue Operations = actual runs * batches (1 queue message per batch)
+            const dailyOps = actualRunsPerDay * batches;
             document.getElementById('engine-daily-ops').innerText = dailyOps.toLocaleString();
 
             document.getElementById('engine-batches').innerText = batches;
