@@ -474,8 +474,9 @@ export async function fetchAPI(request, env, ctx) {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
       
-      const targetId = url.pathname.split("/").filter(Boolean).pop();
-      if (!targetId) return new Response("Invalid ID", { status: 400 });
+      const parts = url.pathname.split("/").filter(Boolean);
+      const targetId = parts[3];
+      if (!targetId || targetId === "products") return new Response("Invalid ID", { status: 400 });
       
       const products = await env.DB.prepare(`
         SELECT s.asin, s.target_price, s.is_paused, 
