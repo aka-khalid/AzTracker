@@ -1,6 +1,6 @@
 # AzTracker Test Suite & Diagnostic Vectors
 
-> **Architecture:** Phase 6.10 Modular ES6
+> **Architecture:** Phase 6.11 Modular ES6 + Localization
 > **Focus:** Asynchronous Queue Architecture & Rate Limiting
 
 This document serves as the living test specification for the current asynchronous architectural phases. 
@@ -37,7 +37,7 @@ Alerts are fully asynchronous. `telegram-outbox` isolates the scraping logic fro
 
 ---
 
-## 3. Localization & CRM Integration (Phase 6.10)
+## 3. Localization & CRM Integration (Phase 6.11)
 
 Tests for the bilingual localization engine and ES6 route structures.
 
