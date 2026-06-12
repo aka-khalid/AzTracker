@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - 'src/**'
       - 'wrangler.toml'
@@ -21,10 +22,19 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy to Cloudflare Workers (Development)
+        if: github.ref == 'refs/heads/dev'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.92.0"
 
+      - name: Deploy to Cloudflare Workers (Production)
+        if: github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.92.0"
+          command: deploy --env production
