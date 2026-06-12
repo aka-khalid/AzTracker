@@ -396,7 +396,8 @@ export async function fetchAPI(request, env, ctx) {
             lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null,
             pausedProducts: pausedRes ? pausedRes.pausedCount : 0,
             ghostProducts: ghostRes ? ghostRes.ghostCount : 0,
-            hardwareIntervalMs: hardwareCronRes || "300000"
+            hardwareIntervalMs: hardwareCronRes || "300000",
+            queueLimit: env.DAILY_QUEUE_LIMIT || "10000"
           },
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
@@ -1400,8 +1401,9 @@ export function renderCrmHTML(lang = 'en') {
 
             document.getElementById('engine-batches').innerText = batches;
 
-            // Status: color-code based on how close to 10,000 daily ops (free tier limit)
-            const opsRatio = dailyOps / 10000;
+            // Status: color-code based on how close to daily ops limit
+            const opsLimit = parseInt(appData.systemStats.queueLimit || '10000', 10);
+            const opsRatio = dailyOps / opsLimit;
             const dot = document.getElementById('engine-status-dot');
             const text = document.getElementById('engine-status-text');
 
