@@ -869,7 +869,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20" onclick="openTopChartsDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
-                        <div class="text-sm font-bold text-brand-400 mt-1" id="stat-top-charts">--</div>
+                        <div class="text-sm font-bold text-brand-400 mt-1">${t('crm.btn_view', lang)}</div>
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-amber-500/20" onclick="openPausedDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
@@ -1213,8 +1213,6 @@ export function renderCrmHTML(lang = 'en') {
                 if (broadcastEl) broadcastEl.style.display = 'none';
             }
             const activeLength = appData.systemStats.activeWatchPool || 0;
-            const chartsLength = appData.topCharts ? appData.topCharts.length : 0;
-            document.getElementById('stat-top-charts').innerText = Math.round((chartsLength / Math.max(1, activeLength)) * 100) + '%';
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = activeLength;
             document.getElementById('stat-paused').innerText = appData.systemStats.pausedProducts || 0;
