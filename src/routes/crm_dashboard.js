@@ -1693,7 +1693,7 @@ export function renderCrmHTML(lang = 'en') {
             const html = chunk.map((item) => {
                 const name = (item.name || item.asin);
                 const userName = escapeHtml(item.first_name || 'User');
-                const userDetails = item.username ? \`(@\${item.username}/\${item.chat_id})\` : \`(\${item.chat_id})\`;
+                const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
                 const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
                 const price = item.new_price ? item.new_price + ' EGP' : (item.used_price ? 'Used Only' : 'Out of Stock');
                 const hasTarget = !!item.target_price;
@@ -1762,7 +1762,7 @@ export function renderCrmHTML(lang = 'en') {
                 const isMasry = lang === 'masry';
                 const name = (item.name || item.asin);
                 const userName = escapeHtml(item.first_name || 'User');
-                const userDetails = item.username ? \`(@\${item.username}/\${item.chat_id})\` : \`(\${item.chat_id})\`;
+                const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
                 const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
                 const pausedAgo = item.paused_at ? Math.round((Date.now() - item.paused_at)/86400000) + 'd ago' : 'Unknown';
                 
