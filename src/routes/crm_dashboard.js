@@ -1583,7 +1583,7 @@ export function renderCrmHTML(lang = 'en') {
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="hover:underline hover:text-brand-300 transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
                 html += '</div>';
                 html += '<div class="text-right">';
@@ -1647,7 +1647,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex items-center justify-between mb-2">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="hover:underline hover:text-brand-300 transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                         <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
@@ -1714,7 +1714,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="bg-gray-800/50 rounded-xl p-3 border border-amber-500/20" id="paused-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex items-center justify-between mb-2">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="hover:underline hover:text-brand-300 transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                         <div class="text-xs text-gray-400">\${pausedAgo}</div>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
@@ -1781,7 +1781,7 @@ export function renderCrmHTML(lang = 'en') {
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="hover:underline hover:text-brand-300 transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
                 html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
                 html += '</div></div>';
@@ -1840,7 +1840,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex items-center justify-between mb-2">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="hover:underline hover:text-brand-300 transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                         \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">Paused</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>'}
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
