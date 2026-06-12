@@ -389,10 +389,37 @@ export async function fetchAPI(request, env, ctx) {
         headers: { "Content-Type": "application/json" }
       });
     }
+
+    if (url.pathname === "/api/crm/active-products" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const rows = await env.DB.prepare(`
+        SELECT s.chat_id, s.asin, s.added_at, s.target_price,
+               p.name, p.amazon_price, p.new_price, p.used_price,
+               u.first_name, u.username
+        FROM User_Subscriptions s
+        JOIN Global_Products p ON s.asin = p.asin
+        JOIN Users u ON s.chat_id = u.chat_id
+        WHERE s.is_paused = 0
+        ORDER BY s.added_at DESC
+      `).all();
+
+      return new Response(JSON.stringify({
+        items: rows.results || []
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     
     if (url.pathname === "/api/crm/top-charts" && request.method === "GET") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const totalRes = await env.DB.prepare("SELECT COUNT(DISTINCT asin) as total FROM User_Subscriptions WHERE is_paused = 0").first();
+      const totalActiveProducts = totalRes ? totalRes.total : 0;
+      const limit = Math.max(1, Math.ceil(totalActiveProducts * 0.25));
 
       const rows = await env.DB.prepare(`
         SELECT gp.asin, gp.name, gp.name_ar, gp.new_price, gp.amazon_price,
@@ -401,8 +428,8 @@ export async function fetchAPI(request, env, ctx) {
         JOIN User_Subscriptions s ON gp.asin = s.asin AND s.is_paused = 0
         GROUP BY gp.asin
         ORDER BY tracker_count DESC
-        LIMIT 25
-      `).all();
+        LIMIT ?
+      `).bind(limit).all();
 
       return new Response(JSON.stringify({
         items: rows.results || []
@@ -796,24 +823,28 @@ export async function fetchAPI(request, env, ctx) {
         ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, `Changed limit to ${newLimit}`));
       } else if (action === "delete_product") {
         const asin = data.asin;
-        await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        const result = await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, `Deleted product ${asin}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "pause_product") {
         const asin = data.asin;
-        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(Date.now(), targetId, asin).run();
+        const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(Date.now(), targetId, asin).run();
+        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "resume_product") {
         const asin = data.asin;
-        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "set_target") {
         const asin = data.asin;
         const target = parseFloat(data.target);
         if (isNaN(target)) return new Response("Invalid target", { status: 400 });
-        await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(target, targetId, asin).run();
+        const result = await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(target, targetId, asin).run();
+        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, `Set target price for ${asin} to ${target}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "direct_message") {
@@ -901,7 +932,7 @@ export function renderCrmHTML(lang = 'en') {
             <section>
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_overview', lang)}</h2>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center">
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-emerald-500/20" onclick="openActiveDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.products_title', lang)}</div>
                         <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                     </div>
@@ -1043,6 +1074,25 @@ export function renderCrmHTML(lang = 'en') {
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Products Drawer -->
+    <div id="drawer-active" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeActiveDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-active-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg">${t('crm.products_title', lang)}</h3>
+                    <p class="text-xs text-emerald-400" id="drawer-active-count">0 items</p>
+                </div>
+                <button onclick="closeActiveDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-active-items" onscroll="handleActiveScroll()">
             </div>
         </div>
     </div>
@@ -1606,6 +1656,89 @@ export function renderCrmHTML(lang = 'en') {
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
         }
 
+        let activeProductsData = [];
+        let activeRenderIndex = 0;
+
+        async function openActiveDrawer() {
+            const drawer = document.getElementById('drawer-active');
+            const content = document.getElementById('drawer-active-content');
+            const itemsCont = document.getElementById('drawer-active-items');
+            
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-emerald-500 rounded-full animate-spin mx-auto mb-2"></div>Loading...</div>';
+            drawer.classList.remove('hidden');
+            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+
+            const data = await fetchAPI('/active-products');
+            if (!data || !data.items || data.items.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No active products found.</div>';
+                document.getElementById('drawer-active-count').innerText = '0 items';
+                return;
+            }
+            
+            document.getElementById('drawer-active-count').innerText = data.items.length + ' items';
+            activeProductsData = data.items;
+            activeRenderIndex = 0;
+            itemsCont.innerHTML = '';
+            renderMoreActiveProducts();
+        }
+
+        function renderMoreActiveProducts() {
+            if (activeRenderIndex >= activeProductsData.length) return;
+            const itemsCont = document.getElementById('drawer-active-items');
+            const chunk = activeProductsData.slice(activeRenderIndex, activeRenderIndex + 50);
+            activeRenderIndex += 50;
+            const lang = document.documentElement.lang || 'en';
+            const isMasry = lang === 'masry';
+
+            const html = chunk.map((item) => {
+                const name = (item.name || item.asin);
+                const handle = escapeHtml(item.username ? '@' + item.username : item.first_name);
+                const price = item.new_price ? item.new_price + ' EGP' : (item.used_price ? 'Used Only' : 'Out of Stock');
+                const hasTarget = !!item.target_price;
+                const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
+                
+                return \`
+                <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="font-medium text-sm truncate max-w-[60%]">\${escapeHtml(name)}</div>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs mb-3">
+                        <code class="text-gray-400">\${item.asin}</code>
+                        <span class="text-brand-400">\${handle} (\${item.chat_id})</span>
+                    </div>
+                    <div class="flex justify-between items-end mb-3">
+                        <div class="text-sm font-semibold">\${price}</div>
+                        \${targetBadge}
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="performAction('pause_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50">
+                            \${isMasry ? '⏸️ ايقاف' : '⏸️ Pause'}
+                        </button>
+                        <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
+                            \${isMasry ? '📊 الرسم' : '📊 Chart'}
+                        </button>
+                    </div>
+                </div>\`;
+            }).join('');
+            
+            itemsCont.insertAdjacentHTML('beforeend', html);
+        }
+
+        function handleActiveScroll() {
+            const cont = document.getElementById('drawer-active-items');
+            if (cont.scrollTop + cont.clientHeight >= cont.scrollHeight - 100) {
+                renderMoreActiveProducts();
+            }
+        }
+
+        function closeActiveDrawer() {
+            const drawer = document.getElementById('drawer-active');
+            const content = document.getElementById('drawer-active-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => { drawer.classList.add('hidden'); }, 300);
+        }
+
         async function openPausedDrawer() {
             const drawer = document.getElementById('drawer-paused');
             const content = document.getElementById('drawer-paused-content');
@@ -1640,14 +1773,14 @@ export function renderCrmHTML(lang = 'en') {
                         <span class="text-brand-400">\${handle} (\${item.chat_id})</span>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' })" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
+                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
                             \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
-                        </button>
-                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' })" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
-                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
                         </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             \${isMasry ? '📊 الرسم' : '📊 Chart'}
+                        </button>
+                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
+                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
                         </button>
                     </div>
                 </div>\`;
@@ -1864,25 +1997,64 @@ export function renderCrmHTML(lang = 'en') {
             });
         }
 
-        async function performAction(action, targetId, data = null) {
+        async function performAction(action, targetId, data = null, btn = null) {
             if (!targetId) targetId = "global";
-            showLoader();
+
+            if (action === 'delete_product') {
+                const confirmed = confirm("Are you sure you want to delete this tracked product? This cannot be undone.");
+                if (!confirmed) return;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                const origHtml = btn.innerHTML;
+                btn.innerHTML = '<div class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block align-middle"></div>';
+                btn.dataset.origHtml = origHtml;
+            } else {
+                showLoader();
+            }
+
             const res = await fetchAPI('/action', 'POST', { action, targetId, data });
-            hideLoader();
+            
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = btn.dataset.origHtml;
+            } else {
+                hideLoader();
+            }
             
             if (res) {
                 if (res.status === 'queued') {
                     showToast(${js('crm.toast_action_queued')}, "success");
-                } else if (res.error === 'already_handled') {
-                    // Another admin already processed this queue item
-                    showToast(res.message || 'This request was already handled by another admin', 'warning');
+                } else if (res.error === 'already_handled' || res.error === 'not_found') {
+                    showToast(res.message || 'Product no longer exists or was already modified.', 'warning');
                     refreshData(); // Auto-refresh to remove stale item
                 } else {
                     showToast(${js('crm.toast_success')}, "success");
-                    if(action.includes('_product')) {
-                        openDrawer(targetId); // refresh drawer
+
+                    if (btn && (action === 'pause_product' || action === 'resume_product')) {
+                        const isMasry = (document.documentElement.lang || 'en') === 'masry';
+                        if (action === 'pause_product') {
+                            btn.setAttribute('onclick', \`performAction('resume_product', '\${targetId}', { asin: '\${data.asin}' }, this)\`);
+                            btn.innerHTML = isMasry ? '▶️ تشغيل' : '▶️ Unpause';
+                            btn.dataset.origHtml = btn.innerHTML;
+                            btn.className = 'flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20';
+                        } else {
+                            btn.setAttribute('onclick', \`performAction('pause_product', '\${targetId}', { asin: '\${data.asin}' }, this)\`);
+                            btn.innerHTML = isMasry ? '⏸️ ايقاف' : '⏸️ Pause';
+                            btn.dataset.origHtml = btn.innerHTML;
+                            btn.className = 'flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50';
+                        }
+                    } else if (action.includes('_product') && !btn) {
+                        openDrawer(targetId); // legacy refresh
                     }
-                    refreshData(); // refresh background
+
+                    if (action === 'delete_product' && btn) {
+                        const itemCard = document.getElementById(\`paused-item-\${targetId}-\${data.asin}\`) || document.getElementById(\`active-item-\${targetId}-\${data.asin}\`) || document.getElementById(\`item-\${data.asin}\`);
+                        if (itemCard) itemCard.remove();
+                    }
+
+                    refreshData();
                 }
             }
         }
