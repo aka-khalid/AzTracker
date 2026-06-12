@@ -117,6 +117,16 @@ Decoupled logic for queue consumers and crons:
 
 ---
 
+## 📚 Documentation
+
+Detailed documentation for various aspects of the system can be found in the `docs/` directory:
+
+- **[ROADMAP.md](docs/ROADMAP.md)**: Architectural milestones, feature history, and tech debt tracking.
+- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Dual-environment infrastructure, deployment workflow, and webhook registration.
+- **[TESTING.md](docs/TESTING.md)**: Diagnostic vectors, queue testing protocols, and async execution tests.
+- **[GALLERY.md](docs/GALLERY.md)**: Visual tour of the fully localized LTR/RTL CRM Dashboard.
+
+---
 ## 🔑 Environment Variables & Secrets
 
 ### Plaintext Variables (set in `wrangler.toml` `[vars]`)
