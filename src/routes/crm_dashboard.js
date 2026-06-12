@@ -1388,8 +1388,8 @@ export function renderCrmHTML(lang = 'en') {
             // 86,400,000 ms per day / 300,000 ms = 288 max hardware wake-ups per day.
             const actualRunsPerDay = Math.floor(86400000 / Math.max(300000, intervalMs));
 
-            // Daily Queue Operations = actual runs * batches (1 queue message per batch)
-            const dailyOps = actualRunsPerDay * batches;
+            // Daily Queue Operations = actual runs * batches * 3 (1 message = write + read + delete)
+            const dailyOps = actualRunsPerDay * batches * 3;
             document.getElementById('engine-daily-ops').innerText = dailyOps.toLocaleString();
 
             document.getElementById('engine-batches').innerText = batches;
