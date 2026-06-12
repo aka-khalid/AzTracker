@@ -141,8 +141,7 @@ export async function executeScrapeEngine(env, offset = 0) {
   // Note: Dead product detection (24h missing → delisted) has been removed.
   // Products no longer auto-pause or get delisted when absent from a scrape batch.
 
-  let bestDeal = null;
-  let maxZScore = 0.0;
+  let bestDeal = [];
   
   function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice, isUsed) {
       const base_url = `https://www.amazon.eg/dp/${liveItem.asin}`;
@@ -258,19 +257,25 @@ export async function executeScrapeEngine(env, offset = 0) {
     const oldItem = staleProducts.find(p => p.asin === liveItem.asin);
     if (!oldItem) continue;
 
-    // Anti-Flap Timers (in-memory only — no DB persistence)
-    let newMissingSince = null;
-    let usedMissingSince = null;
-    let amazonMissingSince = null;
+    // Anti-Flap Timers (persisted to DB)
+    let newMissingSince = oldItem.new_missing_since || null;
+    let usedMissingSince = oldItem.used_missing_since || null;
+    let amazonMissingSince = oldItem.amazon_missing_since || null;
 
     if (liveItem.newPrice === undefined || liveItem.newPrice === null) {
-      if (oldItem.new_price !== null) newMissingSince = now;
+      if (oldItem.new_price !== null && !newMissingSince) newMissingSince = now;
+    } else {
+      newMissingSince = null;
     }
     if (liveItem.usedPrice === undefined || liveItem.usedPrice === null) {
-      if (oldItem.used_price !== null) usedMissingSince = now;
+      if (oldItem.used_price !== null && !usedMissingSince) usedMissingSince = now;
+    } else {
+      usedMissingSince = null;
     }
     if (liveItem.amazonPrice === undefined || liveItem.amazonPrice === null) {
-      if (oldItem.amazon_price !== null) amazonMissingSince = now;
+      if (oldItem.amazon_price !== null && !amazonMissingSince) amazonMissingSince = now;
+    } else {
+      amazonMissingSince = null;
     }
 
     const MS_2_5_HOURS = 9000000;
@@ -397,8 +402,18 @@ export async function executeScrapeEngine(env, offset = 0) {
       
       // Decoupled New vs Amazon logic for Alerts
       if (targetPrice) {
-          if (finalNewPrice !== null && finalNewPrice > targetPrice) { if (alertSentNew) alertSentNew = 0; }
-          if (finalUsedPrice !== null && finalUsedPrice > targetPrice) { if (alertSentUsed) alertSentUsed = 0; }
+          if (finalNewPrice !== null && finalNewPrice > targetPrice) { 
+              if (alertSentNew) {
+                  alertSentNew = 0;
+                  d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET alert_sent_new = 0 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
+              }
+          }
+          if (finalUsedPrice !== null && finalUsedPrice > targetPrice) { 
+              if (alertSentUsed) {
+                  alertSentUsed = 0;
+                  d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
+              }
+          }
           
           let targetHitNew = false;
           let targetHitUsed = false;
@@ -479,6 +494,7 @@ export async function executeScrapeEngine(env, offset = 0) {
               seen_amazon_eg_at = ?, seen_resale_at = ?,
               new_seller = ?, new_mid = ?, used_seller = ?, used_mid = ?,
               amazon_seller = ?, amazon_mid = ?, amazon_is_buybox = ?,
+              new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ?,
               hist_mean = ?, hist_stdev = ?, is_atl_new = ?,
               name_ar = COALESCE(?, name_ar),
               name = COALESCE(?, name)
@@ -488,6 +504,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           seenAmazonEgAt, seenResaleAt,
           finalNewSeller, finalNewMid, finalUsedSeller, finalUsedMid,
           finalAmazonSeller, finalAmazonMid, finalAmazonIsBuybox,
+          newMissingSince, usedMissingSince, amazonMissingSince,
           histMean, histStdev, isAtlNew,
           liveItem.name_ar || null,
           liveItem.name || null,
@@ -526,79 +543,76 @@ export async function executeScrapeEngine(env, offset = 0) {
              if (histMean > 0 && histStdev > 0) {
                  zScore = (broadcastPrice - histMean) / histStdev;
              } else if (histMean > 0 && histStdev === 0) {
-                 if (broadcastPrice <= histMean * 0.85) zScore = -1.5;
+                 if (broadcastPrice <= histMean * 0.90) zScore = -1.0;
              }
              
              const displayLastPrice = histMean > 0 ? histMean : lPrice;
              const dropPct = ((displayLastPrice - broadcastPrice) / displayLastPrice) * 100;
              
-             const isStandardDeal = (zScore <= -1.5) && (dropPct >= 15.0);
-             const isAtlDeal = isAtlNew && (zScore <= -1.0) && (dropPct >= 10.0);
+             const isStandardDeal = (zScore <= -1.0) && (dropPct >= 10.0);
+             const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= 5.0);
+             const isFlashSale = dropPct >= 20.0;
              
-             if (isStandardDeal || isAtlDeal) {
-                 const absZ = Math.abs(zScore);
-                 if (absZ > maxZScore) {
-                     maxZScore = absZ;
-                     bestDeal = {
-                         asin: liveItem.asin,
-                         name: liveItem.name,
-                         name_ar: liveItem.name_ar || null,
-                         price: broadcastPrice,
-                         last_price: displayLastPrice,
-                         drop_pct: dropPct,
-                         is_atl: isAtlNew,
-                         seller: finalNewSeller,
-                         mid: finalNewMid
-                     };
-                 }
+             if (isStandardDeal || isAtlDeal || isFlashSale) {
+                 bestDeal.push({
+                     asin: liveItem.asin,
+                     name: liveItem.name,
+                     name_ar: liveItem.name_ar || null,
+                     price: broadcastPrice,
+                     last_price: displayLastPrice,
+                     drop_pct: dropPct,
+                     is_atl: isAtlNew,
+                     seller: finalNewSeller,
+                     mid: finalNewMid,
+                     absZ: isFlashSale ? 999 : Math.abs(zScore)
+                 });
              }
         }
     }
   }
 
   // Final Broadcast (public channel — organic Egyptian Arabic)
-  if (bestDeal && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
-      const safe_name = escapeHtml(truncateName(bestDeal.name_ar || bestDeal.name || bestDeal.asin) || t('product.unknown_product', 'masry'));
-      const base_url = `https://www.amazon.eg/dp/${bestDeal.asin}`;
-      const qParams = new URLSearchParams();
-      const pTag = env.AMAZON_PARTNER_TAG;
-      if (pTag) qParams.append("tag", pTag);
-      const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
+  if (bestDeal.length > 0 && env.TELEGRAM_PUBLIC_CHANNEL_ID) {
+      // Sort by best score (descending) and take top 3
+      bestDeal.sort((a, b) => b.absZ - a.absZ);
+      const topDeals = bestDeal.slice(0, 3);
 
-      const safe_broadcast_seller = escapeHtml(bestDeal.seller || t('fallback.unknown_seller', 'masry'));
+      for (const deal of topDeals) {
+          const safe_name = escapeHtml(truncateName(deal.name_ar || deal.name || deal.asin) || t('product.unknown_product', 'masry'));
+          const base_url = `https://www.amazon.eg/dp/${deal.asin}`;
+          const qParams = new URLSearchParams();
+          const pTag = env.AMAZON_PARTNER_TAG;
+          if (pTag) qParams.append("tag", pTag);
+          const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
 
-      const broadcast_msg = `${t('broadcast.snapshot', 'masry')}\n\n` +
-          `<b>${safe_name}</b>\n\n` +
-          `💵 <b>${formatEGP(bestDeal.price)} ج.م</b>\n` +
-          `🏬 ${safe_broadcast_seller}\n\n` +
-          `👉 <a href="${broadcast_url}">${t('broadcast.catch_deal', 'masry')}</a>\n\n` +
-          `🤖 @AzTrackerr_bot\n\n` +
-          `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">${t('broadcast.follow_more', 'masry')}</a>\n\n` +
-          `${t('broadcast.ad_disclosure', 'masry')}`;
+          const safe_broadcast_seller = escapeHtml(deal.seller || t('fallback.unknown_seller', 'masry'));
 
-      queueBatch.push({
-          type: 'telegram_alert',
-          asin: bestDeal.asin,
-          chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
-          text: truncateMessage(broadcast_msg),
-          markup: {
-              inline_keyboard: [
-                  [{ text: t('broadcast.buy_here', 'masry'), url: broadcast_url }]
-              ]
-          }
-      });
-      d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_broadcast_time_ms = ?, last_broadcast_price = ? WHERE asin = ?").bind(now, bestDeal.price, bestDeal.asin));
+          const broadcast_msg = `${t('broadcast.snapshot', 'masry')}\n\n` +
+              `<b>${safe_name}</b>\n\n` +
+              `💵 <b>${formatEGP(deal.price)} ج.م</b>\n` +
+              `🏬 ${safe_broadcast_seller}\n\n` +
+              `👉 <a href="${broadcast_url}">${t('broadcast.catch_deal', 'masry')}</a>\n\n` +
+              `🤖 @AzTrackerr_bot\n\n` +
+              `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">${t('broadcast.follow_more', 'masry')}</a>\n\n` +
+              `${t('broadcast.ad_disclosure', 'masry')}`;
+
+          queueBatch.push({
+              type: 'telegram_alert',
+              asin: deal.asin,
+              chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
+              text: truncateMessage(broadcast_msg),
+              markup: {
+                  inline_keyboard: [
+                      [{ text: t('broadcast.buy_here', 'masry'), url: broadcast_url }]
+                  ]
+              }
+          });
+          d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_broadcast_time_ms = ?, last_broadcast_price = ? WHERE asin = ?").bind(now, deal.price, deal.asin));
+      }
   }
 
-  if (d1Batch.length > 0) {
-    for (let i = 0; i < d1Batch.length; i += 100) {
-      await env.DB.batch(d1Batch.slice(i, i + 100));
-    }
-  }
-  if (kvPromises.length > 0) {
-    await Promise.all(kvPromises);
-  }
-  
+  // FIX: Queue Dispatch MUST execute BEFORE DB batch. 
+  // If queue fails, it throws an error and the DB is NOT updated, saving the alert for the retry.
   if (queueBatch.length > 0) {
     const consolidatedBatch = [];
     for (const msg of queueBatch) {
@@ -615,6 +629,15 @@ export async function executeScrapeEngine(env, offset = 0) {
       const batchBody = consolidatedBatch.slice(i, i + 100).map(b => ({ body: b }));
       await env.MESSAGE_QUEUE.sendBatch(batchBody);
     }
+  }
+
+  if (d1Batch.length > 0) {
+    for (let i = 0; i < d1Batch.length; i += 100) {
+      await env.DB.batch(d1Batch.slice(i, i + 100));
+    }
+  }
+  if (kvPromises.length > 0) {
+    await Promise.all(kvPromises);
   }
   
   return staleProducts.length === 10;
