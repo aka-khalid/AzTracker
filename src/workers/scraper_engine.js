@@ -262,20 +262,22 @@ export async function executeScrapeEngine(env, offset = 0) {
     let usedMissingSince = oldItem.used_missing_since || null;
     let amazonMissingSince = oldItem.amazon_missing_since || null;
 
+    let timersChanged = false;
+
     if (liveItem.newPrice === undefined || liveItem.newPrice === null) {
-      if (oldItem.new_price !== null && !newMissingSince) newMissingSince = now;
+      if (oldItem.new_price !== null && !newMissingSince) { newMissingSince = now; timersChanged = true; }
     } else {
-      newMissingSince = null;
+      if (newMissingSince !== null) { newMissingSince = null; timersChanged = true; }
     }
     if (liveItem.usedPrice === undefined || liveItem.usedPrice === null) {
-      if (oldItem.used_price !== null && !usedMissingSince) usedMissingSince = now;
+      if (oldItem.used_price !== null && !usedMissingSince) { usedMissingSince = now; timersChanged = true; }
     } else {
-      usedMissingSince = null;
+      if (usedMissingSince !== null) { usedMissingSince = null; timersChanged = true; }
     }
     if (liveItem.amazonPrice === undefined || liveItem.amazonPrice === null) {
-      if (oldItem.amazon_price !== null && !amazonMissingSince) amazonMissingSince = now;
+      if (oldItem.amazon_price !== null && !amazonMissingSince) { amazonMissingSince = now; timersChanged = true; }
     } else {
-      amazonMissingSince = null;
+      if (amazonMissingSince !== null) { amazonMissingSince = null; timersChanged = true; }
     }
 
     const MS_2_5_HOURS = 9000000;
@@ -464,7 +466,7 @@ export async function executeScrapeEngine(env, offset = 0) {
 
     let dbNeedsUpdate = false;
 
-    if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass) {
+    if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass || timersChanged) {
       dbNeedsUpdate = true;
     }
 
