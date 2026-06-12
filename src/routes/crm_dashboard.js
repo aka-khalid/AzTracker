@@ -2084,7 +2084,7 @@ export function renderCrmHTML(lang = 'en') {
         }
 
         function triggerGlobalScrape() {
-            tg.showConfirm(${js('crm.force_check')} + "?", (ok) => {
+            tg.showConfirm(${js('crm.force_check')} + "${lang === 'masry' ? '؟' : '?'}", (ok) => {
                 if(ok) performAction("force_scrape", null);
             });
         }

@@ -1204,7 +1204,7 @@ const dict = {
     masry: "التفاصيل:"
   },
   "crm.btn_view": {
-    en: "View ➡️",
+    en: "➡️ View",
     masry: "⬅️ شوف"
   },
   "crm.select_all": {
