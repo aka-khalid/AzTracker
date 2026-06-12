@@ -2,6 +2,9 @@ name = "aztracker-v2"
 main = "src/index.js"
 compatibility_date = "2026-05-23"
 
+[placement]
+mode = "smart"
+
 [[kv_namespaces]]
 binding = "AZTRACKER_DB"
 id = "90fcfcb742fe4d7299087c076bd1ba4d"
