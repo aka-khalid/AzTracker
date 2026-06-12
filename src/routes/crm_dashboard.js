@@ -290,7 +290,7 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as pausedCount FROM User_Subscriptions WHERE is_paused = 1").first(),
-          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_missing_since > 0 AND used_missing_since > 0 AND amazon_missing_since > 0)").first(),
+          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
           env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value')
         ]);
         
@@ -451,7 +451,7 @@ export async function fetchAPI(request, env, ctx) {
         FROM Global_Products gp
         LEFT JOIN User_Subscriptions s ON gp.asin = s.asin
         WHERE gp.delisted = 1
-           OR (gp.new_missing_since > 0 AND gp.used_missing_since > 0 AND gp.amazon_missing_since > 0)
+           OR (gp.new_price IS NULL AND gp.used_price IS NULL AND gp.amazon_price IS NULL)
         GROUP BY gp.asin
         ORDER BY active_subs ASC, gp.last_updated ASC
       `).all();
@@ -1824,7 +1824,7 @@ export function renderCrmHTML(lang = 'en') {
             data.items.forEach(item => {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
                 const isDelisted = item.delisted === 1;
-                const allMissing = item.new_missing_since > 0 && item.used_missing_since > 0 && item.amazon_missing_since > 0;
+                const allMissing = item.new_price === null && item.used_price === null && item.amazon_price === null;
                 let reasonBadge = '';
                 if (isDelisted) {
                     reasonBadge = '<span class="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-800/50">' + ${js('crm.graveyard_delisted')} + '</span>';
