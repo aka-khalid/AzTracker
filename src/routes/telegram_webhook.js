@@ -206,13 +206,17 @@ async function handleMessage(message, env, baseUrl, ctx) {
   } else if (text.startsWith('/')) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
+    const freshRoles = await getUserRoles(chatId, env, ctx);
+    const effectiveLang = freshRoles.lang || osLang || 'en';
+    await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
     return;
   }
 
   // -------------------------------
 
 
-  if (activeState) {    const pid = activeState;
+  if (activeState && activeState.startsWith("target_")) {
+    const pid = activeState.replace("target_", "");
     const num = parseFloat(text);
 
     if (isNaN(num) || num <= 0) {
@@ -407,13 +411,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       // 0 rows and we bail out.
       console.error(`[JOIN_QUEUE] Attempting INSERT for chatId=${chatId}, first_name=${callback.from?.first_name}, username=${callback.from?.username}`);
       const insertResult = await env.DB.prepare(`
-        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type)
-        VALUES (?, ?, ?, ?, '{}', 'access')
+        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type, lang)
+        VALUES (?, ?, ?, ?, '{}', 'access', ?)
       `).bind(
         chatId,
         callback.from ? callback.from.first_name : '',
         callback.from ? callback.from.username : '',
-        Date.now()
+        Date.now(),
+        lang
       ).run();
       console.error(`[JOIN_QUEUE] INSERT result: changes=${insertResult.meta.changes}, last_row_id=${insertResult.meta.last_row_id}`);
 
@@ -472,13 +477,14 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
       // ATOMIC INSERT FIRST — prevents duplicate unban requests on rapid clicks
       const unbanInsert = await env.DB.prepare(`
-        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type)
-        VALUES (?, ?, ?, ?, '{}', 'unban')
+        INSERT OR IGNORE INTO Join_Queue (chat_id, first_name, username, requested_at, admin_messages, request_type, lang)
+        VALUES (?, ?, ?, ?, '{}', 'unban', ?)
       `).bind(
         chatId,
         callback.from ? callback.from.first_name : '',
         callback.from ? callback.from.username : '',
-        Date.now()
+        Date.now(),
+        lang
       ).run();
 
       if (unbanInsert.meta.changes === 0) {
@@ -576,7 +582,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           chatId,
           env.DEFAULT_USER_PRODUCT_LIMIT || "3",
           Date.now(),
-          resolveLanguageCode(queueObj?.language_code) || 'en'
+          queueObj?.lang || 'en'
         ).run();
       } else {
         // Rejecting initial access request → role='rejected', unban_rejected stays 0
@@ -591,13 +597,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           chatId,
           env.DEFAULT_USER_PRODUCT_LIMIT || "3",
           Date.now(),
-          resolveLanguageCode(queueObj?.language_code) || 'en'
+          queueObj?.lang || 'en'
         ).run();
       }
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
 
       // Notify rejected user in their detected language
-      const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
+      const targetLang = queueObj?.lang || 'en';
 
       if (queueObj?.request_type === 'unban') {
         await sendTelegram(env, targetId, t('access.unban_rejected', targetLang));
@@ -644,7 +650,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         return;
       }
 
-      const targetLang = resolveLanguageCode(queueObj?.language_code) || 'en';
+      const targetLang = queueObj?.lang || 'en';
       const defaultLimit = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
 
       // Approve user and clear permanent ban flag (if approving an unban request)
@@ -662,10 +668,11 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         targetLang
       ).run();
       ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+      await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`unban_rejected:${targetId}`).run();
 
       // Unpause subscriptions if this was an unban approval
       if (queueObj?.request_type === 'unban') {
-        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId).run();
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ?").bind(targetId).run();
       }
 
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
@@ -880,7 +887,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("settarget_")) {
       const pid = data.replace("settarget_", "");
-      await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES (?, ?, ?)").bind(`state:${chatId}`, pid, Date.now() + 300000).run();
+      await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES (?, ?, ?)").bind(`state:${chatId}`, `target_${pid}`, Date.now() + 300000).run();
       const text = t('target.set_head', lang) + '\n\n' + t('target.set_prompt', lang, { asin: pid });
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [[{ text: t('target.cancel', lang), callback_data: `view_${pid}` }]]
@@ -902,7 +909,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const pid = data.split("_")[1];
 
       const isPaused = action === "pause" ? 1 : 0;
-      await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = ? WHERE chat_id = ? AND asin = ?").bind(isPaused, chatId, pid).run();
+      const pausedAt = isPaused ? Date.now() : null;
+      await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = ?, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(isPaused, pausedAt, chatId, pid).run();
 
       await renderProductView(env, chatId, messageId, pid, baseUrl, lang);
     }
