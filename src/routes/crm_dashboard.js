@@ -332,16 +332,18 @@ export async function fetchAPI(request, env, ctx) {
       let response = await cache.match(cacheUrl);
       
       if (!response) {
-        const [usersRes, totalProductsRes, lastUpdatedRes] = await Promise.all([
+        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes] = await Promise.all([
           env.DB.prepare(`
-            SELECT u.*, COUNT(s.asin) as active_items 
-            FROM Users u 
-            LEFT JOIN User_Subscriptions s ON u.chat_id = s.chat_id AND s.is_paused = 0 
+            SELECT u.*, COUNT(s.asin) as active_items
+            FROM Users u
+            LEFT JOIN User_Subscriptions s ON u.chat_id = s.chat_id AND s.is_paused = 0
             GROUP BY u.chat_id
             ORDER BY u.created_at DESC
           `).all(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
-          env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first()
+          env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first(),
+          env.DB.prepare("SELECT COUNT(DISTINCT asin) as pausedCount FROM User_Subscriptions WHERE is_paused = 1").first(),
+          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_missing_since > 0 AND used_missing_since > 0 AND amazon_missing_since > 0)").first()
         ]);
         
         const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
@@ -390,7 +392,9 @@ export async function fetchAPI(request, env, ctx) {
           systemStats: {
             totalUsers: mutableUsers.filter(u => u.role !== 'rejected').length,
             activeWatchPool: totalProductsRes ? totalProductsRes.activeWatchPool : 0,
-            lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null
+            lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null,
+            pausedProducts: pausedRes ? pausedRes.pausedCount : 0,
+            ghostProducts: ghostRes ? ghostRes.ghostCount : 0
           },
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
@@ -413,6 +417,86 @@ export async function fetchAPI(request, env, ctx) {
       return clone;
     }
     
+    if (url.pathname === "/api/crm/top-charts" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const rows = await env.DB.prepare(`
+        SELECT gp.asin, gp.name, gp.name_ar, gp.new_price, gp.amazon_price,
+               COUNT(s.chat_id) as tracker_count
+        FROM Global_Products gp
+        JOIN User_Subscriptions s ON gp.asin = s.asin AND s.is_paused = 0
+        GROUP BY gp.asin
+        ORDER BY tracker_count DESC
+        LIMIT 25
+      `).all();
+
+      return new Response(JSON.stringify({
+        items: rows.results || []
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/api/crm/graveyard" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const rows = await env.DB.prepare(`
+        SELECT gp.asin, gp.name, gp.name_ar, gp.delisted,
+               gp.new_missing_since, gp.used_missing_since, gp.amazon_missing_since,
+               gp.last_updated,
+               COUNT(CASE WHEN s.is_paused = 0 THEN 1 END) as active_subs
+        FROM Global_Products gp
+        LEFT JOIN User_Subscriptions s ON gp.asin = s.asin
+        WHERE gp.delisted = 1
+           OR (gp.new_missing_since > 0 AND gp.used_missing_since > 0 AND gp.amazon_missing_since > 0)
+        GROUP BY gp.asin
+        ORDER BY active_subs ASC, gp.last_updated ASC
+      `).all();
+
+      return new Response(JSON.stringify({
+        items: rows.results || []
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/api/crm/graveyard/purge" && request.method === "POST") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
+
+      const body = await request.json();
+      const { asins } = body;
+      if (!asins || !Array.isArray(asins) || asins.length === 0) {
+        return new Response(JSON.stringify({ success: false, error: "No ASINs provided" }), { status: 400 });
+      }
+
+      const validAsins = asins.filter(a => /^[A-Z0-9]{10}$/.test(a));
+      if (validAsins.length === 0) {
+        return new Response(JSON.stringify({ success: false, error: "No valid ASINs" }), { status: 400 });
+      }
+
+      const stmts = validAsins.map(asin =>
+        env.DB.prepare("DELETE FROM Global_Products WHERE asin = ?").bind(asin)
+      );
+      await env.DB.batch(stmts);
+
+      const adminId = auth.user.id.toString();
+      ctx.waitUntil(logAudit(env, adminId, "PURGE_GHOSTS", "global", `Purged ${validAsins.length} ghost products: ${validAsins.join(", ")}`));
+
+      return new Response(JSON.stringify({
+        success: true,
+        purged: validAsins.length
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     if (url.pathname.startsWith("/api/crm/user/") && request.method === "GET") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
@@ -950,12 +1034,14 @@ export function renderCrmHTML(lang = 'en') {
     <main class="flex-1 px-4 py-6 pb-24 space-y-6 max-w-2xl mx-auto w-full" id="app-container">
         
         <!-- MAIN TABS -->
-        <div class="flex gap-6 border-b border-gray-800 mb-6" id="main-tabs">
-            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">${t('crm.users_title', lang)}</button>
-            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">${t('crm.security_audit', lang)}</button>
+        <div class="flex gap-4 border-b border-gray-800 mb-6" id="main-tabs">
+            <button onclick="switchMainTab('system-view')" id="main-tab-system-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">🔧 ${t('crm.tab_system', lang)}</button>
+            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">👥 ${t('crm.users_title', lang)}</button>
+            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">🛡️ ${t('crm.security_audit', lang)}</button>
         </div>
 
-        <div id="users-view-container" class="space-y-6">
+        <!-- ═══ SYSTEM TAB ═══ -->
+        <div id="system-view-container" class="space-y-6">
             <!-- TELEMETRY -->
             <section>
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_overview', lang)}</h2>
@@ -968,7 +1054,41 @@ export function renderCrmHTML(lang = 'en') {
                         <div class="text-gray-400 text-sm mb-1">${t('crm.products_title', lang)}</div>
                         <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                     </div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition" onclick="openTopChartsDrawer()" role="button" tabindex="0">
+                        <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
+                        <div class="text-2xl font-bold text-amber-400" id="stat-paused">--</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition" onclick="openGraveyardDrawer()" role="button" tabindex="0">
+                        <div class="text-gray-400 text-sm mb-1">${t('crm.ghost_products', lang)}</div>
+                        <div class="text-2xl font-bold text-red-400" id="stat-ghost">--</div>
+                    </div>
                 </div>
+
+                <!-- Engine Health Widget -->
+                <div class="mt-3 glass rounded-xl p-4" id="engine-health-widget">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider">${t('crm.engine_health', lang)}</div>
+                        <div class="flex items-center gap-1.5">
+                            <div class="w-2 h-2 rounded-full bg-green-500" id="engine-status-dot"></div>
+                            <span class="text-xs font-medium text-green-400" id="engine-status-text">--</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-gray-800/50 rounded-lg p-2">
+                            <div class="text-[10px] text-gray-500 uppercase">${t('crm.engine_interval', lang)}</div>
+                            <div class="text-sm font-bold text-white" id="engine-interval">--</div>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2">
+                            <div class="text-[10px] text-gray-500 uppercase">${t('crm.engine_daily_ops', lang)}</div>
+                            <div class="text-sm font-bold text-white" id="engine-daily-ops">--</div>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2">
+                            <div class="text-[10px] text-gray-500 uppercase">${t('crm.engine_batches', lang)}</div>
+                            <div class="text-sm font-bold text-white" id="engine-batches">--</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mt-3 glass rounded-xl p-4 flex flex-col gap-3">
                     <div class="text-center w-full">
                         <span class="text-gray-400 text-sm">${t('crm.last_sync', lang)}: </span>
@@ -999,7 +1119,10 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                 </div>
             </section>
+        </div>
 
+        <!-- ═══ USERS TAB ═══ -->
+        <div id="users-view-container" class="hidden space-y-6">
             <!-- DIRECTORY NAVIGATION -->
             <section>
                 <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
@@ -1029,6 +1152,7 @@ export function renderCrmHTML(lang = 'en') {
             </section>
         </div>
 
+        <!-- ═══ SECURITY AUDIT TAB ═══ -->
         <div id="audit-view-container" class="hidden space-y-3">
             <div id="audit-list" class="space-y-3">
                 <div class="glass rounded-xl p-6 text-center text-gray-400">${t('crm.compiling_ledger', lang)}</div>
@@ -1059,6 +1183,55 @@ export function renderCrmHTML(lang = 'en') {
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
+                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Charts Drawer -->
+    <div id="drawer-top-charts" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeTopChartsDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-top-charts-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg">🔥 ${t('crm.top_charts_title', lang)}</h3>
+                    <p class="text-xs text-gray-400" id="drawer-top-charts-subtitle">${t('crm.click_to_expand', lang)}</p>
+                </div>
+                <button onclick="closeTopChartsDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-top-charts-items">
+                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Graveyard Drawer -->
+    <div id="drawer-graveyard" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeGraveyardDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-graveyard-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg">💀 ${t('crm.graveyard_title', lang)}</h3>
+                    <p class="text-xs text-gray-400" id="drawer-graveyard-count">--</p>
+                </div>
+                <button onclick="closeGraveyardDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="graveyard-select-all" onchange="toggleGraveyardSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
+                    <span class="text-xs text-gray-400" id="graveyard-select-all-label">Select All</span>
+                </label>
+                <button onclick="purgeSelectedGhosts()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
+                    🗑️ ${t('crm.graveyard_purge_btn', lang)}
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
@@ -1168,9 +1341,14 @@ export function renderCrmHTML(lang = 'en') {
             }
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = appData.systemStats.activeWatchPool || 0;
+            document.getElementById('stat-paused').innerText = appData.systemStats.pausedProducts || 0;
+            document.getElementById('stat-ghost').innerText = appData.systemStats.ghostProducts || 0;
             const ms = appData.systemStats.lastRunMs;
             document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ${js('crm.never')};
-            
+
+            // Engine Health calculation (zero extra D1 reads — reuses activeWatchPool)
+            renderEngineHealth(appData.systemStats.activeWatchPool || 0);
+
             const badge = document.getElementById('badge-queue');
             if(appData.joinQueue.length > 0) {
                 badge.innerText = appData.joinQueue.length;
@@ -1180,8 +1358,56 @@ export function renderCrmHTML(lang = 'en') {
             }
         }
 
+        // Engine Health: replicates cron_trigger.js governor math in-browser
+        // Reuses poolSize from systemStats — zero extra D1 reads
+        function renderEngineHealth(poolSize) {
+            if (poolSize === 0) {
+                document.getElementById('engine-interval').innerText = 'N/A';
+                document.getElementById('engine-daily-ops').innerText = '0';
+                document.getElementById('engine-batches').innerText = '0';
+                document.getElementById('engine-status-dot').className = 'w-2 h-2 rounded-full bg-gray-500';
+                document.getElementById('engine-status-text').innerText = 'Idle';
+                document.getElementById('engine-status-text').className = 'text-xs font-medium text-gray-400';
+                return;
+            }
+
+            // Exact same math as cron_trigger.js
+            const batches = Math.ceil(poolSize / 10);
+            const maxRuns = Math.floor(8640 / batches);
+            const intervalMs = Math.floor(86400000 / maxRuns);
+
+            // Format interval for display
+            const intervalMin = Math.round(intervalMs / 60000);
+            document.getElementById('engine-interval').innerText = intervalMin + ' min';
+
+            // Daily operations = maxRuns * batches * 10 (approximate products per day)
+            const dailyOps = maxRuns * batches * 10;
+            document.getElementById('engine-daily-ops').innerText = dailyOps.toLocaleString();
+
+            document.getElementById('engine-batches').innerText = batches;
+
+            // Status: color-code based on how close to 10,000 daily ops (free tier limit)
+            const opsRatio = dailyOps / 10000;
+            const dot = document.getElementById('engine-status-dot');
+            const text = document.getElementById('engine-status-text');
+
+            if (opsRatio < 0.5) {
+                dot.className = 'w-2 h-2 rounded-full bg-green-500';
+                text.innerText = ${js('crm.engine_status_ok')};
+                text.className = 'text-xs font-medium text-green-400';
+            } else if (opsRatio < 0.8) {
+                dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+                text.innerText = ${js('crm.engine_status_warn')};
+                text.className = 'text-xs font-medium text-amber-400';
+            } else {
+                dot.className = 'w-2 h-2 rounded-full bg-red-500';
+                text.innerText = ${js('crm.engine_status_critical')};
+                text.className = 'text-xs font-medium text-red-400';
+            }
+        }
+
         function switchMainTab(tabId) {
-            const tabs = ['users-view', 'audit-view'];
+            const tabs = ['system-view', 'users-view', 'audit-view'];
             tabs.forEach(t => {
                 const el = document.getElementById('main-tab-' + t);
                 if (el) {
@@ -1195,7 +1421,7 @@ export function renderCrmHTML(lang = 'en') {
                 }
                 document.getElementById(t + '-container').classList.toggle('hidden', t !== tabId);
             });
-            
+
             if (tabId === 'audit-view' && !appData.auditLoaded) {
                 loadAuditTab();
             }
@@ -1447,6 +1673,128 @@ export function renderCrmHTML(lang = 'en') {
             setTimeout(() => {
                 document.getElementById('drawer').classList.add('hidden');
             }, 300);
+        }
+
+        // ── Top Charts Drawer ────────────────────────────────────────────────────
+
+        async function openTopChartsDrawer() {
+            const drawer = document.getElementById('drawer-top-charts');
+            const content = document.getElementById('drawer-top-charts-content');
+            const itemsCont = document.getElementById('drawer-top-charts-items');
+
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+
+            drawer.classList.remove('hidden');
+            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+
+            const data = await fetchAPI('/top-charts');
+            if (!data || !data.items || data.items.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.top_charts_no_data')} + '</div>';
+                return;
+            }
+
+            const lang = document.documentElement.lang || 'en';
+            let html = '';
+            data.items.forEach((item, idx) => {
+                const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
+                const price = item.amazon_price || item.new_price;
+                const priceStr = price ? 'EGP ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3">';
+                html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
+                html += '<div class="flex-1 min-w-0">';
+                html += '<div class="text-sm font-medium truncate">' + name + '</div>';
+                html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
+                html += '</div>';
+                html += '<div class="text-right">';
+                html += '<div class="text-sm font-bold text-brand-400">' + item.tracker_count + '</div>';
+                html += '<div class="text-[10px] text-gray-500 uppercase">' + ${js('crm.top_charts_trackers')} + '</div>';
+                html += '</div></div>';
+            });
+            itemsCont.innerHTML = html;
+        }
+
+        function closeTopChartsDrawer() {
+            const content = document.getElementById('drawer-top-charts-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => { document.getElementById('drawer-top-charts').classList.add('hidden'); }, 300);
+        }
+
+        // ── Graveyard Drawer ─────────────────────────────────────────────────────
+
+        async function openGraveyardDrawer() {
+            const drawer = document.getElementById('drawer-graveyard');
+            const content = document.getElementById('drawer-graveyard-content');
+            const itemsCont = document.getElementById('drawer-graveyard-items');
+
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+
+            drawer.classList.remove('hidden');
+            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+
+            const data = await fetchAPI('/graveyard');
+            if (!data || !data.items || data.items.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">✅ ' + ${js('crm.graveyard_empty')} + '</div>';
+                document.getElementById('drawer-graveyard-count').innerText = '0 items';
+                return;
+            }
+
+            document.getElementById('drawer-graveyard-count').innerText = data.items.length + ' items';
+
+            const lang = document.documentElement.lang || 'en';
+            let html = '';
+            data.items.forEach(item => {
+                const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
+                const isDelisted = item.delisted === 1;
+                const allMissing = item.new_missing_since > 0 && item.used_missing_since > 0 && item.amazon_missing_since > 0;
+                let reasonBadge = '';
+                if (isDelisted) {
+                    reasonBadge = '<span class="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-800/50">' + ${js('crm.graveyard_delisted')} + '</span>';
+                } else if (allMissing) {
+                    reasonBadge = '<span class="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-800/50">' + ${js('crm.graveyard_all_missing')} + '</span>';
+                }
+                const subsText = item.active_subs + ' ' + ${js('crm.graveyard_subs')};
+
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3">';
+                html += '<input type="checkbox" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
+                html += '<div class="flex-1 min-w-0">';
+                html += '<div class="text-sm font-medium truncate">' + name + '</div>';
+                html += '<div class="text-xs text-gray-500 mt-0.5">' + escapeHtml(item.asin) + ' · ' + subsText + '</div>';
+                html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
+                html += '</div></div>';
+            });
+            itemsCont.innerHTML = html;
+        }
+
+        function closeGraveyardDrawer() {
+            const content = document.getElementById('drawer-graveyard-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => { document.getElementById('drawer-graveyard').classList.add('hidden'); }, 300);
+        }
+
+        function toggleGraveyardSelectAll() {
+            const checked = document.getElementById('graveyard-select-all').checked;
+            document.querySelectorAll('.graveyard-checkbox').forEach(cb => { cb.checked = checked; });
+        }
+
+        async function purgeSelectedGhosts() {
+            const checkboxes = document.querySelectorAll('.graveyard-checkbox:checked');
+            if (checkboxes.length === 0) return showToast('Select at least one product to purge', 'error');
+
+            const asins = Array.from(checkboxes).map(cb => cb.dataset.asin);
+
+            if (!confirm(${js('crm.graveyard_purge_confirm')})) return;
+
+            showLoader();
+            const res = await fetchAPI('/graveyard/purge', 'POST', { asins });
+            hideLoader();
+
+            if (res && res.success) {
+                showToast(${js('crm.graveyard_purged_ok', { count: 'REPLACE_COUNT' })}).replace('REPLACE_COUNT', res.purged), 'success');
+                closeGraveyardDrawer();
+                refreshData();
+            } else {
+                showToast('Purge failed: ' + (res?.error || 'Unknown error'), 'error');
+            }
         }
 
         let crmChartInstance = null;
