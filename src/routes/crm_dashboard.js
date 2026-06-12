@@ -85,7 +85,7 @@ export async function fetchAPI(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api/crm/history/") && request.method === "GET") {
-      const asin = url.pathname.split("/").pop();
+      const asin = url.pathname.split("/").filter(Boolean).pop();
       if (!asin || asin.length < 10) {
         return new Response(JSON.stringify({ error: "Invalid ASIN" }), { status: 400 });
       }
@@ -108,55 +108,6 @@ export async function fetchAPI(request, env, ctx) {
 
 
     
-    // --- SIEM AUDIT ENDPOINTS ---
-    if (url.pathname === "/audit" && request.method === "GET") {
-      const exp = url.searchParams.get("exp");
-      const sig = url.searchParams.get("sig");
-      
-      if (!exp || !sig || Date.now() > parseInt(exp)) {
-        return new Response("Unauthorized or Expired Token", { status: 401 });
-      }
-      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
-      if (sig !== expectedSig) {
-        return new Response("Invalid Signature", { status: 401 });
-      }
-
-      const langParam = url.searchParams.get("lang");
-      const lang = langParam === 'masry' ? 'masry' : 'en';
-      const html = renderAuditHTML(exp, sig, lang);
-      return new Response(html, {
-        status: 200,
-        headers: { "Content-Type": "text/html;charset=UTF-8" }
-      });
-    }
-
-    if (url.pathname === "/api/audit" && request.method === "GET") {
-      const exp = url.searchParams.get("exp");
-      const sig = url.searchParams.get("sig");
-      
-      if (!exp || !sig || Date.now() > parseInt(exp)) return new Response("Unauthorized", { status: 401 });
-      const expectedSig = await generateSignature(env.TELEGRAM_WEBHOOK_SECRET, "audit", exp);
-      if (sig !== expectedSig) return new Response("Invalid Signature", { status: 401 });
-
-      const { results } = await env.DB.prepare("SELECT * FROM Audit_Logs ORDER BY timestamp DESC LIMIT 50").all();
-      const logs = results.map(row => {
-        const payload = row.details ? JSON.parse(row.details) : {};
-        return {
-          ts: row.timestamp,
-          adminId: row.actor_id,
-          adminHandle: row.actor_name,
-          action: row.action,
-          target: row.target_id,
-          targetHandle: payload.targetHandle,
-          details: payload.details
-        };
-      });
-      
-      return new Response(JSON.stringify(logs), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
     // --- CRM COMMAND CENTER ENDPOINTS ---
     async function authAdmin(req, environment) {
       const authHeader = req.headers.get("Authorization");
@@ -327,11 +278,7 @@ export async function fetchAPI(request, env, ctx) {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
-      const cacheUrl = new Request(`${url.origin}/_internal/crm/data`, request);
-      const cache = caches.default;
-      let response = await cache.match(cacheUrl);
-      
-      if (!response) {
+      try {
         const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes, hardwareCronRes] = await Promise.all([
           env.DB.prepare(`
             SELECT u.*, COUNT(s.asin) as active_items
@@ -405,19 +352,42 @@ export async function fetchAPI(request, env, ctx) {
             isRootAdmin: auth.isRootAdmin
           }
         };
-        
-        response = new Response(JSON.stringify(data), {
+        const response = new Response(JSON.stringify(data), {
           status: 200,
           headers: {
             "Content-Type": "application/json",
-            "Cache-Control": "no-cache"
+            "Cache-Control": "no-cache",
+            "X-Current-User": auth.user.id.toString()
           }
         });
+        return response;
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
       }
-      
-      const clone = new Response(response.body, response);
-      clone.headers.set("X-Current-User", auth.user.id.toString());
-      return clone;
+    }
+    
+    if (url.pathname === "/api/crm/paused-products" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const rows = await env.DB.prepare(`
+        SELECT s.chat_id, s.asin, s.added_at, s.paused_at,
+               p.name, p.amazon_price, p.new_price, p.used_price,
+               u.first_name, u.username
+        FROM User_Subscriptions s
+        JOIN Global_Products p ON s.asin = p.asin
+        JOIN Users u ON s.chat_id = u.chat_id
+        WHERE s.is_paused = 1
+        ORDER BY s.paused_at DESC NULLS LAST, s.added_at DESC
+        LIMIT 100
+      `).all();
+
+      return new Response(JSON.stringify({
+        items: rows.results || []
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
     }
     
     if (url.pathname === "/api/crm/top-charts" && request.method === "GET") {
@@ -504,7 +474,7 @@ export async function fetchAPI(request, env, ctx) {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
       
-      const targetId = url.pathname.split("/")[4];
+      const targetId = url.pathname.split("/").filter(Boolean).pop();
       if (!targetId) return new Response("Invalid ID", { status: 400 });
       
       const products = await env.DB.prepare(`
@@ -690,15 +660,35 @@ export async function fetchAPI(request, env, ctx) {
       }
       
       if (action === "approve") {
-        // Read admin_messages BEFORE delete (needed to invalidate other admins' inline messages)
-        const queueRow = await env.DB.prepare("SELECT admin_messages FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Read admin_messages and lang BEFORE delete
+        const queueRow = await env.DB.prepare("SELECT admin_messages, first_name, username, lang FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
         // Race guard: delete queue row first, check if another admin already handled it
         const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         if (deleteResult.meta.changes === 0) {
           return new Response(JSON.stringify({ success: false, error: "already_handled", message: "Request was already processed by another admin" }), { status: 200 });
         }
         const defaultLimit = parseInt(env.DEFAULT_USER_PRODUCT_LIMIT) || 3;
-        await env.DB.prepare("INSERT OR REPLACE INTO Users (chat_id, role, item_limit, approved_by, created_at, unban_rejected) VALUES (?, 'approved', ?, ?, ?, 0)").bind(targetId, defaultLimit, adminId, Date.now()).run();
+        
+        // Use UPSERT to preserve existing user data if they were previously banned or already in the system
+        await env.DB.prepare(`
+          INSERT INTO Users (chat_id, first_name, username, role, item_limit, approved_by, created_at, unban_rejected, lang) 
+          VALUES (?, ?, ?, 'approved', ?, ?, ?, 0, ?)
+          ON CONFLICT(chat_id) DO UPDATE SET 
+            role = 'approved', 
+            item_limit = excluded.item_limit, 
+            approved_by = excluded.approved_by, 
+            unban_rejected = 0,
+            lang = COALESCE(Users.lang, excluded.lang)
+        `).bind(
+          targetId, 
+          queueRow?.first_name || '', 
+          queueRow?.username || '', 
+          defaultLimit, 
+          adminId, 
+          Date.now(), 
+          queueRow?.lang || 'en'
+        ).run();
+
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_approved', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
@@ -719,8 +709,11 @@ export async function fetchAPI(request, env, ctx) {
         // Race guard: delete queue row, check if another admin already handled it
         const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         if (deleteResult.meta.changes === 0) {
-          // Another admin already handled the queue item — still ensure user role is set
-          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
+          // Another admin already handled the queue item. Check if they were approved before forcing a rejection.
+          const currentRole = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").first('role');
+          if (currentRole !== 'approved') {
+              await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
+          }
           return new Response(JSON.stringify({ success: false, error: "already_handled", message: "Request was already processed by another admin" }), { status: 200 });
         }
         // UPSERT user: INSERT if new (first rejection), UPDATE if unban was rejected after prior approval.
@@ -749,7 +742,7 @@ export async function fetchAPI(request, env, ctx) {
         // Soft revoke: preserve user + subscriptions, pause subs.
         // Explicitly set unban_rejected=0 so revoked users keep their one unban chance.
         await env.DB.batch([
-          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(targetId),
+          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ?").bind(Date.now(), targetId),
           env.DB.prepare("UPDATE Users SET role = 'rejected', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_revoked', tl)); })());
@@ -767,7 +760,7 @@ export async function fetchAPI(request, env, ctx) {
         // If no queue row exists (direct revoke/unban, no pending request), skip to unban directly
         // Unban: restore access, clear permanent ban flag, unpause subscriptions
         await env.DB.batch([
-          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ?").bind(targetId),
+          env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ?").bind(targetId),
           env.DB.prepare("UPDATE Users SET role = 'approved', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_restored', tl)); })());
@@ -807,12 +800,12 @@ export async function fetchAPI(request, env, ctx) {
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "pause_product") {
         const asin = data.asin;
-        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(Date.now(), targetId, asin).run();
         ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "resume_product") {
         const asin = data.asin;
-        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
       } else if (action === "set_target") {
@@ -834,148 +827,6 @@ export async function fetchAPI(request, env, ctx) {
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
   return new Response("Not Found", { status: 404 });
-}
-
-export function renderAuditHTML(exp, sig, lang = 'en') {
-  return `
-<!DOCTYPE html>
-<html lang="${lang}" dir="${lang === 'masry' ? 'rtl' : 'ltr'}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>${t('crm.security_audit', lang)}</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
-            margin: 0;
-            padding: 20px 10px;
-        }
-        .header-title { text-align: center; font-weight: 600; font-size: 20px; margin-bottom: 5px; }
-        .header-sub { text-align: center; font-size: 14px; opacity: 0.7; margin-bottom: 25px; }
-        .loading { text-align: center; margin-top: 50px; font-size: 16px; opacity: 0.7; }
-        
-        .audit-card {
-            background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .audit-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-            font-size: 12px;
-            opacity: 0.8;
-            border-bottom: 1px solid var(--tg-theme-hint-color, #ccc);
-            padding-bottom: 5px;
-        }
-        .audit-action {
-            font-weight: 700;
-            font-size: 14px;
-            color: var(--tg-theme-button-color, #2481cc);
-            margin-bottom: 5px;
-        }
-        .audit-row {
-            display: flex;
-            font-size: 13px;
-            margin-bottom: 4px;
-        }
-        .audit-label { font-weight: 600; width: 65px; opacity: 0.8; }
-        .audit-data { flex: 1; word-break: break-all; }
-        .empty-state { text-align: center; padding: 30px; opacity: 0.6; }
-    </style>
-</head>
-<body>
-    <div class="header-title">${t('crm.security_audit', lang)}</div>
-    <div class="header-sub">${t('crm.rolling_retention', lang)}</div>
-
-    <div id="loading" class="loading">${t('crm.compiling_ledger', lang)}</div>
-    <div id="audit-container"></div>
-
-    <script>
-        const tg = window.Telegram?.WebApp || {};
-        if (tg.ready) tg.ready();
-        if (tg.expand) tg.expand();
-        try {
-            if (tg.setHeaderColor) tg.setHeaderColor(tg.themeParams?.bg_color || '#ffffff');
-        } catch (e) { console.warn('Telegram theme color not supported:', e); }
-
-        function escapeHtml(unsafe) {
-            if (!unsafe) return "";
-            return String(unsafe)
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-
-        async function loadAudit() {
-            try {
-                const response = await fetch('/api/audit?exp=${exp}&sig=${sig}');
-                if (!response.ok) throw new Error('Auth failed');
-                const logs = await response.json();
-                
-                document.getElementById('loading').style.display = 'none';
-                const container = document.getElementById('audit-container');
-                
-                if (logs.length === 0) {
-                    container.innerHTML = '<div class="empty-state">' + ${JSON.stringify(t("crm.no_audit", lang))} + '</div>';
-                    return;
-                }
-
-                logs.forEach(log => {
-                    const date = new Date(log.ts);
-                    const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' +
-                                  date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-
-                    const adminIdEsc = escapeHtml(log.adminId);
-                    const targetEsc = escapeHtml(log.target);
-                    const actionEsc = escapeHtml(log.action);
-                    const detailsEsc = escapeHtml(log.details || '');
-
-                    const adminHandleEsc = log.adminHandle ? escapeHtml(log.adminHandle) : '';
-                    const adminDisplay = log.adminHandle
-                        ? adminHandleEsc + ' <span style="font-size:10px;opacity:0.6;">(' + adminIdEsc + ')</span>'
-                        : '<code>' + adminIdEsc + '</code>';
-
-                    let targetDisplay = '<code>' + targetEsc + '</code>';
-                    if (log.targetHandle) {
-                        targetDisplay = escapeHtml(log.targetHandle) + ' <span style="font-size:10px;opacity:0.6;">(' + targetEsc + ')</span>';
-                    }
-
-                    const card = document.createElement('div');
-                    card.className = 'audit-card';
-                    card.innerHTML = '<div class="audit-header">' +
-                            '<span>🕒 ' + timeStr + '</span>' +
-                            '<span>' + adminDisplay + '</span>' +
-                        '</div>' +
-                        '<div class="audit-action">' + actionEsc + '</div>' +
-                        '<div class="audit-row">' +
-                            '<span class="audit-label">' + ${js('crm.audit_target')} + '</span>' +
-                            '<span class="audit-data">' + targetDisplay + '</span>' +
-                        '</div>' +
-                        '<div class="audit-row">' +
-                            '<span class="audit-label">' + ${js('crm.audit_details')} + '</span>' +
-                            '<span class="audit-data">' + detailsEsc + '</span>' +
-                        '</div>';
-                        container.appendChild(card);
-                    });
-                } catch (err) {
-                    document.getElementById('loading').innerText = ${JSON.stringify(t("crm.toast_network_error", lang))};
-                }
-            }
-            
-            loadAudit();
-        </script>
-    </body>
-    </html>
-  `;
 }
 
 export function renderCrmHTML(lang = 'en') {
@@ -1057,7 +908,7 @@ export function renderCrmHTML(lang = 'en') {
                         <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
                         <div class="text-sm font-bold text-brand-400 mt-1">${t('crm.btn_view', lang)}</div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center">
+                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-amber-500/20" onclick="openPausedDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
                         <div class="text-2xl font-bold text-amber-400" id="stat-paused">--</div>
                     </div>
@@ -1210,6 +1061,26 @@ export function renderCrmHTML(lang = 'en') {
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-top-charts-items">
+                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Paused Products Drawer -->
+    <div id="drawer-paused" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closePausedDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-paused-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg">${t('crm.paused_products', lang)}</h3>
+                    <p class="text-xs text-gray-400" id="drawer-paused-subtitle">${t('crm.click_to_expand', lang)}</p>
+                </div>
+                <button onclick="closePausedDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-paused-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
@@ -1691,8 +1562,6 @@ export function renderCrmHTML(lang = 'en') {
             }, 300);
         }
 
-        // ── Top Charts Drawer ────────────────────────────────────────────────────
-
         async function openTopChartsDrawer() {
             const drawer = document.getElementById('drawer-top-charts');
             const content = document.getElementById('drawer-top-charts-content');
@@ -1730,9 +1599,62 @@ export function renderCrmHTML(lang = 'en') {
         }
 
         function closeTopChartsDrawer() {
+            const drawer = document.getElementById('drawer-top-charts');
             const content = document.getElementById('drawer-top-charts-content');
             content.style.transform = 'translateY(100%)';
-            setTimeout(() => { document.getElementById('drawer-top-charts').classList.add('hidden'); }, 300);
+            setTimeout(() => { drawer.classList.add('hidden'); }, 300);
+        }
+
+        async function openPausedDrawer() {
+            const drawer = document.getElementById('drawer-paused');
+            const content = document.getElementById('drawer-paused-content');
+            const itemsCont = document.getElementById('drawer-paused-items');
+
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-amber-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+
+            drawer.classList.remove('hidden');
+            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+
+            const data = await fetchAPI('/paused-products');
+            if (!data || !data.items || data.items.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No paused products found.</div>';
+                return;
+            }
+
+            const lang = document.documentElement.lang || 'en';
+            itemsCont.innerHTML = data.items.map((item) => {
+                const isMasry = lang === 'masry';
+                const name = (item.name || item.asin);
+                const handle = escapeHtml(item.username ? '@' + item.username : item.first_name);
+                const pausedAgo = item.paused_at ? Math.round((Date.now() - item.paused_at)/86400000) + 'd ago' : 'Unknown';
+                
+                return \`
+                <div class="bg-gray-800/50 rounded-xl p-3 border border-amber-500/20" id="paused-item-\${item.chat_id}-\${item.asin}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="font-medium text-sm truncate max-w-[60%]">\${escapeHtml(name)}</div>
+                        <div class="text-xs text-gray-400">\${pausedAgo}</div>
+                    </div>
+                    <div class="flex items-center justify-between text-xs mb-3">
+                        <code class="text-gray-400">\${item.asin}</code>
+                        <span class="text-brand-400">\${handle} (\${item.chat_id})</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="handleAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition">
+                            \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
+                        </button>
+                        <button onclick="handleAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition">
+                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
+                        </button>
+                    </div>
+                </div>\`;
+            }).join('');
+        }
+
+        function closePausedDrawer() {
+            const drawer = document.getElementById('drawer-paused');
+            const content = document.getElementById('drawer-paused-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => { drawer.classList.add('hidden'); }, 300);
         }
 
         // ── Graveyard Drawer ─────────────────────────────────────────────────────
@@ -1858,7 +1780,8 @@ export function renderCrmHTML(lang = 'en') {
             const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
             const usedPrices = data.map(point => point.u !== undefined ? point.u : null);
 
-            const validPrices = newPrices.filter(p => p !== null);
+            let validPrices = newPrices.filter(p => p !== null);
+            if (validPrices.length === 0) validPrices = usedPrices.filter(p => p !== null);
             if (validPrices.length > 0) {
                 const ath = Math.max(...validPrices);
                 const atl = Math.min(...validPrices);
