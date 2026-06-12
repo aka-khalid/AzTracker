@@ -180,8 +180,8 @@ const dict = {
     masry: "<b>5️⃣ الحد الأقصى للمنتجات</b>\nعشان السيرفرات متفرقعش مننا، كل واحد ليه <b>{limit}</b> منتجات. لو محتاج أكتر، راضي الادمن اللي دخلك (شاورما وقهوة بيعملوا المعجزات 😉)."
   },
   "welcome.protip": {
-    en: "💡 <i>Pro-Tip: You can always click \"📦 My Products\" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>",
-    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على '📦 منتجاتي' عشان تشوف رسم بياني لأسعار حاجتك، أو توقف متابعة حاجة اشتريتها خلاص عشان تفضي مكان.</i>"
+    en: "💡 <i>Pro-Tip: You can always click \"📦 My Products\" from the Main Menu to manage your items, update target prices, or pause checking on things you've already bought.</i>",
+    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على '📦 منتجاتي' من القائمة الرئيسية عشان تدير منتجاتك، تعدل أسعار التارجت، أو توقف متابعة حاجة اشتريتها خلاص عشان تفضي مكان.</i>"
   },
 
   // ── Language Command ──────────────────────────────────────────────────────
