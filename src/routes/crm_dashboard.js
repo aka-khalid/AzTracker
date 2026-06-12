@@ -954,11 +954,11 @@ export function renderAuditHTML(exp, sig, lang = 'en') {
                         '</div>' +
                         '<div class="audit-action">' + actionEsc + '</div>' +
                         '<div class="audit-row">' +
-                            '<span class="audit-label">Target:</span>' +
+                            '<span class="audit-label">' + ${js('crm.audit_target')} + '</span>' +
                             '<span class="audit-data">' + targetDisplay + '</span>' +
                         '</div>' +
                         '<div class="audit-row">' +
-                            '<span class="audit-label">Details:</span>' +
+                            '<span class="audit-label">' + ${js('crm.audit_details')} + '</span>' +
                             '<span class="audit-data">' + detailsEsc + '</span>' +
                         '</div>';
                         container.appendChild(card);
@@ -1052,7 +1052,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20" onclick="openTopChartsDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
-                        <div class="text-sm font-bold text-brand-400 mt-1">View ➡️</div>
+                        <div class="text-sm font-bold text-brand-400 mt-1">${t('crm.btn_view', lang)}</div>
                     </div>
                     <div class="glass rounded-xl p-4 flex flex-col justify-center">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
@@ -1229,7 +1229,7 @@ export function renderCrmHTML(lang = 'en') {
             <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10">
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" id="graveyard-select-all" onchange="toggleGraveyardSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
-                    <span class="text-xs text-gray-400" id="graveyard-select-all-label">Select All</span>
+                    <span class="text-xs text-gray-400" id="graveyard-select-all-label">${t('crm.select_all', lang)}</span>
                 </label>
                 <button onclick="purgeSelectedGhosts()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
                     ${t('crm.graveyard_purge_btn', lang)}
@@ -1382,7 +1382,7 @@ export function renderCrmHTML(lang = 'en') {
 
             // Format interval for display, clamping to hardware cron limit (5)
             const intervalMin = Math.max(5, Math.round(intervalMs / 60000));
-            document.getElementById('engine-interval').innerText = intervalMin + ' min';
+            document.getElementById('engine-interval').innerText = intervalMin + ' ' + ${js('crm.minutes_short')};
 
             // Actual engine runs per day are strictly bounded by the 5-minute hardware cron trigger (300,000 ms)
             // 86,400,000 ms per day / 300,000 ms = 288 max hardware wake-ups per day.
@@ -1468,8 +1468,8 @@ export function renderCrmHTML(lang = 'en') {
                         '<span>' + adminDisplay + '</span>' +
                     '</div>' +
                     '<div class="text-brand-400 font-bold text-sm mb-2">' + actionEsc + '</div>' +
-                    '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold opacity-80 w-16">Target:</span><span class="break-all">' + targetDisplay + '</span></div>' +
-                    '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">Details:</span><span class="break-all">' + detailsEsc + '</span></div>' +
+                    '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold opacity-80 w-16">' + ${js('crm.audit_target')} + '</span><span class="break-all">' + targetDisplay + '</span></div>' +
+                    '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">' + ${js('crm.audit_details')} + '</span><span class="break-all">' + detailsEsc + '</span></div>' +
                 '</div>';
             }).join('');
         }
@@ -1603,7 +1603,7 @@ export function renderCrmHTML(lang = 'en') {
                         roleBadge +
                         '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' items</span>' +
                         '<span class="text-xs text-gray-500">•</span>' +
-                        '<span class="text-xs text-gray-500">Joined: ' + joinedDate + '</span>' +
+                        '<span class="text-xs text-gray-500">' + ${js('crm.joined_date')} + ' ' + joinedDate + '</span>' +
                     '</div>' +
                     '<div class="flex gap-2 relative z-10">' + actionBtns + '</div>' +
                 '</div>';
@@ -1651,7 +1651,7 @@ export function renderCrmHTML(lang = 'en') {
                 const pauseLabel = isPaused ? ${js('crm.btn_resume')} : ${js('crm.btn_pause_drawer')};
                 const hasTarget = !!p.target_price;
                 const targetBadge = hasTarget
-                    ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Target: ' + p.target_price + '</div>'
+                    ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> ' + ${js('crm.audit_target')} + ' ' + p.target_price + '</div>'
                     : '';
 
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +

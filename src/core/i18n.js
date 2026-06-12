@@ -35,7 +35,7 @@ const dict = {
   },
   "access.denied_body_private": {
     en: "This is a private Amazon deals server. You are not authorized to use it.",
-    masry: "ده سيرفر خاص بعروض أمازون. ملكش صلاحية تستخدمه."
+    masry: "ده سيرفر برايفت مقفول على حبايبنا لعروض أمازون، للأسف لسه مش معاك صلاحية."
   },
   "access.denied_hint_start": {
     en: "Send /start to request access.",
@@ -51,11 +51,11 @@ const dict = {
   },
   "access.pending_body": {
     en: "Your application is currently under review by an administrator. Please wait.",
-    masry: "بنشوف طلبك دلوقتي. ربنا يسهل."
+    masry: "الادمنز بيشوفوا طلبك دلوقتي، طول بالك معانا وربنا يسهل."
   },
   "access.request_sent": {
     en: "⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.",
-    masry: "⏳ <b>استلمنا طلبك.</b>\n\nاستنى حد يراجعه."
+    masry: "⏳ <b>استلمنا طلبك يا غالي.</b>\n\nاستنى الادمنز يراجعوه وهنرد عليك."
   },
   "access.queue_full_head": {
     en: "⚠️ <b>Queue Full</b>",
@@ -63,7 +63,7 @@ const dict = {
   },
   "access.queue_full_body": {
     en: "The access queue is currently full. Please try again in 24 hours.",
-    masry: "المكان متلwyn دلوقتي. حاول بعد يوم."
+    masry: "السيرفر متفول على آخره دلوقتي، حاول معانا تاني كمان يوم كده."
   },
   "access.admin_new_request_head": {
     en: "🔔 <b>New Access Request</b>",
@@ -71,19 +71,19 @@ const dict = {
   },
   "access.admin_new_request_body": {
     en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user is requesting authorization to access the server.</i>",
-    masry: "👤 <b>الاسم:</b> {name}\n🆔 <b>آي دي:</b> <code>{id}</code>\n\n<i>الشخص ده عايز يدخل.</i>"
+    masry: "👤 <b>الاسم:</b> {name}\n🆔 <b>آي دي:</b> <code>{id}</code>\n\n<i>الشخص ده طالب يدخل السيرفر، رأيك إيه؟</i>"
   },
   "access.admin_new_request_btn_approve": {
     en: "✅ Approve",
-    masry: "✅ ماشي"
+    masry: "✅ خليه يدخل"
   },
   "access.admin_new_request_btn_reject": {
     en: "❌ Reject",
-    masry: "❌ لأ"
+    masry: "❌ فكك منه"
   },
   "access.denied_notify": {
     en: "⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.",
-    masry: "⛔ <b>طلب مرفوض</b>\n\nمعلش في حد مش عايزك جوا."
+    masry: "⛔ <b>الطلب اترفض</b>\n\nمعلش يا صاحبي، الادمن رفض طلب دخولك للسيرفر."
   },
   "access.blocked_head": {
     en: "🚫 <b>Account Blocked</b>",
@@ -91,7 +91,7 @@ const dict = {
   },
   "access.blocked_body": {
     en: "Your account was blocked because the bot was banned or couldn't reach you. Request an unban below.",
-    masry: "الحساب اتقفل لأن البوت كان محظور أو مش قادر يوصلك. اطلب الغاء الحظر من تحت."
+    masry: "حسابك اتقفل عشان البوت أخد بان أو مش قادر يوصلك. اطلب إلغاء الحظر من الزرار اللي تحت."
   },
   "access.unban_btn": {
     en: "🔄 Request Unban",
@@ -99,15 +99,15 @@ const dict = {
   },
   "access.unban_sent": {
     en: "✅ <b>Unban Request Sent</b>\n\nAn administrator will review your request shortly.",
-    masry: "✅ <b>استلمنا طلبك</b>\n\nحد من الادمنز هيشوفه قريب."
+    masry: "✅ <b>طلبك وصل</b>\n\nالادمن هيشوف طلب إلغاء الحظر قريب."
   },
   "access.unban_pending": {
     en: "⏳ <b>Unban Request Pending</b>\n\nYou already have a pending unban request. An administrator will review it shortly.\n\nPlease be patient — sending multiple requests will not speed up the process.",
-    masry: "⏳ <b>طلب إلغاء الحظر قيد الانتظار</b>\n\nعندك طلب إلغاء حظر منتظر المراجعة. حد من الادمنز هيشوفه قريب.\n\nلو سمحت استنى — إرسال طلبات مش هيسرع العملية."
+    masry: "⏳ <b>طلبك لسه ماتردش عليه</b>\n\nعندك طلب إلغاء حظر لسه متراجعش. الادمن هيشوفه قريب.\n\nطول بالك معانا — كتر الطلبات مش هيسرع الدنيا."
   },
   "access.unban_rejected": {
     en: "🚫 <b>Access Denied</b>\n\nYour unban request was rejected. You cannot request again at this time.",
-    masry: "🚫 <b>الوصول مرفوض</b>\n\nطلب إلغاء الحظر اترفض. مش هتقدر تطلب تاني دلوقتي."
+    masry: "🚫 <b>ممنوع الدخول</b>\n\nطلبك اترفض. مش هتقدر تبعت طلب تاني دلوقتي."
   },
   "admin.unban_request_head": {
     en: "🔒 <b>Unban Request</b>",
@@ -115,7 +115,7 @@ const dict = {
   },
   "admin.unban_request_body": {
     en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user was previously blocked (bot banned/unreachable) and is requesting to be unbanned.</i>",
-    masry: "👤 <b>الاسم:</b> {name}\n🆔 <b>آي دي:</b> <code>{id}</code>\n\n<i>الشخص ده كان محظور (حظر البوت أو مكنش قادر يوصل له) وعايز يلغي الحظر.</i>"
+    masry: "👤 <b>الاسم:</b> {name}\n🆔 <b>آي دي:</b> <code>{id}</code>\n\n<i>الشخص ده كان محظور وعايز يرجع تاني.</i>"
   },
   "admin.unban_request_btn_unban": {
     en: "✅ Unban",
@@ -123,7 +123,7 @@ const dict = {
   },
   "access.unban_notify": {
     en: "✅ <b>Your account has been unbanned.</b>\n\nSend /start to continue.",
-    masry: "✅ <b>الحظر اتشال.</b>\n\nابعت /start عشان تكمل."
+    masry: "✅ <b>الحظر اتشال من عليك يا غالي.</b>\n\nابعت /start عشان تكمل وتشوف العروض."
   },
   "admin.unban_request_btn_keep": {
     en: "🚫 Keep Banned",
@@ -135,7 +135,7 @@ const dict = {
   },
   "crm.btn_deny": {
     en: "Deny",
-    masry: "ارفض"
+    masry: "فكك منه"
   },
   "access.admin_rejected": {
     en: "🚫 <b>Request Rejected</b>\nUser ‏<code>{id}</code>‏ has been denied access by {admin}.",
@@ -147,41 +147,41 @@ const dict = {
   },
   "access.handled_request": {
     en: "🚫 <b>Request Handled</b>\nUser ‏<code>{id}</code>‏ was rejected by {admin}.",
-    masry: "🚫 <b>خلصنا الموضوع</b>\nآي دي {id} اترفض من {admin}."
+    masry: "🚫 <b>خلصنا الحوار ده</b>\nالمستخدم <code>{id}</code> أخد رفض من {admin}."
   },
   "access.handled_approved": {
     en: "✅ <b>Request Handled</b>\nUser ‏<code>{id}</code>‏ was approved by {admin}.",
-    masry: "✅ <b>خلصنا الموضوع</b>\nآي دي {id} اتوافق عليه من {admin}."
+    masry: "✅ <b>خلصنا الحوار ده</b>\nالمستخدم <code>{id}</code> أخد موافقة من {admin}."
   },
 
   // ── Welcome Message ───────────────────────────────────────────────────────
   "welcome.head": {
     en: "🎉 <b>You have been approved! Welcome!</b>",
-    masry: "🎉 <b>مبروك! طلبك اتوافق عليه!</b>"
+    masry: "🎉 <b>ألف مبروك! نورتنا يا غالي!</b>"
   },
   "welcome.step1": {
     en: "<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.",
-    masry: "<b>1️⃣ دور على المنتج</b>\nافتح أبلكيشن أمازون أو الموقع واختار المنتج اللي عايز تشتريه."
+    masry: "<b>1️⃣ اختار اللي على مزاجك</b>\nافتح أبلكيشن أمازون واختار المنتج اللي عينك منه."
   },
   "welcome.step2": {
     en: "<b>2️⃣ Share the link</b>\nThe easiest way: In the Amazon app, hit the <b>Share</b> button, select Telegram, and send it directly to this bot! (You can also just copy and paste the link into the chat).",
-    masry: "<b>2️⃣ ابعت اللينك</b>\nأسهل طريقة: في أبلكيشن أمازون، دوس على زرار <b>مشاركة</b>، اختار تيليجرام، ابعته للبوت ده مباشرة! (أو كوبي بيست في الشات)."
+    masry: "<b>2️⃣ ابعتلنا اللينك</b>\nأسهل حاجة: من الأبلكيشن دوس <b>مشاركة (Share)</b> واختار تيليجرام وابعته للبوت دايركت! (أو خد اللينك كوبي بيست هنا)."
   },
   "welcome.step3": {
     en: "<b>3️⃣ Set a Target Price (Optional)</b>\nIf you only want alerts for a specific price, click the <i>🎯 Set Target</i> button after adding your item. The bot will stay quiet until the price drops to or below your exact target!",
-    masry: "<b>3️⃣ حدد السعر اللي يناسبك (اختياري)</b>\nلو عايز إشعارات بس لسعر معين، دوس على زرار <i>🎯 تحديد السعر</i> بعد ما تضيف المنتج. البوت هيستنى لحد ما السعر ينزل للسعر اللي انت محدده!"
+    masry: "<b>3️⃣ حط تارجت للسعر (لو حابب)</b>\nلو مستني السعر ينزل لرقم معين، دوس على <i>🎯 تحديد السعر</i> بعد ما تضيف المنتج. البوت مش هيصدعك غير لما السعر ينزل للرقم ده أو أقل!"
   },
   "welcome.step4": {
     en: "<b>4️⃣ Relax & Wait</b>\nThe bot will continuously monitor the market in the background. It will automatically notify you of major price drops, restocks, and even cheaper Amazon Resale (Used) alternatives.",
-    masry: "<b>4️⃣ استرخي واستنى</b>\nالبوت هيفضل يتابع السوق في الخلفية. أول ما السعر ينزل أو المنتج يرجع يبقى متاح، هيجيلك إشعار. حتى لو في بديل مستعمل أرخص من أمازون ريسيل، هتعرف."
+    masry: "<b>4️⃣ كبر دماغك واستنى</b>\nالبوت قاعد بيراقب السوق. أول ما السعر يقع أو المنتج يتوفر، هيجيلك إشعار في ساعتها. ولو في بديل كسر زيرو (ريسيل) أرخص، هنجيبهولك."
   },
   "welcome.step5": {
     en: "<b>5️⃣ The Item Limit</b>\nTo keep the servers from catching fire, everyone starts with a limit of <b>{limit}</b> saved items. If you desperately need to save more, you'll have to secretly bribe whichever admin invited you (coffee and a good shawarma usually do the trick 😉).",
-    masry: "<b>5️⃣ الحد الأقصى</b>\nعشان السيرفرات ما تحترقش، كل واحد بيبدأ بـ <b>{limit}</b> منتجات. لو محتاج أكتر، كلم الأدمن اللي ضافك — قهوة وشاورما كويسة بتفرق 😉"
+    masry: "<b>5️⃣ الحد الأقصى للمنتجات</b>\nعشان السيرفرات متفرقعش مننا، كل واحد ليه <b>{limit}</b> منتجات. لو محتاج أكتر، راضي الادمن اللي دخلك (شاورما وقهوة بيعملوا المعجزات 😉)."
   },
   "welcome.protip": {
     en: "💡 <i>Pro-Tip: You can always click \"📦 My Products\" from the Main Menu to view beautiful price history charts for your items or pause checking on things you've already bought.</i>",
-    masry: "💡 <i>نصيحة: من القائمة الرئيسية دوس على \"📦 منتجاتي\" عشان تشوف تاريخ الأسعار أو وقف متابعة حاجة اشتريتها خلاص.</i>"
+    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على "📦 منتجاتي" عشان تشوف رسم بياني لأسعار حاجتك، أو توقف متابعة حاجة اشتريتها خلاص عشان تفضي مكان.</i>"
   },
 
   // ── Language Command ──────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ const dict = {
   },
   "menu.select_option": {
     en: "Select an operative option below:",
-    masry: "اختار من الخيارات تحت:"
+    masry: "اختار اللي انت عايزه من تحت:"
   },
   "menu.btn_my_products": {
     en: "📦 My Products",
@@ -233,7 +233,7 @@ const dict = {
   },
   "menu.btn_how_to_add": {
     en: "➕ How to Add Products",
-    masry: "➕ إزاي تضيف منتجات"
+    masry: "➕ إزاي أضيف منتجات"
   },
   "menu.btn_admin_panel": {
     en: "👑 Admin Panel",
@@ -259,7 +259,7 @@ const dict = {
   },
   "howto.body": {
     en: "Copy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.",
-    masry: "انسخ أي لينك منتج أمازون مصر من البراوزر أو الأبلكيشن وحطه في الشات ده على طول."
+    masry: "هات لينك أي منتج من أمازون مصر وارميه في الشات هنا على طول."
   },
   "howto.shortlinks": {
     en: "📱 <b>Short links shared directly from the mobile app are fully supported!</b>",
@@ -269,7 +269,7 @@ const dict = {
   // ── Product Link Processing ───────────────────────────────────────────────
   "link.processing": {
     en: "⏳ <b>Processing Amazon link...</b>",
-    masry: "⏳ <b>بنجهز لينك أمازون...</b>"
+    masry: "⏳ <b>ثواني بنشوف اللينك...</b>"
   },
   "link.region_not_supported_head": {
     en: "❌ <b>Region Not Supported</b>",
@@ -277,11 +277,11 @@ const dict = {
   },
   "link.region_not_supported_body": {
     en: "Currently, we only support ‏<code>amazon.eg</code>‏.",
-    masry: "دلوقتي بندعم ‏<code>amazon.eg</code>‏ بس."
+    masry: "شغالين على <code>amazon.eg</code> بتاع مصر بس يا باشا."
   },
   "link.could_not_parse": {
     en: "❌ <b>Could not parse a valid 10-digit ASIN.</b>",
-    masry: "❌ <b>مش قادرين نطلع ASIN صحيح من 10 أرقام.</b>"
+    masry: "❌ <b>اللينك ده شكله بايظ، مش لاقيين فيه رقم المنتج (ASIN).</b>"
   },
   "link.system_error": {
     en: "⚠️ <b>System Error:</b> Global item limit is unconfigured. Please contact an admin.",
@@ -293,7 +293,7 @@ const dict = {
   },
   "link.limit_reached_body": {
     en: "You have saved {used} items, but your current limit is {limit}.\n\nPlease delete some products to free up space before adding new ones.",
-    masry: "عندك {used} منتجات محفوظة، بس حدك الحالي {limit}.\n\nامسح شوية منتجات عشان تفضي مكان قبل ما تضيف حاجة جديدة."
+    masry: "انت كده مسيف {used} منتج، وآخرك معانا {limit}.\n\nفضيلنا مكان كده وامسح شوية حاجات قديمة عشان تعرف تضيف الجديد."
   },
   "link.manage_products": {
     en: "📦 Manage My Products",
@@ -301,19 +301,19 @@ const dict = {
   },
   "link.already_exists": {
     en: "⚠️ <b>You have already saved this product!</b>",
-    masry: "⚠️ <b>المنتج ده محفوظ بالفعل!</b>"
+    masry: "⚠️ <b>يا ريس المنتج ده عندك متسيف أصلاً!</b>"
   },
   "link.registered_head": {
     en: "✅ <b>Product Registered!</b>",
-    masry: "✅ <b>أضفنا المنتج!</b>"
+    masry: "✅ <b>المنتج اتضاف يا باشا!</b>"
   },
   "link.registered_status": {
     en: "This item is now saved. It will pull the live price during the next automated check.",
-    masry: "المنتج ده اتحفظ دلوقتي. هنشوف السعر الجديد في شيك الجاي."
+    masry: "المنتج اتحفظ. هنجيبلك السعر في أقرب لفة للبوت."
   },
   "link.pending_scan": {
     en: "⏳ Pending initial scan...",
-    masry: "⏳ مستنيين نعرف السعر..."
+    masry: "⏳ مستنيين اللفة الجاية عشان نجيب السعر..."
   },
   "link.status_label": {
     en: "Status:",
@@ -321,7 +321,7 @@ const dict = {
   },
   "link.invalid_command": {
     en: "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.",
-    masry: "⚠️ <b>مش فاهم اللي انت كاتبه!</b>\n\nاستخدم الخيارات اللي تحت أو حط لينك أمازون صحيح."
+    masry: "⚠️ <b>إيه يا عم اللي انت كاتبه ده؟ مش فاهم حاجة!</b>\n\nاستخدم الزراير اللي تحت أو ارمي لينك أمازون شغال."
   },
 
   // ── Product List ──────────────────────────────────────────────────────────
@@ -335,15 +335,15 @@ const dict = {
   },
   "list.empty_head": {
     en: "❌ <b>Your saved list is empty.</b>",
-    masry: "❌ <b>قائمة منتجاتك فاضية.</b>"
+    masry: "❌ <b>قايمتك بتصفر يا باشا، مفيش حاجة هنا.</b>"
   },
   "list.empty_hint": {
     en: "Paste an Amazon.eg link in the chat box to add it to your list.",
-    masry: "ابعت لينك أمازون مصر في الشات عشان تضيفه لقايمتك."
+    masry: "ارمي أي لينك أمازون مصر في الشات عشان تضيفه لقايمتك."
   },
   "list.select_hint": {
     en: "Select an item below to modify its checking parameters:",
-    masry: "اختار منتج تحت عشان تعدل إعدادات المتابعة:"
+    masry: "اختار منتج من دول عشان تظبط إعداداته:"
   },
   "list.prev": {
     en: "⬅️ Prev",
@@ -377,11 +377,11 @@ const dict = {
   },
   "product.status_paused": {
     en: "⏸️ Paused",
-    masry: "متوقف ⏸️"
+    masry: "مريح شوية ⏸️"
   },
   "product.waiting_check": {
     en: "⏳ Waiting for next automated check...",
-    masry: "⏳ بنشوف السعر..."
+    masry: "⏳ ثواني بنبص على السعر وراجعين..."
   },
   "product.out_of_stock": {
     en: "❌ Out of Stock",
@@ -726,11 +726,11 @@ const dict = {
 
   "alert.btn_open_new": {
     en: "🛒 Open in Amazon.eg",
-    masry: "🛒 شوفه على أمازون"
+    masry: "🛒 افتح أمازون"
   },
   "alert.btn_open_resale": {
     en: "📦 Open Amazon Resale",
-    masry: "📦 شوفه من أمازون ريسيل"
+    masry: "♻️ شوف الريسيل"
   },
   "alert.btn_disclaimer": {
     en: "ℹ️ Price Disclaimer",
@@ -839,23 +839,23 @@ const dict = {
   },
   "crm.tab_pending": {
     en: "Pending",
-    masry: "مستنيين"
+    masry: "في الانتظار"
   },
   "crm.queue_type_access": {
-    en: "🆕 New Access",
-    masry: "🆕 طلب جديد"
+    en: "New Access",
+    masry: "طلب جديد"
   },
   "crm.queue_type_unban": {
-    en: "🔓 Unban Request",
-    masry: "🔓 إلغاء حظر"
+    en: "Unban Request",
+    masry: "إلغاء حظر"
   },
   "crm.tab_banned": {
     en: "Banned",
-    masry: "المحظورين"
+    masry: "واخدين بان"
   },
   "crm.tab_admins": {
     en: "Admins",
-    masry: "الأدمنز"
+    masry: "الادمنز"
   },
   "crm.search_placeholder": {
     en: "Search Name, @username or ID...",
@@ -1101,7 +1101,7 @@ const dict = {
   // ── CRM Admin Action Notifications ────────────────────────────────────────
   "crm.notify_approved": {
     en: "✅ <b>Your access request has been APPROVED!</b>\n\nYou can now use AzTracker. Send /start to begin.",
-    masry: "✅ <b>طلبك اتقبل!</b>\n\nدلوقتي تقدر تستخدم AzTracker. ابعت /start عشان تبدأ."
+    masry: "✅ <b>موافقين عليك!</b>\n\nتقدر دلوقتي تستخدم AzTracker. ابعت /start عشان تعيش."
   },
   "crm.notify_rejected": {
     en: "❌ <b>Your access request was REJECTED.</b>",
@@ -1109,7 +1109,7 @@ const dict = {
   },
   "crm.notify_revoked": {
     en: "⛔ <b>Your access has been REVOKED.</b>",
-    masry: "⛔ <b>متقدرش تستخدم البوت تاني.</b>"
+    masry: "⛔ <b>الباسبور اتسحب.</b>\nمتقدرش تستخدم البوت تاني."
   },
   "crm.notify_restored": {
     en: "✅ <b>Your access has been RESTORED.</b>",
@@ -1117,15 +1117,15 @@ const dict = {
   },
   "crm.notify_promoted": {
     en: "👑 <b>You have been PROMOTED to Admin!</b>",
-    masry: "👑 <b>اترقيت لـ Admin!</b>"
+    masry: "👑 <b>اترقيت لـ أدمن! مبروك يا باشا.</b>"
   },
   "crm.notify_demoted": {
     en: "🔽 <b>You have been DEMOTED to standard user.</b>",
-    masry: "🔽 <b>رجعت يوزر عادي.</b>"
+    masry: "🔽 <b>رجعت يوزر عادي زي حالاتنا.</b>"
   },
   "crm.notify_limit_updated": {
     en: "📈 <b>Your tracking limit has been updated to {limit} items.</b>",
-    masry: "📈 <b>ليميت المتابعة اتغير لـ {limit} منتجات.</b>"
+    masry: "📈 <b>حدك اترفع لـ {limit} منتج. عيش يا معلم!</b>"
   },
   "crm.notify_direct_message": {
     en: "💬 <b>Message from Admin:</b>\n\n{message}",
@@ -1194,7 +1194,32 @@ const dict = {
     masry: "اضغط عشان تشوف التفاصيل"
   },
 
-  // ── Engine Health Widget ─────────────────────────────────────────────────────
+  
+  "crm.audit_target": {
+    en: "Target:",
+    masry: "الهدف:"
+  },
+  "crm.audit_details": {
+    en: "Details:",
+    masry: "التفاصيل:"
+  },
+  "crm.btn_view": {
+    en: "View ➡️",
+    masry: "شوف ➡️"
+  },
+  "crm.select_all": {
+    en: "Select All",
+    masry: "حدد الكل"
+  },
+  "crm.joined_date": {
+    en: "Joined:",
+    masry: "انضم:"
+  },
+  "crm.minutes_short": {
+    en: "min",
+    masry: "دقيقة"
+  },
+\n  // ── Engine Health Widget ─────────────────────────────────────────────────────
   "crm.engine_health": {
     en: "Engine Health",
     masry: "حالة المحرك"
