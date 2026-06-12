@@ -625,23 +625,26 @@ export async function fetchAPI(request, env, ctx) {
         }
       } else if (action === "reject") {
         // Read request_type + user info BEFORE deleting (needed for UPSERT)
-        const queueRow = await env.DB.prepare("SELECT request_type, admin_messages, first_name, username, language_code FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        const queueRow = await env.DB.prepare("SELECT request_type, admin_messages, first_name, username FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Get lang from Users if row exists, else default to 'en' (Join_Queue has no language_code column)
+        const existingUser = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
+        const userLang = existingUser?.lang || 'en';
         // Race guard: delete queue row, check if another admin already handled it
         const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         if (deleteResult.meta.changes === 0) {
           // Another admin already handled the queue item — still ensure user role is set
-          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), resolveLanguageCode(queueRow?.language_code) || 'en').run();
+          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
           return new Response(JSON.stringify({ success: false, error: "already_handled", message: "Request was already processed by another admin" }), { status: 200 });
         }
         // UPSERT user: INSERT if new (first rejection), UPDATE if unban was rejected after prior approval.
         // Unlike plain UPDATE, INSERT ON CONFLICT ensures newly rejected users appear in the banned tab.
         if (queueRow?.request_type === 'unban') {
           // Rejecting an unban request → permanently ban the user (unban_rejected=1)
-          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang, unban_rejected) VALUES (?, ?, ?, 'rejected', ?, ?, ?, 1) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected', unban_rejected = 1").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), resolveLanguageCode(queueRow?.language_code) || 'en').run();
+          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang, unban_rejected) VALUES (?, ?, ?, 'rejected', ?, ?, ?, 1) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected', unban_rejected = 1").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
           ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('access.unban_rejected', tl)); })());
         } else {
           // Rejecting initial access request — user can request unban (unban_rejected stays 0)
-          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), resolveLanguageCode(queueRow?.language_code) || 'en').run();
+          await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
           ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_rejected', tl)); })());
         }
         ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, `Rejected join request${queueRow?.request_type === 'unban' ? ' (unban — permanent)' : ''}`));
