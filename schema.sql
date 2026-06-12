@@ -131,6 +131,8 @@ CREATE INDEX IF NOT EXISTS idx_usersubscriptions_chatid ON User_Subscriptions (c
 CREATE INDEX IF NOT EXISTS idx_subscriptions_asin ON User_Subscriptions(asin);
 -- Optimizes garbage collection / stale product queries
 CREATE INDEX IF NOT EXISTS idx_products_last_updated ON Global_Products(last_updated);
+-- Optimizes ghost/delisted product queries for the Graveyard drawer
+CREATE INDEX IF NOT EXISTS idx_products_delisted ON Global_Products(delisted);
 -- Optimizes Web App CRM Pending/Approved/Banned tab grouping
 CREATE INDEX IF NOT EXISTS idx_users_role ON Users(role);
 -- Optimizes Web App CRM chronological sorting to prevent memory scans
