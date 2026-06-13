@@ -668,22 +668,33 @@ function renderUserHTML(lang, partnerTag) {
                '<h4 class="product-title">' + name + '</h4>' +
                '<p class="product-asin">' + p.asin + '</p>' +
             '</div>' +
-          '</div>' +
+          '</div>';
           
-          '<div class="prices-grid">' +
-            '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
-              '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
-              '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? 'شوف' : 'Check')) + '</div>' +
-            '</div>' +
-            '<div class="price-box" title="' + (isMasry ? 'مستعمل' : 'Resale') + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
-              '<div class="price-label">' + (isMasry ? 'مستعمل' : 'Resale') + '</div>' +
-              '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (isMasry ? 'شوف' : 'Check')) + '</div>' +
-            '</div>' +
-            '<div class="price-box" title="' + (isMasry ? 'أمازون' : 'Amazon.eg') + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
-              '<div class="price-label">' + (isMasry ? 'أمازون' : 'Amazon.eg') + '</div>' +
-              '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (isMasry ? 'شوف' : 'Check')) + '</div>' +
-            '</div>' +
-          '</div>' +
+          const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price;
+          let pricesHtml = '';
+          if (isOutOfStock) {
+              pricesHtml = '<div style="background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: var(--destructive-color); padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0; font-weight: 500; font-size: 14px;">' +
+                           '<svg style="width: 16px; height: 16px; display: inline-block; vertical-align: text-bottom; margin-inline-end: 6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' +
+                           (isMasry ? 'غير متوفر حالياً' : 'Currently Out of Stock') +
+                           '</div>';
+          } else {
+              pricesHtml = '<div class="prices-grid">' +
+                '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
+                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? 'نفذت' : 'Out')) + '</div>' +
+                '</div>' +
+                '<div class="price-box" title="' + (isMasry ? 'مستعمل' : 'Resale') + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + (isMasry ? 'مستعمل' : 'Resale') + '</div>' +
+                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (isMasry ? 'نفذت' : 'Out')) + '</div>' +
+                '</div>' +
+                '<div class="price-box" title="' + (isMasry ? 'أمازون' : 'Amazon.eg') + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + (isMasry ? 'أمازون' : 'Amazon.eg') + '</div>' +
+                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (isMasry ? 'نفذت' : 'Out')) + '</div>' +
+                '</div>' +
+              '</div>';
+          }
+
+          html += pricesHtml +
 
           '<div class="slider-container">' +
              '<div class="slider-header">' +
