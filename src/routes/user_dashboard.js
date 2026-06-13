@@ -695,16 +695,16 @@ function renderUserHTML(lang, partnerTag) {
               pricesHtml = '<div class="prices-grid" ' + (isAmzDuplicate ? 'style="grid-template-columns: repeat(2, 1fr);"' : '') + '>' +
                 '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
-                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? '<span style="font-size:11px;">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;">Likely Out of Stock</span>')) + '</div>' +
+                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? '<span style="font-size:11px;color:var(--destructive-color);">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;color:var(--destructive-color);">Likely Out of Stock</span>')) + '</div>' +
                 '</div>' +
                 '<div class="price-box" title="' + (isMasry ? 'مستعمل' : 'Resale') + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + (isMasry ? 'مستعمل' : 'Resale') + '</div>' +
-                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? (isMasry ? '<span style="font-size:11px;">تأكد من المخزون</span>' : '<span style="font-size:11px;">Check Stock</span>') : (isMasry ? '<span style="font-size:11px;">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;">Likely Out of Stock</span>'))) + '</div>' +
+                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? (isMasry ? '<span style="font-size:11px;color:#f59e0b;">تأكد من المخزون</span>' : '<span style="font-size:11px;color:#f59e0b;">Check Stock</span>') : (isMasry ? '<span style="font-size:11px;color:var(--destructive-color);">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;color:var(--destructive-color);">Likely Out of Stock</span>'))) + '</div>' +
                 '</div>' +
                 (isAmzDuplicate ? '' : 
                 '<div class="price-box" title="' + (isMasry ? 'أمازون' : 'Amazon.eg') + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + (isMasry ? 'أمازون' : 'Amazon.eg') + '</div>' +
-                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? (isMasry ? '<span style="font-size:11px;">تأكد من المخزون</span>' : '<span style="font-size:11px;">Check Stock</span>') : (isMasry ? '<span style="font-size:11px;">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;">Likely Out of Stock</span>'))) + '</div>' +
+                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? (isMasry ? '<span style="font-size:11px;color:#f59e0b;">تأكد من المخزون</span>' : '<span style="font-size:11px;color:#f59e0b;">Check Stock</span>') : (isMasry ? '<span style="font-size:11px;color:var(--destructive-color);">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;color:var(--destructive-color);">Likely Out of Stock</span>'))) + '</div>' +
                 '</div>') +
               '</div>';
           }
