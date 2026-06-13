@@ -1688,7 +1688,7 @@ export function renderCrmHTML(lang = 'en') {
             const isMasry = document.documentElement.lang === 'ar';
             const subsText = isMasry ? 'اشتراك' : 'subscriptions';
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No active products found.</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.no_active_products')} + '</div>';
                 document.getElementById('drawer-active-count').innerText = '0 ' + subsText;
                 return;
             }
@@ -1893,7 +1893,7 @@ export function renderCrmHTML(lang = 'en') {
 
             const data = await fetchAPI('/product-subs/' + asin);
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No subscribers found.</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.no_subscribers')} + '</div>';
                 document.getElementById('drawer-product-subs-count').innerText = '0 ' + ${js('crm.items_label')};
                 return;
             }
