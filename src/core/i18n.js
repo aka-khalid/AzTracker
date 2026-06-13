@@ -790,7 +790,7 @@ const dict = {
     en: "AzTracker Hub",
     masry: "AzTracker Hub"
   },
-  "admin.stats_users": {
+  "crm.users_title": {
     en: "Users",
     masry: "المستخدمين"
   },
