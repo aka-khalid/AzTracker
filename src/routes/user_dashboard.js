@@ -1,4 +1,5 @@
 import { renderMainMenu } from './telegram_webhook.js';
+import { t } from '../core/i18n.js';
 
 export async function fetchUserAPI(request, env, ctx) {
   const url = new URL(request.url);
@@ -228,6 +229,50 @@ function renderUserHTML(lang, partnerTag) {
   const htmlLang = isMasry ? 'ar' : 'en';
   const htmlDir = isMasry ? 'rtl' : 'ltr';
   const pTagStr = partnerTag ? partnerTag : '';
+
+  const uiDict = {
+    my_products: t('dashboard.my_products', lang),
+    hot_deals: t('dashboard.hot_deals', lang),
+    syncing: t('dashboard.syncing', lang),
+    finding_deals: t('dashboard.finding_deals', lang),
+    failed_load: t('dashboard.failed_load', lang),
+    error: t('dashboard.error', lang),
+    no_deals: t('dashboard.no_deals', lang),
+    unknown_product: t('dashboard.unknown_product', lang),
+    tracked: t('dashboard.tracked', lang),
+    track: t('dashboard.track', lang),
+    price_now: t('dashboard.price_now', lang),
+    price_drop: t('dashboard.price_drop', lang),
+    open_amazon: t('dashboard.open_amazon', lang),
+    limit_reached: t('dashboard.limit_reached', lang),
+    error_tracking: t('dashboard.error_tracking', lang),
+    open_in_telegram: t('dashboard.open_in_telegram', lang),
+    error_loading_products: t('dashboard.error_loading_products', lang),
+    currency_egp: t('chrome.currency_egp', lang),
+    no_products_found: t('dashboard.no_products_found', lang),
+    last_checked: t('dashboard.last_checked', lang),
+    never: t('dashboard.never', lang),
+    resume: t('dashboard.resume', lang),
+    pause: t('dashboard.pause', lang),
+    new_condition: t('dashboard.new_condition', lang),
+    amazon_eg: t('dashboard.amazon_eg', lang),
+    currently_out_of_stock: t('dashboard.currently_out_of_stock', lang),
+    likely_out_of_stock: t('dashboard.likely_out_of_stock', lang),
+    check_stock: t('dashboard.check_stock', lang),
+    resale: t('dashboard.resale', lang),
+    target_price: t('dashboard.target_price', lang),
+    none: t('dashboard.none', lang),
+    clear: t('dashboard.clear', lang),
+    delete: t('dashboard.delete', lang),
+    confirm_target_prefix: t('dashboard.confirm_target_prefix', lang),
+    confirm_target_suffix: t('dashboard.confirm_target_suffix', lang),
+    saved: t('dashboard.saved', lang),
+    target_updated: t('dashboard.target_updated', lang),
+    cleared: t('dashboard.cleared', lang),
+    target_cleared: t('dashboard.target_cleared', lang),
+    confirm_stop: t('dashboard.confirm_stop', lang)
+  };
+
 
   return `<!DOCTYPE html>
 <html lang="${htmlLang}" dir="${htmlDir}">
@@ -476,16 +521,16 @@ function renderUserHTML(lang, partnerTag) {
 </head>
 <body>
   <div class="tabs">
-    <div class="tab active" id="tab-products" onclick="switchTab('products')">${isMasry ? '📦 منتجاتي' : '📦 My Products'}</div>
-    <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')">${isMasry ? '🔥 لقطات' : '🔥 Hot Deals'}</div>
+    <div class="tab active" id="tab-products" onclick="switchTab('products')">${ui.my_products}</div>
+    <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')">${ui.hot_deals}</div>
   </div>
   
   <div id="content-products">
-    <div id="app"><div id="loading">${isMasry ? 'جاري مزامنة المنتجات...' : 'Syncing products...'}</div></div>
+    <div id="app"><div id="loading">${ui.syncing}</div></div>
   </div>
 
   <div id="content-hotdeals" style="display: none;">
-    <div id="app-deals"><div id="loading-deals" class="loading">${isMasry ? 'جاري البحث عن لقطات...' : 'Finding hot deals...'}</div></div>
+    <div id="app-deals"><div id="loading-deals" class="loading">${ui.finding_deals}</div></div>
   </div>
 
   <script>
@@ -493,6 +538,7 @@ function renderUserHTML(lang, partnerTag) {
     tg.expand();
     tg.ready();
     const initData = tg.initData || '';
+    const ui = ${JSON.stringify(uiDict)};
     const isMasry = ${isMasry};
     const pTag = '${pTagStr}';
 
@@ -524,22 +570,22 @@ function renderUserHTML(lang, partnerTag) {
           hotDeals = await res.json();
           renderHotDeals();
         } else {
-          document.getElementById('app-deals').innerHTML = isMasry ? "فشل التحميل." : "Failed to load.";
+          document.getElementById('app-deals').innerHTML = ui.failed_load;
         }
       } catch(e) {
-        document.getElementById('app-deals').innerHTML = isMasry ? "حدث خطأ." : "Error.";
+        document.getElementById('app-deals').innerHTML = ui.error;
       }
     }
 
     function renderHotDeals() {
       if (hotDeals.length === 0) {
-        document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (isMasry ? 'لا توجد لقطات حالياً.' : 'No hot deals right now.') + '</div>';
+        document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (ui.no_deals) + '</div>';
         return;
       }
       let html = '';
       hotDeals.forEach(p => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
-        if(!name) name = isMasry ? 'منتج غير معروف' : 'Unknown Product';
+        if(!name) name = ui.unknown_product;
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
         
@@ -549,8 +595,8 @@ function renderUserHTML(lang, partnerTag) {
         let dropPct = Math.round(((p.hist_mean - p.new_price) / p.hist_mean) * 100);
 
         let trackBtn = p.is_tracked 
-          ? '<button disabled style="opacity:0.5; cursor:default; border: 1px solid var(--card-border);">✅ ' + (isMasry ? 'متتبع' : 'Tracked') + '</button>'
-          : '<button class="primary" onclick="trackDeal(\\'' + p.asin + '\\')">🎯 ' + (isMasry ? 'تتبع' : 'Track') + '</button>';
+          ? '<button disabled style="opacity:0.5; cursor:default; border: 1px solid var(--card-border);">✅ ' + (ui.tracked) + '</button>'
+          : '<button class="primary" onclick="trackDeal(\\'' + p.asin + '\\')">🎯 ' + (ui.track) + '</button>';
 
         html += '<div class="product-card">' +
           '<div class="product-header">' +
@@ -559,18 +605,18 @@ function renderUserHTML(lang, partnerTag) {
                '<h4 class="product-title">' + escapeHtml(name) + '</h4>' +
                '<div class="price-row" style="margin-top:4px;">' +
                  '<div class="price-box new">' +
-                   '<div class="price-label">' + (isMasry ? 'السعر الآن' : 'Now') + '</div>' +
+                   '<div class="price-label">' + (ui.price_now) + '</div>' +
                    '<div class="price-val">' + formatEGP(p.new_price) + '</div>' +
                  '</div>' +
                  '<div class="price-box used" style="background: rgba(255, 59, 48, 0.1); border-color: rgba(255, 59, 48, 0.2);">' +
-                   '<div class="price-label" style="color:var(--destructive-color)">' + (isMasry ? 'نزول' : 'Drop') + '</div>' +
+                   '<div class="price-label" style="color:var(--destructive-color)">' + (ui.price_drop) + '</div>' +
                    '<div class="price-val" style="color:var(--destructive-color)">' + dropPct + '% 🔻</div>' +
                  '</div>' +
                '</div>' +
             '</div>' +
           '</div>' +
           '<div class="action-row">' +
-            '<button onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (isMasry ? 'شوفه على أمازون' : 'Open in Amazon') + '</button>' +
+            '<button onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (ui.open_amazon) + '</button>' +
             trackBtn +
           '</div>' +
         '</div>';
@@ -592,9 +638,9 @@ function renderUserHTML(lang, partnerTag) {
            renderHotDeals();
            loadProducts(); // refresh my products list quietly
         } else if(res.status === 403) {
-           tg.showAlert(isMasry ? 'لقد وصلت للحد الأقصى للمنتجات.' : 'You have reached your product limit.');
+           tg.showAlert(ui.limit_reached);
         } else {
-           tg.showAlert(isMasry ? 'حدث خطأ.' : 'Error tracking product.');
+           tg.showAlert(ui.error_tracking);
         }
       } catch(e) {
         tg.showAlert('Error');
@@ -604,7 +650,7 @@ function renderUserHTML(lang, partnerTag) {
 
     async function loadProducts() {
       if(!initData) {
-        document.getElementById('app').innerHTML = isMasry ? "يرجى فتح هذا داخل تليجرام." : "Please open this inside Telegram.";
+        document.getElementById('app').innerHTML = ui.open_in_telegram;
         return;
       }
       try {
@@ -614,13 +660,13 @@ function renderUserHTML(lang, partnerTag) {
         allProducts = await res.json();
         renderProducts();
       } catch (e) {
-        document.getElementById('app').innerHTML = isMasry ? "حدث خطأ أثناء تحميل المنتجات." : "Error loading products.";
+        document.getElementById('app').innerHTML = ui.error_loading_products;
       }
     }
 
     function formatEGP(val) {
       if(val === null || val === undefined) return '-';
-      return val.toLocaleString() + (isMasry ? ' ج.م' : ' EGP');
+      return val.toLocaleString() + (' ' + ui.currency_egp);
     }
 
     function escapeHtml(unsafe) {
@@ -635,13 +681,13 @@ function renderUserHTML(lang, partnerTag) {
 
     function renderProducts() {
       if (allProducts.length === 0) {
-        document.getElementById('app').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (isMasry ? 'لم يتم العثور على منتجات. أرسل رابط أمازون للبوت لبدء التتبع!' : 'No products found. Send an Amazon link to the bot to start tracking!') + '</div>';
+        document.getElementById('app').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (ui.no_products_found) + '</div>';
         return;
       }
       let html = '';
       allProducts.forEach((p, idx) => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
-        if(!name) name = isMasry ? 'منتج غير معروف' : 'Unknown Product';
+        if(!name) name = ui.unknown_product;
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
         
@@ -649,7 +695,7 @@ function renderUserHTML(lang, partnerTag) {
         let maxVal = Math.max(p.new_price||0, p.used_price||0, p.amazon_price||0) * 1.2 || 1000;
         if(targetSliderVal > maxVal) maxVal = targetSliderVal * 1.2;
 
-        let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString(isMasry ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'numeric', year: 'numeric' }) : (isMasry ? 'أبداً' : 'Never');
+        let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString(isMasry ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'numeric', year: 'numeric' }) : (ui.never);
 
         let amzUrl = 'https://www.amazon.eg/dp/' + p.asin;
         let resaleUrl = 'https://www.amazon.eg/dp/' + p.asin + '?m=A2N2MP47XAP1MK';
@@ -662,12 +708,12 @@ function renderUserHTML(lang, partnerTag) {
         }
 
         let classPaused = p.paused ? 'paused' : '';
-        let btnPauseTxt = p.paused ? (isMasry ? '▶️ استئناف' : '▶️ Resume') : (isMasry ? '⏸ إيقاف مؤقت' : '⏸ Pause');
+        let btnPauseTxt = p.paused ? (ui.resume) : (ui.pause);
 
-        let sellerLabel = p.new_seller ? p.new_seller : (isMasry ? 'جديد' : 'New');
-        if(isMasry && p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg') sellerLabel = 'أمازون';
-        let shortSeller = p.new_seller ? p.new_seller.substring(0, 10) + (p.new_seller.length > 10 ? '..' : '') : (isMasry ? 'جديد' : 'New');
-        if(isMasry && p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg') shortSeller = 'أمازون';
+        let sellerLabel = p.new_seller ? p.new_seller : (ui.new_condition);
+        if(p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg') sellerLabel = ui.amazon_eg;
+        let shortSeller = p.new_seller ? p.new_seller.substring(0, 10) + (p.new_seller.length > 10 ? '..' : '') : (ui.new_condition);
+        if(p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg') shortSeller = ui.amazon_eg;
 
         html += '<div class="product-card ' + classPaused + '">' +
           '<div class="product-header">' +
@@ -689,22 +735,22 @@ function renderUserHTML(lang, partnerTag) {
           if (isOutOfStock) {
               pricesHtml = '<div style="background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: var(--destructive-color); padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0; font-weight: 500; font-size: 14px;">' +
                            '<svg style="width: 16px; height: 16px; display: inline-block; vertical-align: text-bottom; margin-inline-end: 6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' +
-                           (isMasry ? 'غير متوفر حالياً' : 'Currently Out of Stock') +
+                           (ui.currently_out_of_stock) +
                            '</div>';
           } else {
               pricesHtml = '<div class="prices-grid" ' + (isAmzDuplicate ? 'style="grid-template-columns: repeat(2, 1fr);"' : '') + '>' +
                 '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
-                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? '<span style="font-size:11px;color:var(--destructive-color);">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;color:var(--destructive-color);">Likely Out of Stock</span>')) + '</div>' +
+                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--destructive-color);">' + ui.likely_out_of_stock + '</span>')) + '</div>' +
                 '</div>' +
-                '<div class="price-box" title="' + (isMasry ? 'مستعمل' : 'Resale') + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
-                  '<div class="price-label">' + (isMasry ? 'مستعمل' : 'Resale') + '</div>' +
-                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? (isMasry ? '<span style="font-size:11px;color:#f59e0b;">تأكد من المخزون</span>' : '<span style="font-size:11px;color:#f59e0b;">Check Stock</span>') : (isMasry ? '<span style="font-size:11px;color:var(--destructive-color);">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;color:var(--destructive-color);">Likely Out of Stock</span>'))) + '</div>' +
+                '<div class="price-box" title="' + (ui.resale) + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + (ui.resale) + '</div>' +
+                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--destructive-color);">' + ui.likely_out_of_stock + '</span>'))) + '</div>' +
                 '</div>' +
                 (isAmzDuplicate ? '' : 
-                '<div class="price-box" title="' + (isMasry ? 'أمازون' : 'Amazon.eg') + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
-                  '<div class="price-label">' + (isMasry ? 'أمازون' : 'Amazon.eg') + '</div>' +
-                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? (isMasry ? '<span style="font-size:11px;color:#f59e0b;">تأكد من المخزون</span>' : '<span style="font-size:11px;color:#f59e0b;">Check Stock</span>') : (isMasry ? '<span style="font-size:11px;color:var(--destructive-color);">غالبًا نفذ</span>' : '<span style="font-size:10px;line-height:1.2;display:inline-block;color:var(--destructive-color);">Likely Out of Stock</span>'))) + '</div>' +
+                '<div class="price-box" title="' + (ui.amazon_eg) + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + (ui.amazon_eg) + '</div>' +
+                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--destructive-color);">' + ui.likely_out_of_stock + '</span>'))) + '</div>' +
                 '</div>') +
               '</div>';
           }
@@ -713,10 +759,10 @@ function renderUserHTML(lang, partnerTag) {
 
           '<div class="slider-container">' +
              '<div class="slider-header">' +
-               '<div>' + (isMasry ? 'السعر المستهدف:' : 'Target Price:') + '</div>' +
+               '<div>' + (ui.target_price) + '</div>' +
                '<div style="display:flex;align-items:center;gap:6px;">' +
-                 '<input type="number" id="tgt-input-'+idx+'" class="target-input" min="1" max="'+maxVal+'" value="'+(p.target_price || '')+'" placeholder="'+(isMasry ? 'لا يوجد' : 'None')+'" oninput="document.getElementById(\\'slider-'+idx+'\\').value = this.value" onchange="updateTarget(\\''+p.asin+'\\', this.value ? parseInt(this.value) : null)">' +
-                 (p.target_price ? '<a href="#" onclick="clearTarget(\\''+p.asin+'\\'); return false;" style="color:var(--hint-color);font-size:11px;text-decoration:none;">(' + (isMasry ? 'مسح' : 'Clear') + ')</a>' : '') +
+                 '<input type="number" id="tgt-input-'+idx+'" class="target-input" min="1" max="'+maxVal+'" value="'+(p.target_price || '')+'" placeholder="'+(ui.none)+'" oninput="document.getElementById(\\'slider-'+idx+'\\').value = this.value" onchange="updateTarget(\\''+p.asin+'\\', this.value ? parseInt(this.value) : null)">' +
+                 (p.target_price ? '<a href="#" onclick="clearTarget(\\''+p.asin+'\\'); return false;" style="color:var(--hint-color);font-size:11px;text-decoration:none;">(' + (ui.clear) + ')</a>' : '') +
                '</div>' +
              '</div>' +
              '<input type="range" id="slider-'+idx+'" min="1" max="'+maxVal+'" value="'+targetSliderVal+'" oninput="document.getElementById(\\'tgt-input-'+idx+'\\').value = this.value" onchange="updateTarget(\\''+p.asin+'\\', parseInt(this.value))">' +
@@ -724,13 +770,13 @@ function renderUserHTML(lang, partnerTag) {
 
           '<div class="action-row">' +
             '<button onclick="togglePause(\\''+p.asin+'\\', '+(p.paused?1:0)+')">' + btnPauseTxt + '</button>' +
-            '<button class="danger" onclick="deleteProduct(\\''+p.asin+'\\')">🗑 ' + (isMasry ? 'حذف' : 'Delete') + '</button>' +
+            '<button class="danger" onclick="deleteProduct(\\''+p.asin+'\\')">🗑 ' + (ui.delete) + '</button>' +
           '</div>' +
           '<div class="action-row">' +
-            '<button class="primary" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (isMasry ? 'شوفه على أمازون' : 'Open in Amazon') + '</button>' +
+            '<button class="primary" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (ui.open_amazon) + '</button>' +
           '</div>' +
           
-          '<div class="last-updated">' + (isMasry ? 'آخر فحص: ' : 'Last Checked: ') + '<span>' + lastUpd + '</span></div>' +
+          '<div class="last-updated">' + (ui.last_checked) + '<span>' + lastUpd + '</span></div>' +
         '</div>';
       });
       document.getElementById('app').innerHTML = html;
@@ -746,12 +792,12 @@ function renderUserHTML(lang, partnerTag) {
 
     async function updateTarget(asin, val) {
       if(val !== null && isNaN(val)) return;
-      let msg = isMasry ? ("هل أنت متأكد من تعيين السعر المستهدف إلى " + val + " جنيه؟") : ("Are you sure you want to set the target to " + val + " EGP?");
+      let msg = ui.confirm_target_prefix + val + ui.confirm_target_suffix;
       tg.showConfirm(msg, async function(ok) {
         if(ok) {
           tg.HapticFeedback.impactOccurred('light');
           await apiCall('/api/user/products/update', { asin, target_price: val });
-          tg.showPopup({ title: isMasry ? "تم الحفظ" : "Saved", message: (isMasry ? "تم تحديث السعر لـ " : "Target price updated for ") + asin });
+          tg.showPopup({ title: ui.saved, message: (ui.target_updated) + asin });
           loadProducts();
         } else {
           loadProducts();
@@ -762,7 +808,7 @@ function renderUserHTML(lang, partnerTag) {
     async function clearTarget(asin) {
       tg.HapticFeedback.impactOccurred('light');
       await apiCall('/api/user/products/update', { asin, target_price: null });
-      tg.showPopup({ title: isMasry ? "تم المسح" : "Cleared", message: (isMasry ? "تم مسح السعر لـ " : "Target price cleared for ") + asin });
+      tg.showPopup({ title: ui.cleared, message: (ui.target_cleared) + asin });
       loadProducts();
     }
 
@@ -774,7 +820,7 @@ function renderUserHTML(lang, partnerTag) {
 
     async function deleteProduct(asin) {
       tg.HapticFeedback.impactOccurred('heavy');
-      tg.showConfirm(isMasry ? "هل أنت متأكد من إيقاف التتبع؟" : "Are you sure you want to stop tracking this product?", async function(confirm) {
+      tg.showConfirm(ui.confirm_stop, async function(confirm) {
          if(confirm) {
             await apiCall('/api/user/products/delete', { asin });
             loadProducts();

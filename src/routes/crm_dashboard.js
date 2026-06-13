@@ -1581,7 +1581,7 @@ export function renderCrmHTML(lang = 'en') {
                 const rawName = pName ? (pName.length > 35 ? pName.substring(0, 32) + '...' : pName) : p.asin;
                 const nameEsc = escapeHtml(rawName);
                 const asinEsc = escapeHtml(p.asin);
-                const price = p.new_price ? p.new_price + ' EGP' : (p.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
+                const price = p.new_price ? p.new_price + ' ' + ${js('chrome.currency_egp')} : (p.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const userIdEsc = escapeHtml(String(userId));
                 const actionType = isPaused ? 'resume_product' : 'pause_product';
                 const pauseIcon = isPaused ? '▶️' : '⏸️';
@@ -1642,7 +1642,7 @@ export function renderCrmHTML(lang = 'en') {
             data.items.forEach((item, idx) => {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
                 const price = item.amazon_price || item.new_price;
-                const priceStr = price ? 'EGP ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
+                const priceStr = price ? ${js('chrome.currency_egp')} + ' ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
@@ -1706,7 +1706,7 @@ export function renderCrmHTML(lang = 'en') {
                 const userName = escapeHtml(item.first_name || 'User');
                 const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
                 const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
-                const price = item.new_price ? item.new_price + ' EGP' : (item.used_price ? 'Used Only' : 'Out of Stock');
+                const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
                 
@@ -1900,7 +1900,7 @@ export function renderCrmHTML(lang = 'en') {
                 const userName = escapeHtml(item.first_name || 'User');
                 const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
                 const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
-                const price = item.new_price ? item.new_price + ' EGP' : (item.used_price ? 'Used Only' : 'Out of Stock');
+                const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
                 
@@ -2030,9 +2030,9 @@ export function renderCrmHTML(lang = 'en') {
                 const atl = Math.min(...validPrices);
                 const avg = Math.round(validPrices.reduce((sum, val) => sum + val, 0) / validPrices.length);
                 
-                document.getElementById('chart-ath').innerText = ath.toLocaleString() + ' EGP';
-                document.getElementById('chart-atl').innerText = atl.toLocaleString() + ' EGP';
-                document.getElementById('chart-avg').innerText = avg.toLocaleString() + ' EGP';
+                document.getElementById('chart-ath').innerText = ath.toLocaleString() + ' ' + ${js('chrome.currency_egp')};
+                document.getElementById('chart-atl').innerText = atl.toLocaleString() + ' ' + ${js('chrome.currency_egp')};
+                document.getElementById('chart-avg').innerText = avg.toLocaleString() + ' ' + ${js('chrome.currency_egp')};
                 document.getElementById('chart-metrics').style.display = 'flex';
             }
 

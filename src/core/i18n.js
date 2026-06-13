@@ -1332,6 +1332,163 @@ const dict = {
     en: "#ad",
     masry: "#إعلان"
   },
+  // ── WebApp Dashboard ────────────────────────────────────────────────────────
+  "dashboard.my_products": {
+    en: "📦 My Products",
+    masry: "📦 منتجاتي"
+  },
+  "dashboard.hot_deals": {
+    en: "🔥 Hot Deals",
+    masry: "🔥 عروض نار"
+  },
+  "dashboard.syncing": {
+    en: "Syncing products...",
+    masry: "بنجيب المنتجات..."
+  },
+  "dashboard.finding_deals": {
+    en: "Finding hot deals...",
+    masry: "بندور على عروض نار..."
+  },
+  "dashboard.failed_load": {
+    en: "Failed to load.",
+    masry: "التحميل فشل."
+  },
+  "dashboard.error": {
+    en: "Error.",
+    masry: "حصلت مشكلة."
+  },
+  "dashboard.no_deals": {
+    en: "No hot deals right now.",
+    masry: "مفيش عروض دلوقتي."
+  },
+  "dashboard.unknown_product": {
+    en: "Unknown Product",
+    masry: "منتج مجهول"
+  },
+  "dashboard.tracked": {
+    en: "Tracked",
+    masry: "عندك في الليست"
+  },
+  "dashboard.track": {
+    en: "Track",
+    masry: "ضيفه لـ الليست"
+  },
+  "dashboard.price_now": {
+    en: "Now",
+    masry: "السعر دلوقتي"
+  },
+  "dashboard.price_drop": {
+    en: "Drop",
+    masry: "نزل"
+  },
+  "dashboard.open_amazon": {
+    en: "Open in Amazon",
+    masry: "شوفه على أمازون"
+  },
+  "dashboard.limit_reached": {
+    en: "You have reached your product limit.",
+    masry: "كده إنت قفلت الليميت بتاعك."
+  },
+  "dashboard.error_tracking": {
+    en: "Error tracking product.",
+    masry: "مشكلة في تتبع المنتج."
+  },
+  "dashboard.open_in_telegram": {
+    en: "Please open this inside Telegram.",
+    masry: "افتح اللينك ده من جوة تليجرام."
+  },
+  "dashboard.error_loading_products": {
+    en: "Error loading products.",
+    masry: "فيه مشكلة في تحميل المنتجات."
+  },
+  "dashboard.no_products_found": {
+    en: "No products found. Send an Amazon link to the bot to start tracking!",
+    masry: "لسه مفيش منتجات! ابعت لينك أمازون للبوت عشان نراقبلك السعر."
+  },
+  "dashboard.last_checked": {
+    en: "Last Checked: ",
+    masry: "آخر فحص: "
+  },
+  "dashboard.never": {
+    en: "Never",
+    masry: "أبداً"
+  },
+  "dashboard.resume": {
+    en: "▶️ Resume",
+    masry: "كمل ▶️"
+  },
+  "dashboard.pause": {
+    en: "⏸ Pause",
+    masry: "وقف مؤقتاً ⏸"
+  },
+  "dashboard.new_condition": {
+    en: "New",
+    masry: "جديد"
+  },
+  "dashboard.amazon_eg": {
+    en: "Amazon.eg",
+    masry: "أمازون"
+  },
+  "dashboard.currently_out_of_stock": {
+    en: "Currently Out of Stock",
+    masry: "خلصان دلوقتي"
+  },
+  "dashboard.likely_out_of_stock": {
+    en: "Likely Out of Stock",
+    masry: "غالبًا خلص"
+  },
+  "dashboard.check_stock": {
+    en: "Check Stock",
+    masry: "شيّك على المخزون"
+  },
+  "dashboard.resale": {
+    en: "Resale",
+    masry: "مستعمل"
+  },
+  "dashboard.target_price": {
+    en: "Target Price:",
+    masry: "تارجت السعر:"
+  },
+  "dashboard.none": {
+    en: "None",
+    masry: "مفيش"
+  },
+  "dashboard.clear": {
+    en: "Clear",
+    masry: "امسح"
+  },
+  "dashboard.delete": {
+    en: "Delete",
+    masry: "احذف"
+  },
+  "dashboard.confirm_target_prefix": {
+    en: "Are you sure you want to set the target to ",
+    masry: "متأكد إنك عايز تخلي التارجت "
+  },
+  "dashboard.confirm_target_suffix": {
+    en: " EGP?",
+    masry: " جنيه؟"
+  },
+  "dashboard.saved": {
+    en: "Saved",
+    masry: "اتحفظ"
+  },
+  "dashboard.target_updated": {
+    en: "Target price updated for ",
+    masry: "السعر اتحدث لـ "
+  },
+  "dashboard.cleared": {
+    en: "Cleared",
+    masry: "اتمسح"
+  },
+  "dashboard.target_cleared": {
+    en: "Target price cleared for ",
+    masry: "تارجت السعر اتمسح لـ "
+  },
+  "dashboard.confirm_stop": {
+    en: "Are you sure you want to stop tracking this product?",
+    masry: "متأكد إنك عايز توقف تتبع المنتج ده؟"
+  }
 };
 
 /**
