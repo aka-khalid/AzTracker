@@ -9,6 +9,7 @@ on:
       - 'src/**'
       - 'wrangler.toml'
       - '.github/workflows/deploy_worker.yml'
+      - 'migrations/**'
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
