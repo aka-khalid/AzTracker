@@ -1841,11 +1841,11 @@ export function renderCrmHTML(lang = 'en') {
             const data = await fetchAPI('/graveyard');
             if (!data || !data.items || data.items.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">✅ ' + ${js('crm.graveyard_empty')} + '</div>';
-                document.getElementById('drawer-graveyard-count').innerText = '0 items';
+                document.getElementById('drawer-graveyard-count').innerText = '0 ' + ${js('crm.items_label')};
                 return;
             }
 
-            document.getElementById('drawer-graveyard-count').innerText = data.items.length + ' items';
+            document.getElementById('drawer-graveyard-count').innerText = data.items.length + ' ' + ${js('crm.items_label')};
 
             const lang = document.documentElement.lang || 'en';
             let html = '';
@@ -1894,11 +1894,11 @@ export function renderCrmHTML(lang = 'en') {
             const data = await fetchAPI('/product-subs/' + asin);
             if (!data || !data.items || data.items.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No subscribers found.</div>';
-                document.getElementById('drawer-product-subs-count').innerText = '0 items';
+                document.getElementById('drawer-product-subs-count').innerText = '0 ' + ${js('crm.items_label')};
                 return;
             }
 
-            document.getElementById('drawer-product-subs-count').innerText = data.items.length + ' items';
+            document.getElementById('drawer-product-subs-count').innerText = data.items.length + ' ' + ${js('crm.items_label')};
             const lang = document.documentElement.lang || 'en';
             
             itemsCont.innerHTML = data.items.map((item) => {
