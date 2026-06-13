@@ -379,7 +379,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       const rows = await env.DB.prepare(`
-        SELECT s.chat_id, s.asin, s.added_at, s.paused_at,
+        SELECT s.chat_id, s.asin, s.added_at, s.paused_at, p.image_url,
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price,
                u.first_name, u.username
         FROM User_Subscriptions s
@@ -403,7 +403,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       const rows = await env.DB.prepare(`
-        SELECT s.chat_id, s.asin, s.added_at, s.target_price,
+        SELECT s.chat_id, s.asin, s.added_at, s.target_price, p.image_url,
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price,
                u.first_name, u.username
         FROM User_Subscriptions s
@@ -430,7 +430,7 @@ export async function fetchAPI(request, env, ctx) {
       const limit = Math.max(1, Math.ceil(totalActiveProducts * 0.25));
 
       const rows = await env.DB.prepare(`
-        SELECT gp.asin, gp.name, gp.name_ar, gp.new_price, gp.amazon_price,
+        SELECT gp.asin, gp.name, gp.name_ar, gp.new_price, gp.amazon_price, gp.image_url,
                COUNT(s.chat_id) as tracker_count
         FROM Global_Products gp
         JOIN User_Subscriptions s ON gp.asin = s.asin AND s.is_paused = 0
@@ -452,7 +452,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       const rows = await env.DB.prepare(`
-        SELECT gp.asin, gp.name, gp.name_ar, gp.delisted,
+        SELECT gp.asin, gp.name, gp.name_ar, gp.delisted, gp.image_url,
                gp.new_missing_since, gp.used_missing_since, gp.amazon_missing_since,
                gp.last_updated,
                COUNT(CASE WHEN s.is_paused = 0 THEN 1 END) as active_subs
@@ -514,7 +514,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!targetAsin) return new Response("Invalid ASIN", { status: 400 });
       
       const subs = await env.DB.prepare(`
-        SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at,
+        SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at, p.image_url,
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin,
                u.first_name, u.username
         FROM User_Subscriptions s
@@ -538,7 +538,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!targetId || targetId === "products") return new Response("Invalid ID", { status: 400 });
       
       const products = await env.DB.prepare(`
-        SELECT s.asin, s.target_price, s.is_paused, 
+        SELECT s.asin, s.target_price, s.is_paused, p.image_url, 
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
@@ -799,6 +799,10 @@ export async function fetchAPI(request, env, ctx) {
     }
     if (url.pathname === "/api/crm/sync-env" && request.method === "POST") {
       try {
+        const auth = await authAdmin(request, env);
+        if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+        if (!auth.isRootAdmin) return new Response(JSON.stringify({ error: "Forbidden: Root Admin only" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        const adminId = auth.user.id.toString();
         const pat = env.GITHUB_PAT;
         if (!pat) {
             return new Response(JSON.stringify({ error: "GITHUB_PAT not set in environment." }), { status: 500 });
@@ -1589,7 +1593,7 @@ export function renderCrmHTML(lang = 'en') {
 
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +
                     '<div class="flex items-start gap-3 mb-2">' +
-                        '<img src="https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\\'none\\'">' +
+                        '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
                         '<div class="flex-1 min-w-0 pe-2">' +
                             '<a href="https://www.amazon.eg/dp/' + asinEsc + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
                             '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
@@ -1641,7 +1645,7 @@ export function renderCrmHTML(lang = 'en') {
                 const priceStr = price ? 'EGP ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
-                html += '<img src="https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\\'none\\'">' ;
+                html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
@@ -1709,7 +1713,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex gap-3 mb-2">
-                        <img src="https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
+                        <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
@@ -1781,7 +1785,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="bg-gray-800/50 rounded-xl p-3 border border-amber-500/20" id="paused-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex gap-3 mb-2">
-                        <img src="https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
+                        <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
@@ -1852,7 +1856,7 @@ export function renderCrmHTML(lang = 'en') {
 
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
-                html += '<img src="https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\\'none\\'">' ;
+                html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
@@ -2104,15 +2108,14 @@ export function renderCrmHTML(lang = 'en') {
             btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
             btn.disabled = true;
             try {
-                const res = await fetch('/api/crm/sync-env', { method: 'POST' });
-                const json = await res.json();
-                if (res.ok) {
-                    showToast(json.message || 'Sync started successfully', 'success');
+                const json = await fetchAPI('/sync-env', 'POST');
+                if (json.error) {
+                    showToast(json.error, 'error');
                 } else {
-                    showToast(json.error || 'Failed to trigger sync', 'error');
+                    showToast(json.message || 'Sync started successfully', 'success');
                 }
             } catch (err) {
-                showToast(err.message, 'error');
+                showToast('Failed to trigger sync: ' + err.message, 'error');
             } finally {
                 btn.innerHTML = originalContent;
                 btn.disabled = false;
