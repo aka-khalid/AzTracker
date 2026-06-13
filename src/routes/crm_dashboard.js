@@ -846,10 +846,9 @@ export function renderCrmHTML(lang = 'en') {
   const js = (key, vars) => JSON.stringify(t(key, lang, vars));
   const htmlLang = lang === 'masry' ? 'ar' : 'en';
   const htmlDir = isMasry ? 'rtl' : 'ltr';
-  const htmlScale = isMasry ? ' style="font-size: 115%;"' : '';
 
   return `<!DOCTYPE html>
-<html lang="${htmlLang}" dir="${htmlDir}"${htmlScale} class="dark">
+<html lang="${htmlLang}" dir="${htmlDir}" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
