@@ -68,15 +68,16 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Synchronous Webhook Scraping:** Upgraded the `telegram_webhook.js` link processor to immediately trigger synchronous HTTP extraction for both Arabic and English names (bypassing the queue) if they can't be extracted from the URL structure directly.
   </details>
 
-- [x] **Phase 6.13: Visual CRM Overhaul & Automated Database Synchronization**
+- [x] **Phase 6.13: Visual CRM Overhaul, Deal Discovery & Database Synchronization**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
-  **The Goal:** Upgrade the Admin CRM Web App with rich product visuals and secure API integrations, and eliminate manual developer overhead by completely automating the Production-to-Development Database synchronization pipeline.
+  **The Goal:** Upgrade the Admin CRM Web App with rich product visuals, introduce a global "Hot Deals" discovery tab for users, secure API integrations, and completely automate the Production-to-Development Database synchronization pipeline.
 
-  **The Strategy:** Overhauled the CRM UI rendering engine to fetch and display native Amazon product images (`image_url`) directly from the D1 database across all CRM views, with an intelligent fallback to the target URL. Simultaneously replaced insecure `adminId` URL-parameter API fetching with a robust `fetchAPI` wrapper that cryptographically validates the Telegram `initData` header. For DevOps, introduced a seamless GitHub Actions CI/CD workflow to safely mirror production databases to the development environment without schema destruction.
+  **The Strategy:** Overhauled the CRM UI rendering engine to fetch and display native Amazon product images (`image_url`) directly from the D1 database across all CRM views. Introduced a new user-facing "Hot Deals" (`🔥 لقطات`) tab in the Web App that leverages the new `drop_percentage` deal detection metric to surface massive global price drops to all users. Simultaneously replaced insecure `adminId` URL-parameter API fetching with a robust `fetchAPI` wrapper that cryptographically validates the Telegram `initData` header. For DevOps, introduced a seamless GitHub Actions CI/CD workflow to safely mirror production databases to the development environment.
 
   **Execution Highlights:**
+  - **Hot Deals Discovery Tab:** Added a dedicated `/api/user/hot_deals` endpoint and UI tab in the User Dashboard. This tab queries the `Global_Products` table for items with a massive `drop_percentage` (calculated algorithmically based on ATH/ATL), allowing standard users to effortlessly discover and track globally detected deals with a single click.
   - **CRM Visual Upgrade:** Injected native database-driven product images into the User Products, Top Charts, Graveyard, and Admin CRM layouts. Implemented a robust `<img onerror="...">` fallback mechanism that gracefully degrades to the Amazon URL path if the cached image fails to load.
   - **Secure API Wrapper (`fetchAPI`):** Completely removed URL-based `adminId` parameter injection in the CRM frontend. Replaced all direct `fetch` calls with an interceptor that automatically attaches the Telegram Web App `initData` string as an `Authorization` header.
   - **Backend Cryptographic Authentication:** Updated the `GET /api/crm/*` and `POST /api/crm/*` backend endpoints to extract and validate the Telegram `initData` header securely via SubtleCrypto. This guarantees zero-trust Root Admin verification for sensitive actions like global broadcasts and cache deletion.
