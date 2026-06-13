@@ -1168,6 +1168,14 @@ const dict = {
     en: "📢 <b>Global Broadcast</b>\n\n{message}",
     masry: "📢 <b>برودكاست</b>\n\n{message}"
   },
+  "crm.broadcast_placeholder": {
+    en: "Type your message to all users...",
+    masry: "اكتب رسالتك لكل المستخدمين..."
+  },
+  "crm.empty_paused": {
+    en: "No paused products found.",
+    masry: "مفيش منتجات موقوفة حالياً."
+  },
   "crm.chart_loading": {
     en: "Loading chart data...",
     masry: "بنحمل بيانات الرسم البياني..."
@@ -1399,8 +1407,8 @@ const dict = {
     masry: "لسه مفيش منتجات! ابعت لينك أمازون للبوت عشان نراقبلك السعر."
   },
   "dashboard.last_checked": {
-    en: "Last Checked: ",
-    masry: "آخر فحص: "
+    en: "Last checked: ",
+    masry: "شوفناه: "
   },
   "dashboard.never": {
     en: "Never",

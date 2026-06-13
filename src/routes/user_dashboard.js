@@ -274,8 +274,10 @@ function renderUserHTML(lang, partnerTag) {
   };
 
 
+  const htmlScale = isMasry ? ' style="font-size: 115%;"' : '';
+
   return `<!DOCTYPE html>
-<html lang="${htmlLang}" dir="${htmlDir}">
+<html lang="${htmlLang}" dir="${htmlDir}"${htmlScale}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -446,6 +448,9 @@ function renderUserHTML(lang, partnerTag) {
       display: flex;
       gap: 8px;
       margin-top: 12px;
+    }
+    button, input, textarea, select {
+      font-family: inherit;
     }
     button {
       flex: 1;
