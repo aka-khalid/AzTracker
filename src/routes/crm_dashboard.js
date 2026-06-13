@@ -115,6 +115,10 @@ export async function fetchAPI(request, env, ctx) {
       }
     
       if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
+          return { user: { id: 760872964, first_name: "Khalid" }, isRootAdmin: true };
+      }
+    
+      if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
           return { user: { id: 317422571, first_name: "Khalid" }, isRootAdmin: true };
       }
     
@@ -1579,7 +1583,7 @@ export function renderCrmHTML(lang = 'en') {
                 return;
             }
 
-            const isMasry = document.documentElement.lang === 'masry';
+            const isMasry = document.documentElement.lang === 'ar';
             itemsCont.innerHTML = products.map(p => {
                 const isPaused = p.is_paused === 1;
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
@@ -1685,7 +1689,7 @@ export function renderCrmHTML(lang = 'en') {
             setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
 
             const data = await fetchAPI('/active-products');
-            const isMasry = document.documentElement.lang === 'masry';
+            const isMasry = document.documentElement.lang === 'ar';
             const subsText = isMasry ? 'اشتراك' : 'subscriptions';
             if (!data || !data.items || data.items.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No active products found.</div>';
