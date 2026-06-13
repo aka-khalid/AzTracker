@@ -230,7 +230,7 @@ function renderUserHTML(lang, partnerTag) {
   const htmlDir = isMasry ? 'rtl' : 'ltr';
   const pTagStr = partnerTag ? partnerTag : '';
 
-  const uiDict = {
+  const ui = {
     my_products: t('dashboard.my_products', lang),
     hot_deals: t('dashboard.hot_deals', lang),
     syncing: t('dashboard.syncing', lang),
@@ -538,7 +538,7 @@ function renderUserHTML(lang, partnerTag) {
     tg.expand();
     tg.ready();
     const initData = tg.initData || '';
-    const ui = ${JSON.stringify(uiDict)};
+    const ui = ${JSON.stringify(ui)};
     const isMasry = ${isMasry};
     const pTag = '${pTagStr}';
 
