@@ -68,6 +68,24 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Synchronous Webhook Scraping:** Upgraded the `telegram_webhook.js` link processor to immediately trigger synchronous HTTP extraction for both Arabic and English names (bypassing the queue) if they can't be extracted from the URL structure directly.
   </details>
 
+- [x] **Phase 6.13: Visual CRM Overhaul & Automated Database Synchronization**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Upgrade the Admin CRM Web App with rich product visuals and secure API integrations, and eliminate manual developer overhead by completely automating the Production-to-Development Database synchronization pipeline.
+
+  **The Strategy:** Overhauled the CRM UI rendering engine to fetch and display native Amazon product images (`image_url`) directly from the D1 database across all CRM views, with an intelligent fallback to the target URL. Simultaneously replaced insecure `adminId` URL-parameter API fetching with a robust `fetchAPI` wrapper that cryptographically validates the Telegram `initData` header. For DevOps, introduced a seamless GitHub Actions CI/CD workflow to safely mirror production databases to the development environment without schema destruction.
+
+  **Execution Highlights:**
+  - **CRM Visual Upgrade:** Injected native database-driven product images into the User Products, Top Charts, Graveyard, and Admin CRM layouts. Implemented a robust `<img onerror="...">` fallback mechanism that gracefully degrades to the Amazon URL path if the cached image fails to load.
+  - **Secure API Wrapper (`fetchAPI`):** Completely removed URL-based `adminId` parameter injection in the CRM frontend. Replaced all direct `fetch` calls with an interceptor that automatically attaches the Telegram Web App `initData` string as an `Authorization` header.
+  - **Backend Cryptographic Authentication:** Updated the `GET /api/crm/*` and `POST /api/crm/*` backend endpoints to extract and validate the Telegram `initData` header securely via SubtleCrypto. This guarantees zero-trust Root Admin verification for sensitive actions like global broadcasts and cache deletion.
+  - **Automated D1 Environment Synchronization:** Engineered a comprehensive `.github/workflows/sync-prod-to-dev.yml` pipeline that triggers Wrangler to execute a remote D1 export of `aztracker-prod-db`.
+  - **Safe SQL Transformation:** The sync workflow leverages `sed` to intelligently parse the exported SQL dump and replace destructive `INSERT INTO` commands with `INSERT OR REPLACE INTO`, ensuring smooth, collision-free dev imports without dropping existing tables or violating constraints.
+  - **Seamless KV Mirroring:** Hand-crafted a Node.js `sync-kv.js` script inside the CI/CD pipeline to query all keys from the Production KV Namespace and automatically bulk-write them into the Development KV Namespace using the Cloudflare REST API.
+  - **Principle of Least Privilege:** Enforced a strict permission matrix for the GitHub Actions Cloudflare API Token, binding it explicitly to three explicit permissions (`D1 Edit`, `Workers KV Storage Edit`, `Worker Scripts Edit`) instead of granting overarching Global API Key access.
+  </details>
+
 ---
 
 ## 🔮 Phase 7: Continuous Improvement & R&D
