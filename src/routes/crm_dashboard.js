@@ -797,12 +797,45 @@ export async function fetchAPI(request, env, ctx) {
       ctx.waitUntil(caches.default.delete(new Request(`${url.origin}/_internal/crm/data`)));
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
+    if (url.pathname === "/api/crm/sync-env" && request.method === "POST") {
+      try {
+        const pat = env.GITHUB_PAT;
+        if (!pat) {
+            return new Response(JSON.stringify({ error: "GITHUB_PAT not set in environment." }), { status: 500 });
+        }
+        
+        const ghRes = await fetch("https://api.github.com/repos/aka-khalid/AzTracker/actions/workflows/sync-prod-to-dev.yml/dispatches", {
+            method: "POST",
+            headers: {
+                "Accept": "application/vnd.github+json",
+                "Authorization": "Bearer " + pat,
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "AzTracker-Worker"
+            },
+            body: JSON.stringify({ ref: "feature/product-discovery" })
+        });
+        
+        if (!ghRes.ok) {
+            const errBody = await ghRes.text();
+            throw new Error(`GitHub API returned ${ghRes.status}: ${errBody}`);
+        }
+        
+        ctx.waitUntil(logAudit(env, adminId, "SYNC_ENV", "global", "Triggered Prod-to-Dev synchronization via GitHub Actions"));
+        return new Response(JSON.stringify({ success: true, message: "Synchronization started in background." }), {
+            headers: { "Content-Type": "application/json" }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
   return new Response("Not Found", { status: 404 });
 }
 
 export function renderCrmHTML(lang = 'en') {
   // Escape a translated string for safe injection into a JS double-quoted string literal.
   // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
+  const isMasry = lang === 'masry';
   const js = (key, vars) => JSON.stringify(t(key, lang, vars));
   return `<!DOCTYPE html>
 <html lang="${lang}" dir="${lang === 'masry' ? 'rtl' : 'ltr'}" class="dark">
@@ -934,7 +967,7 @@ export function renderCrmHTML(lang = 'en') {
                         ${isMasry ? 'نسخ بيانات الإنتاج (Prod) إلى التطوير (Dev).' : 'Copy Prod data to Dev using Github Actions.'}
                     </div>
                     <div class="w-full">
-                        <button onclick="window.open('https://github.com/aka-khalid/AzTracker/actions/workflows/sync-prod-to-dev.yml', '_blank')" class="w-full justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                        <button onclick="triggerSync(this)" class="w-full justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 
                             ${isMasry ? 'مزامنة الآن' : 'Sync Prod to Dev'}
                         </button>
@@ -1555,12 +1588,13 @@ export function renderCrmHTML(lang = 'en') {
                     : '';
 
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +
-                    '<div class="flex justify-between items-start mb-2">' +
-                        '<div class="pe-6">' +
-                            '<a href="https://www.amazon.eg/dp/' + asinEsc + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight">' + nameEsc + '</a>' +
+                    '<div class="flex items-start gap-3 mb-2">' +
+                        '<img src="https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\\'none\\'">' +
+                        '<div class="flex-1 min-w-0 pe-2">' +
+                            '<a href="https://www.amazon.eg/dp/' + asinEsc + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
                             '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
                         '</div>' +
-                        '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap">' + statusText + '</span>' +
+                        '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap shrink-0">' + statusText + '</span>' +
                     '</div>' +
                     '<div class="flex justify-between items-end mb-3">' +
                         '<div class="text-sm font-semibold">' + price + '</div>' +
@@ -1607,6 +1641,7 @@ export function renderCrmHTML(lang = 'en') {
                 const priceStr = price ? 'EGP ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
+                html += '<img src="https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\\'none\\'">' ;
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
@@ -1673,13 +1708,18 @@ export function renderCrmHTML(lang = 'en') {
                 
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
-                    <div class="flex items-center justify-between mb-2">
+                    <div class="flex gap-3 mb-2">
+                        <img src="https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                         <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
                         <code class="text-gray-400">\${item.asin}</code>
                         <span class="text-brand-400">\${displayUser}</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="flex justify-between items-end mb-3">
                         <div class="text-sm font-semibold">\${price}</div>
@@ -1740,13 +1780,18 @@ export function renderCrmHTML(lang = 'en') {
                 
                 return \`
                 <div class="bg-gray-800/50 rounded-xl p-3 border border-amber-500/20" id="paused-item-\${item.chat_id}-\${item.asin}">
-                    <div class="flex items-center justify-between mb-2">
+                    <div class="flex gap-3 mb-2">
+                        <img src="https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                         <div class="text-xs text-gray-400">\${pausedAgo}</div>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
                         <code class="text-gray-400">\${item.asin}</code>
                         <span class="text-brand-400">\${displayUser}</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="flex gap-2">
                         <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
@@ -1807,6 +1852,7 @@ export function renderCrmHTML(lang = 'en') {
 
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
+                html += '<img src="https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\\'none\\'">' ;
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
@@ -1866,13 +1912,18 @@ export function renderCrmHTML(lang = 'en') {
 
                 return \`
                 <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
-                    <div class="flex items-center justify-between mb-2">
+                    <div class="flex gap-3 mb-2">
+                        <img src="https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                         \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">Paused</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>'}
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
                         <code class="text-gray-400">\${item.asin}</code>
                         <span class="text-brand-400">\${displayUser}</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="flex justify-between items-end mb-3">
                         <div class="text-sm font-semibold">\${price}</div>
@@ -2046,6 +2097,26 @@ export function renderCrmHTML(lang = 'en') {
                     }
                 }
             });
+        }
+
+        async function triggerSync(btn) {
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/crm/sync-env', { method: 'POST' });
+                const json = await res.json();
+                if (res.ok) {
+                    showToast(json.message || 'Sync started successfully', 'success');
+                } else {
+                    showToast(json.error || 'Failed to trigger sync', 'error');
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }
         }
 
         async function performAction(action, targetId, data = null, btn = null) {

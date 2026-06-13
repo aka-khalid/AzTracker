@@ -133,6 +133,74 @@ export async function fetchUserAPI(request, env, ctx) {
         return new Response("Bad Request", { status: 400 });
       }
     }
+
+    if (url.pathname === "/api/user/hot_deals" && request.method === "GET") {
+      const { results } = await env.DB.prepare(`
+        SELECT g.asin, g.name, g.name_ar, g.new_price, g.hist_mean, g.image_url,
+               (s.asin IS NOT NULL) AS is_tracked
+        FROM Global_Products g
+        LEFT JOIN User_Subscriptions s ON g.asin = s.asin AND s.chat_id = ?
+        WHERE g.hist_mean > 0 AND g.new_price > 0 AND g.new_price <= g.hist_mean * 0.95 
+        ORDER BY ((g.hist_mean - g.new_price) / g.hist_mean) DESC LIMIT 20
+      `).bind(chatId).all();
+
+      return new Response(JSON.stringify(results), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
+    }
+
+    if (url.pathname === "/api/user/track" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const { asin } = body;
+        if (!asin) return new Response("Missing ASIN", { status: 400 });
+
+        const limitStr = env.DEFAULT_USER_PRODUCT_LIMIT || "3";
+        const limit = parseInt(limitStr);
+
+        const userRow = await env.DB.prepare("SELECT role, item_limit, lang FROM Users WHERE chat_id = ?").bind(chatId).first();
+        const isFree = !userRow || (userRow.role !== 'admin' && userRow.role !== 'premium');
+        const customLimit = userRow && userRow.item_limit > 0 ? userRow.item_limit : limit;
+
+        if (isFree) {
+            const countRow = await env.DB.prepare("SELECT count(*) as c FROM User_Subscriptions WHERE chat_id = ?").bind(chatId).first();
+            if (countRow && countRow.c >= customLimit) {
+                return new Response(JSON.stringify({ error: "LIMIT_REACHED" }), {
+                    status: 403,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            }
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at)
+          VALUES (?, ?, NULL, 0, ?)
+          ON CONFLICT(chat_id, asin) DO NOTHING
+        `).bind(chatId, asin, Date.now()).run();
+
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO Global_Products (asin, name, name_ar, last_updated)
+          VALUES (?, ?, ?, 0)
+        `).bind(asin, asin, null).run();
+
+        ctx.waitUntil((async () => {
+             const state = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(`ui:${chatId}`).first();
+             if (state && state.value) {
+                 const lang = userRow ? userRow.lang || 'en' : 'en';
+                 const isAdmin = userRow ? userRow.role === 'admin' : false;
+                 await renderMainMenu(env, chatId, parseInt(state.value), isAdmin, url.origin, lang);
+             }
+        })());
+
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        });
+      } catch (e) {
+        return new Response("Bad Request", { status: 400 });
+      }
+    }
   }
 
   // 2. Serve HTML WebApp
@@ -363,11 +431,49 @@ function renderUserHTML(lang, partnerTag) {
       padding: 40px;
       color: var(--hint-color);
     }
-  </style>
+  
+    .tabs {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+    .tab {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--hint-color);
+      cursor: pointer;
+      position: relative;
+    }
+    .tab.active {
+      color: var(--text-color);
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -9px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px;
+      box-shadow: 0 0 8px var(--glow);
+    }
+</style>
 </head>
 <body>
-  <div class="header">${isMasry ? 'قائمة منتجاتي' : 'My Tracking List'}</div>
-  <div id="app"><div id="loading">${isMasry ? 'جاري مزامنة المنتجات...' : 'Syncing products...'}</div></div>
+  <div class="tabs">
+    <div class="tab active" id="tab-products" onclick="switchTab('products')">${isMasry ? '📦 منتجاتي' : '📦 My Products'}</div>
+    <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')">${isMasry ? '🔥 لقطات' : '🔥 Hot Deals'}</div>
+  </div>
+  
+  <div id="content-products">
+    <div id="app"><div id="loading">${isMasry ? 'جاري مزامنة المنتجات...' : 'Syncing products...'}</div></div>
+  </div>
+
+  <div id="content-hotdeals" style="display: none;">
+    <div id="app-deals"><div id="loading-deals" class="loading">${isMasry ? 'جاري البحث عن لقطات...' : 'Finding hot deals...'}</div></div>
+  </div>
+
   <script>
     const tg = window.Telegram.WebApp;
     tg.expand();
@@ -376,7 +482,111 @@ function renderUserHTML(lang, partnerTag) {
     const isMasry = ${isMasry};
     const pTag = '${pTagStr}';
 
+    
     let allProducts = [];
+    let hotDeals = [];
+
+    function switchTab(tabId) {
+      document.getElementById('tab-products').classList.remove('active');
+      document.getElementById('tab-hotdeals').classList.remove('active');
+      document.getElementById('content-products').style.display = 'none';
+      document.getElementById('content-hotdeals').style.display = 'none';
+
+      document.getElementById('tab-' + tabId).classList.add('active');
+      document.getElementById('content-' + tabId).style.display = 'block';
+
+      if(tabId === 'hotdeals' && hotDeals.length === 0) {
+        loadHotDeals();
+      }
+    }
+
+    async function loadHotDeals() {
+      if(!initData) return;
+      try {
+        const res = await fetch('/api/user/hot_deals', {
+          headers: { 'Authorization': 'Bearer ' + initData }
+        });
+        if(res.ok) {
+          hotDeals = await res.json();
+          renderHotDeals();
+        } else {
+          document.getElementById('app-deals').innerHTML = isMasry ? "فشل التحميل." : "Failed to load.";
+        }
+      } catch(e) {
+        document.getElementById('app-deals').innerHTML = isMasry ? "حدث خطأ." : "Error.";
+      }
+    }
+
+    function renderHotDeals() {
+      if (hotDeals.length === 0) {
+        document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (isMasry ? 'لا توجد لقطات حالياً.' : 'No hot deals right now.') + '</div>';
+        return;
+      }
+      let html = '';
+      hotDeals.forEach(p => {
+        let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
+        if(!name) name = isMasry ? 'منتج غير معروف' : 'Unknown Product';
+        const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
+        let img = p.image_url ? p.image_url : placeholder;
+        
+        let amzUrl = 'https://www.amazon.eg/dp/' + p.asin;
+        if(pTag) amzUrl += '?tag=' + pTag;
+
+        let dropPct = Math.round(((p.hist_mean - p.new_price) / p.hist_mean) * 100);
+
+        let trackBtn = p.is_tracked 
+          ? '<button disabled style="opacity:0.5; cursor:default; border: 1px solid var(--card-border);">✅ ' + (isMasry ? 'متتبع' : 'Tracked') + '</button>'
+          : '<button class="primary" onclick="trackDeal(\\'' + p.asin + '\\')">🎯 ' + (isMasry ? 'تتبع' : 'Track') + '</button>';
+
+        html += '<div class="product-card">' +
+          '<div class="product-header">' +
+            '<img src="' + img + '" class="product-img" />' +
+            '<div>' +
+               '<h4 class="product-title">' + escapeHtml(name) + '</h4>' +
+               '<div class="price-row" style="margin-top:4px;">' +
+                 '<div class="price-box new">' +
+                   '<div class="price-label">' + (isMasry ? 'السعر الآن' : 'Now') + '</div>' +
+                   '<div class="price-val">' + formatEGP(p.new_price) + '</div>' +
+                 '</div>' +
+                 '<div class="price-box used" style="background: rgba(255, 59, 48, 0.1); border-color: rgba(255, 59, 48, 0.2);">' +
+                   '<div class="price-label" style="color:var(--destructive-color)">' + (isMasry ? 'نزول' : 'Drop') + '</div>' +
+                   '<div class="price-val" style="color:var(--destructive-color)">' + dropPct + '% 🔻</div>' +
+                 '</div>' +
+               '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="action-row">' +
+            '<button onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (isMasry ? 'شوفه على أمازون' : 'Open in Amazon') + '</button>' +
+            trackBtn +
+          '</div>' +
+        '</div>';
+      });
+      document.getElementById('app-deals').innerHTML = html;
+    }
+
+    async function trackDeal(asin) {
+      tg.HapticFeedback.impactOccurred('medium');
+      try {
+        const res = await fetch('/api/user/track', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + initData, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asin })
+        });
+        if(res.ok) {
+           tg.HapticFeedback.notificationOccurred('success');
+           hotDeals = hotDeals.map(d => d.asin === asin ? {...d, is_tracked: true} : d);
+           renderHotDeals();
+           loadProducts(); // refresh my products list quietly
+        } else if(res.status === 403) {
+           tg.showAlert(isMasry ? 'لقد وصلت للحد الأقصى للمنتجات.' : 'You have reached your product limit.');
+        } else {
+           tg.showAlert(isMasry ? 'حدث خطأ.' : 'Error tracking product.');
+        }
+      } catch(e) {
+        tg.showAlert('Error');
+      }
+    }
+
 
     async function loadProducts() {
       if(!initData) {

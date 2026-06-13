@@ -366,13 +366,34 @@ export async function executeScrapeEngine(env, offset = 0) {
     if (newChanged || usedChanged) {
        history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
        if (history.length >= 2) {
-           const newPrices = history.map(h => h.n).filter(n => n !== null);
-           if (newPrices.length >= 2) {
-               const sum = newPrices.reduce((a, b) => a + b, 0);
-               const mean = sum / newPrices.length;
-               const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (newPrices.length - 1);
+           const validHistory = history.filter(h => h.n !== null && h.t !== undefined);
+           if (validHistory.length >= 2) {
+               const nowSec = Math.floor(now / 1000);
+               const HALF_LIFE_SEC = 30 * 24 * 60 * 60; // 30 Days
+               const DECAY_CONSTANT = Math.LN2 / HALF_LIFE_SEC;
+               
+               let sumWeights = 0;
+               let weightedSum = 0;
+               
+               validHistory.forEach(h => {
+                   const age = Math.max(0, nowSec - h.t);
+                   h.weight = Math.exp(-DECAY_CONSTANT * age);
+                   sumWeights += h.weight;
+                   weightedSum += (h.n * h.weight);
+               });
+               
+               const mean = sumWeights > 0 ? (weightedSum / sumWeights) : 0;
+               
+               let weightedVarianceSum = 0;
+               validHistory.forEach(h => {
+                   weightedVarianceSum += h.weight * Math.pow(h.n - mean, 2);
+               });
+               
+               const variance = sumWeights > 0 ? (weightedVarianceSum / sumWeights) : 0;
                const stdev = Math.sqrt(variance);
-               const atl = Math.min(...newPrices);
+               
+               const atl = Math.min(...validHistory.map(h => h.n));
+               
                histMean = mean;
                histStdev = stdev;
                // Fix: ATL must be strictly < to count as a NEW All-Time Low
@@ -620,7 +641,13 @@ export async function executeScrapeEngine(env, offset = 0) {
               text: truncateMessage(broadcast_msg),
               markup: {
                   inline_keyboard: [
-                      [{ text: t('broadcast.buy_here', 'masry'), url: broadcast_url }]
+                      [
+                          { text: t('broadcast.buy_here', 'masry'), url: broadcast_url },
+                          { text: '🎯 Track Deal', url: `https://t.me/${env.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}` }
+                      ],
+                      [
+                          { text: t('alert.btn_disclaimer', 'masry'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }
+                      ]
                   ]
               }
           });

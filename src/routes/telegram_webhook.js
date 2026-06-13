@@ -182,7 +182,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
   const activeState = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(stateKey).first('value');
 
   // --- OVERRIDE BLOCK ---
-  if (text === "/start") {
+  if (text.startsWith("/start")) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
 
@@ -201,8 +201,20 @@ async function handleMessage(message, env, baseUrl, ctx) {
     const freshRoles = await getUserRoles(chatId, env, ctx);
     const effectiveLang = freshRoles.lang || osLang || 'en';
 
-    await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
-    return;
+    const startPayload = text.split(' ')[1];
+    if (startPayload && startPayload.startsWith('track_')) {
+      const asin = startPayload.replace('track_', '').trim();
+      if (asin) {
+        text = `https://www.amazon.eg/dp/${asin}`;
+        // Fall through to let URL parser handle it natively!
+      } else {
+        await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
+        return;
+      }
+    } else {
+      await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
+      return;
+    }
   } else if (text.startsWith('/')) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);

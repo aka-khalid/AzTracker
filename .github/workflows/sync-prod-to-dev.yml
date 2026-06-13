@@ -2,37 +2,46 @@ name: Sync Prod to Dev
 
 on:
   workflow_dispatch:
-    # Triggered manually from Github Actions UI
 
 jobs:
-  sync-db:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Install Dependencies
+      - name: Install Wrangler
         run: npm install -g wrangler
 
-      - name: Export Prod D1
+      - name: Export Prod D1 Data
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: wrangler d1 export aztracker-prod-db --remote --output=prod_db_dump.sql
-          
-      - name: Import to Dev D1
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: wrangler d1 execute aztracker-dev-db --remote --file=prod_db_dump.sql
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          # Export the data only (no schema)
+          npx wrangler d1 export aztracker-db --remote --output=prod_data.sql --no-schema
 
-      - name: Sync KV Namespace
+      - name: Transform INSERT to INSERT OR REPLACE
+        run: |
+          # Replace 'INSERT INTO' with 'INSERT OR REPLACE INTO' to safely merge rows 
+          # without violating unique constraints or dropping tables.
+          sed -i 's/INSERT INTO/INSERT OR REPLACE INTO/g' prod_data.sql
+
+      - name: Import into Dev D1
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: node scripts/sync-kv.js
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          # Execute the transformed SQL on the Dev DB
+          npx wrangler d1 execute aztracker-dev-db --remote --file=prod_data.sql
+
+      - name: Sync KV Namespaces
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          node scripts/sync-kv.js
