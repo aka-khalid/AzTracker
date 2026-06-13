@@ -1072,7 +1072,7 @@ export function renderCrmHTML(lang = 'en') {
             <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
                 <div>
                     <h3 class="font-bold text-lg">${t('crm.products_title', lang)}</h3>
-                    <p class="text-xs text-emerald-400" id="drawer-active-count">0 items</p>
+                    <p class="text-xs text-emerald-400" id="drawer-active-count">0 ${t('crm.items_label', lang)}</p>
                 </div>
                 <button onclick="closeActiveDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -1500,7 +1500,8 @@ export function renderCrmHTML(lang = 'en') {
                 const firstNameEsc = escapeHtml(u.first_name) || 'User';
                 const usernameEsc = u.username ? '@' + escapeHtml(u.username) : escapeHtml(String(u.chat_id));
                 const chatIdEsc = escapeHtml(String(u.chat_id));
-                const roleEsc = escapeHtml(u.role);
+                const rawRole = u.role ? u.role.toLowerCase() : '';
+                const roleEsc = rawRole === 'root' ? ${js('crm.role_root')} : (rawRole === 'admin' ? ${js('crm.role_admin')} : escapeHtml(u.role).toUpperCase());
                 const firstNameJsEsc = escapeHtml(u.first_name || '').replace(/'/g, "\\'");
                 const usernameJsEsc = escapeHtml(u.username || '').replace(/'/g, "\\'");
                 const isRoot = u.role === 'root';
@@ -1536,7 +1537,7 @@ export function renderCrmHTML(lang = 'en') {
                     '</div>' +
                     '<div class="flex items-center gap-2 mb-3 relative z-10">' +
                         roleBadge +
-                        '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' items</span>' +
+                        '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' ' + ${js('crm.items_label')} + '</span>' +
                         '<span class="text-xs text-gray-500">•</span>' +
                         '<span class="text-xs text-gray-500">' + ${js('crm.joined_date')} + ' ' + joinedDate + '</span>' +
                     '</div>' +

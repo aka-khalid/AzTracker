@@ -237,7 +237,7 @@ const dict = {
   },
   "menu.btn_admin_panel": {
     en: "👑 Admin Panel",
-    masry: "👑 لوحة الأدمن"
+    masry: "👑 داش بورد"
   },
   "menu.btn_language": {
     en: "🌐 Language / اللغة",
@@ -786,20 +786,13 @@ const dict = {
   },
 
   // ── CRM Dashboard ──────────────────────────────────────────────────────────
-  // ── Shared Misc ───────────────────────────────────────────────────────────
-  "happy_shopping": {
-    en: "🛍️ Happy shopping!",
-    masry: "🛍️ ربنا يوفقك!"
-  },
-
-  // ── CRM Dashboard ──────────────────────────────────────────────────────────
   "crm.hub_title": {
     en: "AzTracker Hub",
     masry: "AzTracker Hub"
   },
-  "crm.users_title": {
+  "admin.stats_users": {
     en: "Users",
-    masry: "الناس"
+    masry: "المستخدمين"
   },
   "crm.products_title": {
     en: "Active Tracked Products",
@@ -825,9 +818,9 @@ const dict = {
     en: "System Broadcast",
     masry: "برودكاست"
   },
-  "crm.broadcast_placeholder": {
-    en: "Enter message to blast to all users...",
-    masry: "اكتب رسالة تبعتها لكل الناس..."
+  "admin.broadcast_prompt": {
+    en: "Type a message to broadcast to all users...",
+    masry: "اكتب رسالة تبعتها لكل المستخدمين..."
   },
   "crm.send_broadcast": {
     en: "Send Broadcast",
@@ -1488,6 +1481,18 @@ const dict = {
   "dashboard.confirm_stop": {
     en: "Are you sure you want to stop tracking this product?",
     masry: "متأكد إنك عايز توقف تتبع المنتج ده؟"
+  },
+  "crm.items_label": {
+    en: "items",
+    masry: "منتجات"
+  },
+  "crm.role_root": {
+    en: "ROOT",
+    masry: "صاحب المكان"
+  },
+  "crm.role_admin": {
+    en: "ADMIN",
+    masry: "أدمن"
   }
 };
 

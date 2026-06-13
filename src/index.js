@@ -14,18 +14,23 @@ export default {
   },
 
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
+    try {
+      const url = new URL(request.url);
 
-    // Route: Telegram Webhook
-    if (request.method === 'POST' && (url.pathname === '/webhook' || url.pathname.startsWith('/webhook/'))) {
-      return handleTelegramWebhook(request, env, ctx);
+      // Route: Telegram Webhook
+      if (request.method === 'POST' && (url.pathname === '/webhook' || url.pathname.startsWith('/webhook/'))) {
+        return await handleTelegramWebhook(request, env, ctx);
+      }
+
+      // Try User API routing
+      const userRes = await fetchUserAPI(request, env, ctx);
+      if (userRes) return userRes;
+
+      // Pass all other requests to the internal API router
+      return await fetchAPI(request, env, ctx);
+    } catch (e) {
+      console.error("Worker Global Error:", e);
+      return new Response("An unexpected error occurred. Please try again later.", { status: 500 });
     }
-
-    // Try User API routing
-    const userRes = await fetchUserAPI(request, env, ctx);
-    if (userRes) return userRes;
-
-    // Pass all other requests to the internal API router
-    return fetchAPI(request, env, ctx);
   }
 };
