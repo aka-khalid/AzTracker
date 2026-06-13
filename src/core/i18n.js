@@ -880,11 +880,11 @@ const dict = {
   },
   "crm.ath": {
     en: "ATH",
-    masry: "ATH"
+    masry: "أعلى سعر"
   },
   "crm.atl": {
     en: "ATL",
-    masry: "ATL"
+    masry: "أقل سعر"
   },
   "crm.avg": {
     en: "Avg",
