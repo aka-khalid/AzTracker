@@ -11,31 +11,40 @@ export async function fetchUserAPI(request, env, ctx) {
       return new Response("Unauthorized", { status: 401 });
     }
     const initData = authHeader.substring("Bearer ".length);
-    const parsed = new URLSearchParams(initData);
-    const hash = parsed.get("hash");
-    parsed.delete("hash");
+    let chatId;
+    if (env.MOCK_PUPPETEER_AUTH === "true" && initData === "puppeteer_mock") {
+      chatId = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : "123456789";
+    } else {
+      const parsed = new URLSearchParams(initData);
+      const hash = parsed.get("hash");
+      parsed.delete("hash");
 
-    const keys = Array.from(parsed.keys()).sort();
-    const dataCheckString = keys.map(k => `${k}=${parsed.get(k)}`).join("\n");
+      const keys = Array.from(parsed.keys()).sort();
+      const dataCheckString = keys.map(k => `${k}=${parsed.get(k)}`).join("\n");
 
-    const encoder = new TextEncoder();
-    const secretKey = await crypto.subtle.importKey(
-      "raw",
-      await crypto.subtle.sign("HMAC", await crypto.subtle.importKey("raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), encoder.encode(env.TELEGRAM_BOT_TOKEN)),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
+      const encoder = new TextEncoder();
+      const secretKey = await crypto.subtle.importKey(
+        "raw",
+        await crypto.subtle.sign("HMAC", await crypto.subtle.importKey("raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), encoder.encode(env.TELEGRAM_BOT_TOKEN)),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
 
-    const calcHashBuffer = await crypto.subtle.sign("HMAC", secretKey, encoder.encode(dataCheckString));
-    const calcHash = Array.from(new Uint8Array(calcHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      const calcHashBuffer = await crypto.subtle.sign("HMAC", secretKey, encoder.encode(dataCheckString));
+      const calcHash = Array.from(new Uint8Array(calcHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-    if (calcHash !== hash) {
-      return new Response("Unauthorized", { status: 401 });
+      if (calcHash !== hash) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const userObj = JSON.parse(parsed.get("user") || "{}");
+      const authDate = parseInt(parsed.get("auth_date") || "0", 10);
+      if (Math.floor(Date.now() / 1000) - authDate > 86400) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      chatId = userObj.id ? String(userObj.id) : null;
     }
-
-    const userObj = JSON.parse(parsed.get("user") || "{}");
-    const chatId = userObj.id ? String(userObj.id) : null;
 
     if (!chatId) return new Response("Unauthorized", { status: 401 });
 
@@ -55,7 +64,7 @@ export async function fetchUserAPI(request, env, ctx) {
          let historyData = await env.AZTRACKER_DB.get(`history:${prod.asin}`, "json") || [];
          let atl = null;
          if (historyData.length > 0) {
-            atl = Math.min(...historyData.map(h => h.price || h.n || h.u || 999999));
+            atl = Math.min(...historyData.map(h => h.n || h.u || 999999));
          }
          prod.atl = atl;
       }

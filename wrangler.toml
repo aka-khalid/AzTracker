@@ -41,6 +41,7 @@ GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
 DAILY_QUEUE_LIMIT = "10000"
 
+
 [triggers]
 crons = []
 # crons = ["* * * * *", "0 0 * * *"]
@@ -53,6 +54,7 @@ GITHUB_OWNER = "aka-khalid"
 GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
 DAILY_QUEUE_LIMIT = "10000"
+
 
 [[env.production.kv_namespaces]]
 binding = "AZTRACKER_DB"

@@ -58,7 +58,7 @@ export async function queue(batch, env, ctx) {
           continue;
         }
         const payload = msg.body;
-        if (payload.type === 'telegram_alert' || payload.type === 'telegram_alert_new' || payload.type === 'telegram_alert_used') {
+        if (payload.type === 'telegram_alert' || payload.type === 'telegram_alert_new' || payload.type === 'telegram_alert_used' || payload.type === 'telegram_broadcast') {
           const res = await sendTelegramMessage(env, payload.chatId, payload.text, payload.markup);
           if (res && !res.ok) {
             if (res.error_code === 429) {

@@ -61,3 +61,4 @@ wrangler.*.toml
 !migrations/*.sql
 !schema.sql
 !scripts/schema_seed.sql
+scripts/generate_screenshots.js

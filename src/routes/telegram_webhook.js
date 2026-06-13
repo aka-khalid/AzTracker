@@ -243,7 +243,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
     let historyData = await env.AZTRACKER_DB.get(`history:${pid}`, "json") || [];
     let atl = null;
     if (historyData.length > 0) {
-      atl = Math.min(...historyData.map(h => h.price));
+      atl = Math.min(...historyData.map(h => h.n ?? h.u ?? 999999));
     }
 
     if (atl !== null && num < atl * 0.8) {
@@ -764,16 +764,19 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         ]
       });
     }
-    else if (data.startsWith("confClearTgt_")) {
-      const pid = data.replace("confClearTgt_", "");
-      const text = t('target.remove_confirm_head', lang) + '\n\n' + t('target.remove_confirm_body', lang, { asin: pid });
-      await editTelegramMessage(env, chatId, messageId, text, {
-        inline_keyboard: [
-          [{ text: t('target.btn_yes_clear', lang), callback_data: `cleartarget_${pid}` }],
-          [{ text: t('target.remove_cancelled', lang), callback_data: `view_${pid}` }]
-        ]
-      });
-    }
+      else if (data.startsWith("confClearTgt_")) {
+        const pid = data.replace("confClearTgt_", "");
+        const text = t('target.remove_confirm_head', lang) + '\n\n' + t('target.remove_confirm_body', lang, { asin: pid });
+        await editTelegramMessage(env, chatId, messageId, text, {
+          inline_keyboard: [
+            [{ text: t('target.btn_yes_clear', lang), callback_data: `cleartarget_${pid}` }],
+            [{ text: t('target.remove_cancelled', lang), callback_data: `view_${pid}` }]
+          ]
+        });
+      }
+      else if (data.startsWith("manage_user_") && isAdmin) {
+        await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, lang);
+      }
     else if (data.startsWith("reject_") && isAdmin) {
       const targetId = data.replace("reject_", "");
 

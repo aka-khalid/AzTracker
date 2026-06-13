@@ -68,6 +68,28 @@ async function verifyInitData(telegramInitData, botToken) {
   return null;
 }
 
+async function authAdmin(req, environment) {
+  if (environment.MOCK_PUPPETEER_AUTH === "true" && req.headers.get("Authorization") === "Bearer puppeteer_mock") {
+    const rootAdminId = environment.TELEGRAM_ROOT_ADMIN_IDS ? parseInt(environment.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0], 10) : 123456789;
+    return { user: { id: rootAdminId, first_name: "Admin" }, isRootAdmin: true };
+  }
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return null;
+  const initData = authHeader.replace("Bearer ", "");
+  const userData = await verifyInitData(initData, environment.TELEGRAM_BOT_TOKEN);
+  if (!userData) return null;
+  
+  const { admins, rootAdmins } = await getUserRoles(userData.id.toString(), environment);
+  
+  const rootAdminsStr = (rootAdmins || []).map(String);
+  const adminsStr = (admins || []).map(String);
+  
+  if (rootAdminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
+  if (adminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: false };
+  
+  return null;
+}
+
 export async function fetchAPI(request, env, ctx) {
     // CORS preflight — must be handled before any auth checks
     if (request.method === "OPTIONS") {
@@ -109,35 +131,6 @@ export async function fetchAPI(request, env, ctx) {
 
     
     // --- CRM COMMAND CENTER ENDPOINTS ---
-    async function authAdmin(req, environment) {
-      if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
-          return { user: { id: 760872964, first_name: "Khalid" }, isRootAdmin: true };
-      }
-    
-      if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
-          return { user: { id: 317422571, first_name: "Khalid" }, isRootAdmin: true };
-      }
-    
-      if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
-          return { user: { id: 317422571, first_name: "Khalid" }, isRootAdmin: true };
-      }
-    
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) return null;
-      const initData = authHeader.replace("Bearer ", "");
-      const userData = await verifyInitData(initData, environment.TELEGRAM_BOT_TOKEN);
-      if (!userData) return null;
-      
-      const { admins, rootAdmins } = await getUserRoles(userData.id.toString(), environment);
-      
-      const rootAdminsStr = (rootAdmins || []).map(String);
-      const adminsStr = (admins || []).map(String);
-      
-      if (rootAdminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
-      if (adminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: false };
-      
-      return null;
-    }
     
     if (url.pathname === "/crm" && request.method === "GET") {
       // Detect language from query param or default to English
@@ -241,7 +234,8 @@ export async function fetchAPI(request, env, ctx) {
               if (products) {
                 for (const p of products) {
                   const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
-                  const asin = asinMatch ? asinMatch[1] : `ASIN${Math.floor(Math.random()*1000)}`;
+                  if (!asinMatch) continue;
+                  const asin = asinMatch[1];
                   productStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
                   subStmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatIdStr, asin, p.target_price || null, p.paused ? 1 : 0, now));
                   migratedCount++;
@@ -591,25 +585,9 @@ export async function fetchAPI(request, env, ctx) {
         await env.SCRAPER_QUEUE.send({ offset: 0 });
         ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check (queued)"));
 
-        // Poll DB for up to 2 minutes: check if last_updated advanced past our snapshot.
-        // This confirms the chain actually ran (not just enqueued).
+        // Removed 120s polling loop to prevent hitting Cloudflare 30s waitUntil timeout limit.
+        // We notify immediately that the scrape is queued.
         ctx.waitUntil((async () => {
-          const maxWait = 120; // seconds
-          const pollInterval = 5; // seconds
-          let elapsed = 0;
-          while (elapsed < maxWait) {
-            await new Promise(r => setTimeout(r, pollInterval * 1000));
-            elapsed += pollInterval;
-            const afterRes = await env.DB.prepare(
-              "SELECT COUNT(*) as cnt, MAX(last_updated) as max_ts FROM Global_Products"
-            ).first();
-            // Chain is "done" if timestamp advanced or product count changed
-            if (afterRes.max_ts > beforeRes.max_ts) {
-              await sendTelegram(env, adminId, t('crm.action_force_scrape_ok', adminLang));
-              return;
-            }
-          }
-          // Timeout — still notify but mention uncertainty
           await sendTelegram(env, adminId, t('crm.action_force_scrape_ok', adminLang));
         })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
@@ -621,9 +599,15 @@ export async function fetchAPI(request, env, ctx) {
         
         ctx.waitUntil((async () => {
           const users = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role IN ('approved', 'admin')").all();
-          for (const row of users.results) {
-            const userLang = row.lang || 'en';
-            await sendTelegram(env, row.chat_id, t('crm.broadcast_prefix', userLang, { message: data.message }));
+          const queueMsgs = users.results.map(row => ({
+            body: {
+              type: 'telegram_broadcast',
+              chatId: row.chat_id,
+              text: t('crm.broadcast_prefix', row.lang || 'en', { message: data.message })
+            }
+          }));
+          for (let i = 0; i < queueMsgs.length; i += 100) {
+            await env.MESSAGE_QUEUE.sendBatch(queueMsgs.slice(i, i + 100));
           }
           await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", "Sent global broadcast");
         })());
@@ -662,7 +646,7 @@ export async function fetchAPI(request, env, ctx) {
 
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, getWelcomeMessage(tl, defaultLimit)); })());
         ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
         // Invalidate other admins' inline messages so buttons disappear automatically
         if (queueRow?.admin_messages) {
           let adminMessages = {};
@@ -681,7 +665,7 @@ export async function fetchAPI(request, env, ctx) {
         const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         if (deleteResult.meta.changes === 0) {
           // Another admin already handled the queue item. Check if they were approved before forcing a rejection.
-          const currentRole = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").first('role');
+          const currentRole = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(targetId).first('role');
           if (currentRole !== 'approved') {
               await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
           }
@@ -707,7 +691,7 @@ export async function fetchAPI(request, env, ctx) {
             try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_request', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
           }
         }
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "revoke") {
         if (targetId === adminId) return new Response("Cannot revoke yourself", { status: 400 });
         // Soft revoke: preserve user + subscriptions, pause subs.
@@ -744,20 +728,20 @@ export async function fetchAPI(request, env, ctx) {
             try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
           }
         }
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "promote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_promoted', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "demote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_demoted', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "set_limit") {
         const newLimit = parseInt(data.limit);
         if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
@@ -769,19 +753,19 @@ export async function fetchAPI(request, env, ctx) {
         const result = await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, `Deleted product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "pause_product") {
         const asin = data.asin;
         const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(Date.now(), targetId, asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "resume_product") {
         const asin = data.asin;
         const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "set_target") {
         const asin = data.asin;
         const target = parseFloat(data.target);
@@ -789,7 +773,7 @@ export async function fetchAPI(request, env, ctx) {
         const result = await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(target, targetId, asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, `Set target price for ${asin} to ${target}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/user/${targetId}`)));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_direct_message', tl, { message: data.message })); })());
@@ -811,16 +795,29 @@ export async function fetchAPI(request, env, ctx) {
         if (!pat) {
             return new Response(JSON.stringify({ error: "GITHUB_PAT not set in environment." }), { status: 500 });
         }
+        let targetRef = "main";
+        const branchesRes = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/branches`, {
+            headers: {
+                "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "AzTracker-Worker"
+            }
+        });
+        if (branchesRes.ok) {
+            const branches = await branchesRes.json();
+            const featureBranch = branches.find(b => b.name.startsWith("feature/"));
+            if (featureBranch) targetRef = featureBranch.name;
+        }
         
-        const ghRes = await fetch("https://api.github.com/repos/aka-khalid/AzTracker/actions/workflows/sync-prod-to-dev.yml/dispatches", {
+        const ghRes = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/sync-prod-to-dev.yml/dispatches`, {
             method: "POST",
             headers: {
-                "Accept": "application/vnd.github+json",
-                "Authorization": "Bearer " + pat,
+                "Accept": "application/vnd.github.v3+json",
+                "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "AzTracker-Worker"
             },
-            body: JSON.stringify({ ref: "feature/product-discovery" })
+            body: JSON.stringify({ ref: targetRef })
         });
         
         if (!ghRes.ok) {
