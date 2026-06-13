@@ -48,7 +48,7 @@ Here is a side-by-side comparison of the entire CRM interface in both languages.
       <td width="50%" align="center"><img src="assets/05_users_admins_ar.png" width="100%"></td>
     </tr>
     <tr>
-      <td colspan="2"><b>06. Security Audit Log</b><br>Timeline of all administrative actions.</td>
+      <td colspan="2"><b>06. Audit Log</b><br>Timeline of all administrative actions.</td>
     </tr>
     <tr>
       <td width="50%" align="center"><img src="assets/06_security_audit.png" width="100%"></td>

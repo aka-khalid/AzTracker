@@ -1071,8 +1071,8 @@ const dict = {
     masry: "📢 <b>برودكاست</b>"
   },
   "crm.security_audit": {
-    en: "🔒 <b>Security Audit Log</b>",
-    masry: "🔒 <b>سجل الأمان</b>"
+    en: "🔒 <b>Audit Log</b>",
+    masry: "🔒 <b>سجل الأنشطة</b>"
   },
   "crm.tab_system": {
     en: "System",
