@@ -23,6 +23,15 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Apply Database Migrations (Development)
+        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/')
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.92.0"
+          command: d1 migrations apply DB --remote
+
       - name: Deploy to Cloudflare Workers (Development)
         if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/')
         uses: cloudflare/wrangler-action@v3
@@ -30,6 +39,15 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.92.0"
+
+      - name: Apply Database Migrations (Production)
+        if: github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.92.0"
+          command: d1 migrations apply DB --env production --remote
 
       - name: Deploy to Cloudflare Workers (Production)
         if: github.ref == 'refs/heads/main'
