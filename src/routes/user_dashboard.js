@@ -42,7 +42,8 @@ export async function fetchUserAPI(request, env, ctx) {
       const { results } = await env.DB.prepare(`
         SELECT s.asin, s.is_paused as paused, s.target_price, p.name, p.name_ar, 
                p.new_price, p.used_price, p.amazon_price, p.hist_mean, p.is_atl_new,
-               p.image_url, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller
+               p.image_url, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller,
+               p.seen_amazon_eg_at, p.seen_resale_at
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
@@ -670,7 +671,13 @@ function renderUserHTML(lang, partnerTag) {
             '</div>' +
           '</div>';
           
-          const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price;
+          const isAmzDuplicate = p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg';
+          const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          const amazonRecentlySeen = p.seen_amazon_eg_at && (now - p.seen_amazon_eg_at) < SEVEN_DAYS;
+          const usedRecentlySeen = p.seen_resale_at && (now - p.seen_resale_at) < SEVEN_DAYS;
+
+          const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price && !amazonRecentlySeen && !usedRecentlySeen;
           let pricesHtml = '';
           if (isOutOfStock) {
               pricesHtml = '<div style="background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: var(--destructive-color); padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0; font-weight: 500; font-size: 14px;">' +
@@ -678,19 +685,20 @@ function renderUserHTML(lang, partnerTag) {
                            (isMasry ? 'غير متوفر حالياً' : 'Currently Out of Stock') +
                            '</div>';
           } else {
-              pricesHtml = '<div class="prices-grid">' +
+              pricesHtml = '<div class="prices-grid" ' + (isAmzDuplicate ? 'style="grid-template-columns: repeat(2, 1fr);"' : '') + '>' +
                 '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
                   '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? 'نفذت' : 'Out')) + '</div>' +
                 '</div>' +
                 '<div class="price-box" title="' + (isMasry ? 'مستعمل' : 'Resale') + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + (isMasry ? 'مستعمل' : 'Resale') + '</div>' +
-                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (isMasry ? 'نفذت' : 'Out')) + '</div>' +
+                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? (isMasry ? 'شوف' : 'Check') : (isMasry ? 'نفذت' : 'Out'))) + '</div>' +
                 '</div>' +
+                (isAmzDuplicate ? '' : 
                 '<div class="price-box" title="' + (isMasry ? 'أمازون' : 'Amazon.eg') + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + (isMasry ? 'أمازون' : 'Amazon.eg') + '</div>' +
-                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (isMasry ? 'نفذت' : 'Out')) + '</div>' +
-                '</div>' +
+                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? (isMasry ? 'شوف' : 'Check') : (isMasry ? 'نفذت' : 'Out'))) + '</div>' +
+                '</div>') +
               '</div>';
           }
 
