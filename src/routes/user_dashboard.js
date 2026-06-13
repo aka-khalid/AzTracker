@@ -140,7 +140,7 @@ export async function fetchUserAPI(request, env, ctx) {
                (s.asin IS NOT NULL) AS is_tracked
         FROM Global_Products g
         LEFT JOIN User_Subscriptions s ON g.asin = s.asin AND s.chat_id = ?
-        WHERE g.hist_mean > 0 AND g.new_price > 0 AND g.new_price <= g.hist_mean * 0.95 
+        WHERE g.hist_mean > 0 AND g.new_price > 0 AND g.new_price <= g.hist_mean * 0.90 
         ORDER BY ((g.hist_mean - g.new_price) / g.hist_mean) DESC LIMIT 20
       `).bind(chatId).all();
 
