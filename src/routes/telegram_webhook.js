@@ -891,8 +891,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("list_products_")) {
       await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
-      const page = parseInt(data.replace("list_products_", "")) || 0;
-      await renderProductList(env, chatId, messageId, page, lang);
+      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, lang);
     }
     else if (data === "ignore") {
       return;
@@ -998,7 +997,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
-async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "", lang = 'en') {
+export async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "", lang = 'en') {
 
   const [stats, userRow] = await Promise.all([
       env.DB.prepare(`

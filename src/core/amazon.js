@@ -52,7 +52,8 @@ export class AmazonEdgeParser {
         'offersV2.listings.price',
         'offersV2.listings.condition',
         'offersV2.listings.merchantInfo',
-        'offersV2.listings.isBuyBoxWinner'
+        'offersV2.listings.isBuyBoxWinner',
+        'images.primary.large'
       ],
       partnerTag: this.partnerTag,
       condition: 'Any'
@@ -184,6 +185,13 @@ export class AmazonEdgeParser {
       parsed.name = itemInfo.Title.DisplayValue;
     } else if (itemInfo?.title?.displayValue) {
       parsed.name = itemInfo.title.displayValue;
+    }
+
+    const images = rawItem.Images || rawItem.images;
+    const primaryImage = images?.Primary || images?.primary;
+    const largeImage = primaryImage?.Large || primaryImage?.large;
+    if (largeImage?.URL || largeImage?.url) {
+      parsed.imageUrl = largeImage.URL || largeImage.url;
     }
     
     const amazonEgMid = (this.env?.AMZN_EG_MERCHANT_ID) || 'A1ZVRGNO5AYLOV';

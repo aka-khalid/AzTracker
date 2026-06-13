@@ -499,7 +499,8 @@ export async function executeScrapeEngine(env, offset = 0) {
               new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ?,
               hist_mean = ?, hist_stdev = ?, is_atl_new = ?,
               name_ar = COALESCE(?, name_ar),
-              name = COALESCE(?, name)
+              name = COALESCE(?, name),
+              image_url = COALESCE(?, image_url)
           WHERE asin = ?
         `).bind(
           finalAmazonPrice, finalUsedPrice, finalNewPrice, now,
@@ -510,6 +511,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           histMean, histStdev, isAtlNew,
           liveItem.name_ar || null,
           liveItem.name || null,
+          liveItem.imageUrl || null,
           liveItem.asin
         )
       );
@@ -520,9 +522,10 @@ export async function executeScrapeEngine(env, offset = 0) {
         env.DB.prepare(`
           UPDATE Global_Products SET last_updated = ?,
               name_ar = COALESCE(?, name_ar),
-              name = COALESCE(?, name)
+              name = COALESCE(?, name),
+              image_url = COALESCE(?, image_url)
           WHERE asin = ?
-        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.asin)
+        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.imageUrl || null, liveItem.asin)
       );
     }
     
