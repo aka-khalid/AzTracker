@@ -1455,7 +1455,7 @@ export function renderCrmHTML(lang = 'en') {
                     return '<div class="glass rounded-xl p-3 flex justify-between items-center ' + borderClass + '">' +
                         '<div class="min-w-0 flex-1">' +
                             '<div class="flex items-center gap-2 mb-1">' +
-                                '<div class="font-medium text-sm truncate">' + firstEsc + ' (' + userDisplay + ')</div>' +
+                                '<div class="font-medium text-sm truncate">' + firstEsc + ' <sub class="text-gray-500 font-normal text-[10px] ml-1">' + userDisplay + '</sub></div>' +
                             '</div>' +
                             '<div class="flex items-center gap-3">' +
                                 '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ' + typeColor + ' border">' + typeLabel + '</span>' +
@@ -1532,7 +1532,7 @@ export function renderCrmHTML(lang = 'en') {
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">' +
                     rootGlow +
                     '<div class="flex justify-between items-center mb-2 relative z-10">' +
-                        '<div class="font-medium text-sm font-semibold truncate">' + firstNameEsc + ' (' + usernameEsc + ')</div>' +
+                        '<div class="font-medium text-sm font-semibold truncate">' + firstNameEsc + ' <sub class="text-gray-500 font-normal text-[10px] ml-1">' + usernameEsc + '</sub></div>' +
                         '<button onclick="openDrawer(\\'' + chatIdEsc + '\\')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">' + ${js('crm.btn_view_items')} + '</button>' +
                     '</div>' +
                     '<div class="flex items-center gap-2 mb-3 relative z-10">' +
