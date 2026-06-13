@@ -115,9 +115,21 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
     // For ASINs still missing Arabic names, try scraping amazon.eg pages
     for (const item of liveItems) {
+      // If the API gave us an Arabic name in the English field, swap it!
+      if (item.name && /[\u0600-\u06FF]/.test(item.name)) {
+        if (!item.name_ar) item.name_ar = item.name;
+        item.name = null; 
+      }
+
       if (!item.name_ar) {
         const scraped = await parser.scrapeArabicTitle(item.asin);
         if (scraped) item.name_ar = scraped;
+        // Small delay to avoid rate-limiting
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (!item.name) {
+        const scraped = await parser.scrapeEnglishTitle(item.asin);
+        if (scraped) item.name = scraped;
         // Small delay to avoid rate-limiting
         await new Promise(r => setTimeout(r, 200));
       }
@@ -354,13 +366,34 @@ export async function executeScrapeEngine(env, offset = 0) {
     if (newChanged || usedChanged) {
        history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
        if (history.length >= 2) {
-           const newPrices = history.map(h => h.n).filter(n => n !== null);
-           if (newPrices.length >= 2) {
-               const sum = newPrices.reduce((a, b) => a + b, 0);
-               const mean = sum / newPrices.length;
-               const variance = newPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (newPrices.length - 1);
+           const validHistory = history.filter(h => h.n !== null && h.t !== undefined);
+           if (validHistory.length >= 2) {
+               const nowSec = Math.floor(now / 1000);
+               const HALF_LIFE_SEC = 30 * 24 * 60 * 60; // 30 Days
+               const DECAY_CONSTANT = Math.LN2 / HALF_LIFE_SEC;
+               
+               let sumWeights = 0;
+               let weightedSum = 0;
+               
+               validHistory.forEach(h => {
+                   const age = Math.max(0, nowSec - h.t);
+                   h.weight = Math.exp(-DECAY_CONSTANT * age);
+                   sumWeights += h.weight;
+                   weightedSum += (h.n * h.weight);
+               });
+               
+               const mean = sumWeights > 0 ? (weightedSum / sumWeights) : 0;
+               
+               let weightedVarianceSum = 0;
+               validHistory.forEach(h => {
+                   weightedVarianceSum += h.weight * Math.pow(h.n - mean, 2);
+               });
+               
+               const variance = sumWeights > 0 ? (weightedVarianceSum / sumWeights) : 0;
                const stdev = Math.sqrt(variance);
-               const atl = Math.min(...newPrices);
+               
+               const atl = Math.min(...validHistory.map(h => h.n));
+               
                histMean = mean;
                histStdev = stdev;
                // Fix: ATL must be strictly < to count as a NEW All-Time Low
@@ -499,7 +532,8 @@ export async function executeScrapeEngine(env, offset = 0) {
               new_missing_since = ?, used_missing_since = ?, amazon_missing_since = ?,
               hist_mean = ?, hist_stdev = ?, is_atl_new = ?,
               name_ar = COALESCE(?, name_ar),
-              name = COALESCE(?, name)
+              name = COALESCE(?, name),
+              image_url = COALESCE(?, image_url)
           WHERE asin = ?
         `).bind(
           finalAmazonPrice, finalUsedPrice, finalNewPrice, now,
@@ -510,6 +544,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           histMean, histStdev, isAtlNew,
           liveItem.name_ar || null,
           liveItem.name || null,
+          liveItem.imageUrl || null,
           liveItem.asin
         )
       );
@@ -520,9 +555,10 @@ export async function executeScrapeEngine(env, offset = 0) {
         env.DB.prepare(`
           UPDATE Global_Products SET last_updated = ?,
               name_ar = COALESCE(?, name_ar),
-              name = COALESCE(?, name)
+              name = COALESCE(?, name),
+              image_url = COALESCE(?, image_url)
           WHERE asin = ?
-        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.asin)
+        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.imageUrl || null, liveItem.asin)
       );
     }
     
@@ -551,9 +587,16 @@ export async function executeScrapeEngine(env, offset = 0) {
              const displayLastPrice = histMean > 0 ? histMean : lPrice;
              const dropPct = ((displayLastPrice - broadcastPrice) / displayLastPrice) * 100;
              
-             const isStandardDeal = (zScore <= -1.0) && (dropPct >= 10.0);
-             const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= 5.0);
-             const isFlashSale = dropPct >= 20.0;
+             let reqDrop = 10.0;
+             if (displayLastPrice <= 1000) reqDrop = 15.0;
+             else if (displayLastPrice <= 5000) reqDrop = 10.0;
+             else if (displayLastPrice <= 20000) reqDrop = 7.0;
+             else if (displayLastPrice <= 50000) reqDrop = 5.0;
+             else reqDrop = 3.0;
+             
+             const isStandardDeal = (zScore <= -1.0) && (dropPct >= reqDrop);
+             const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= reqDrop / 2.0);
+             const isFlashSale = dropPct >= (reqDrop * 2.0);
              
              if (isStandardDeal || isAtlDeal || isFlashSale) {
                  bestDeal.push({
@@ -605,7 +648,13 @@ export async function executeScrapeEngine(env, offset = 0) {
               text: truncateMessage(broadcast_msg),
               markup: {
                   inline_keyboard: [
-                      [{ text: t('broadcast.buy_here', 'masry'), url: broadcast_url }]
+                      [
+                          { text: t('broadcast.buy_here', 'masry'), url: broadcast_url },
+                          { text: '🎯 Track Deal', url: `https://t.me/${env.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}` }
+                      ],
+                      [
+                          { text: t('alert.btn_disclaimer', 'masry'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }
+                      ]
                   ]
               }
           });

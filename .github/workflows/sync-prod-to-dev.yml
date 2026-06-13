@@ -19,11 +19,11 @@ jobs:
 
       - name: Export Prod D1 Data
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           # Export the data only (no schema)
-          npx wrangler d1 export aztracker-db --remote --output=prod_data.sql --no-schema
+          npx wrangler d1 export DB --env production --remote --output=prod_data.sql --no-schema
 
       - name: Transform INSERT to INSERT OR REPLACE
         run: |
@@ -33,15 +33,15 @@ jobs:
 
       - name: Import into Dev D1
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           # Execute the transformed SQL on the Dev DB
-          npx wrangler d1 execute aztracker-dev-db --remote --file=prod_data.sql
+          npx wrangler d1 execute DB --remote --file=prod_data.sql
 
       - name: Sync KV Namespaces
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           node scripts/sync-kv.js

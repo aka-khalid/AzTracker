@@ -1,4 +1,4 @@
-name = "aztracker-v2"
+name = "aztracker-dev-worker"
 main = "src/index.js"
 compatibility_date = "2026-05-23"
 
@@ -7,29 +7,29 @@ mode = "smart"
 
 [[kv_namespaces]]
 binding = "AZTRACKER_DB"
-id = "90fcfcb742fe4d7299087c076bd1ba4d"
+id = "bd7a240d6727457cb1a5338450aa0969"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "aztracker-test-db"
-database_id = "5ba01682-b844-447d-8498-bc0cac846edd"
+database_name = "aztracker-dev-db"
+database_id = "8e5a0b8c-d5e7-4f2d-a738-388b0c60bb43"
 
 [[queues.producers]]
 binding = "MESSAGE_QUEUE"
-queue = "telegram-outbox"
+queue = "telegram-outbox-dev"
 
 [[queues.consumers]]
-queue = "telegram-outbox"
+queue = "telegram-outbox-dev"
 max_batch_size = 30
 max_batch_timeout = 1
 max_retries = 3
 
 [[queues.producers]]
 binding = "SCRAPER_QUEUE"
-queue = "scraper-queue"
+queue = "scraper-queue-dev"
 
 [[queues.consumers]]
-queue = "scraper-queue"
+queue = "scraper-queue-dev"
 max_batch_size = 10
 max_batch_timeout = 1
 max_retries = 3
@@ -45,7 +45,7 @@ crons = []
 # crons = ["* * * * *", "0 0 * * *"]
 
 [env.production]
-name = "aztracker-v2-prod"
+name = "aztracker-prod-worker"
 
 [env.production.vars]
 GITHUB_OWNER = "aka-khalid"

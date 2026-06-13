@@ -51,6 +51,45 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Architectural Council Batch 2:** Resolved 3 critical audit findings — string parsing trap, absolute CSS in RTL context, and Fusha-translated technical constants — in a single coordinated fix pass.
   </details>
 
+- [x] **Phase 6.12: Telegram Web App & Resilient Fallback Scraping**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Replace the limited inline keyboard menu with a rich, interactive Telegram Web App UI for user product management, and enforce strict language-based name enrichment.
+
+  **The Strategy:** Fully deprecated the inline message-based user menu in favor of an edge-rendered HTML dashboard served natively from the Cloudflare Worker via `src/routes/user_dashboard.js`. Enforced strong cryptographic security using `crypto.subtle` for HMAC-SHA256 Telegram `initData` validation. Significantly upgraded the scraper engine's fallback logic to fetch English (`en_AE`) and Arabic (`ar_AE`) titles manually over HTTP if the Amazon Creators API fails or returns cross-pollinated languages.
+
+  **Execution Highlights:**
+  - **Telegram Web App CRM:** Built a fully responsive HTML/CSS/JS dashboard tracking UI with zero frontend frameworks. Users can pause, delete, and set target prices via a synchronized slider and input field.
+  - **Secure Edge Validation:** Implemented native HMAC verification for API requests (`/api/user/*`) using Cloudflare's SubtleCrypto API to cryptographically guarantee Web App requests originate from authenticated Telegram users.
+  - **Dynamic Affiliate Injection:** Injected the Amazon Associates `partnerTag` dynamically into the target URL buttons (New, Resale, Amazon.eg) within the Web App right before opening the browser.
+  - **Explicit HTTP Language Scraping:** Bypassed Amazon's IP-based geolocation by explicitly appending `?language=en_AE` and `?language=ar_AE` to the fallback HTTP scraper URLs. 
+  - **Arabic Cross-Pollination Fix:** Added intelligent detection for cases where the Creators API incorrectly returns an Arabic name in the English field. The scraper engine now detects Arabic characters (`/[\u0600-\u06FF]/`), forcefully shunts the text to the `name_ar` database column, and triggers the English fallback scraper to ensure English localization isn't corrupted.
+  - **Synchronous Webhook Scraping:** Upgraded the `telegram_webhook.js` link processor to immediately trigger synchronous HTTP extraction for both Arabic and English names (bypassing the queue) if they can't be extracted from the URL structure directly.
+  </details>
+
+- [x] **Phase 6.13: Visual CRM Overhaul, Deal Discovery & Database Synchronization**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Upgrade the Admin CRM Web App with rich product visuals, introduce a global "Hot Deals" discovery tab for users, secure API integrations, and completely automate the Production-to-Development Database synchronization pipeline.
+
+  **The Strategy:** Overhauled the CRM UI rendering engine to fetch and display native Amazon product images (`image_url`) directly from the D1 database across all CRM views. Introduced a new user-facing "Hot Deals" (`🔥 لقطات`) tab in the Web App that leverages the new `drop_percentage` deal detection metric to surface massive global price drops to all users. Simultaneously replaced insecure `adminId` URL-parameter API fetching with a robust `fetchAPI` wrapper that cryptographically validates the Telegram `initData` header. For DevOps, introduced a seamless GitHub Actions CI/CD workflow to safely mirror production databases to the development environment.
+
+  **Execution Highlights:**
+  - **Hot Deals Discovery Tab:** Added a dedicated `/api/user/hot_deals` endpoint and UI tab in the User Dashboard. This tab queries the `Global_Products` table for items with a massive `drop_percentage` (calculated algorithmically based on ATH/ATL), allowing standard users to effortlessly discover and track globally detected deals with a single click.
+  - **Inflation-Resistant Deal Detection (EMA):** Replaced standard historical averages with a **Time-Weighted Average (EMA)** algorithm using a 30-day exponential decay half-life, ensuring the baseline gracefully ignores pre-inflation prices.
+  - **Dynamic Tiered Price Buckets:** Upgraded both the Omnichannel broadcast and Hot Deals tab to evaluate percentage drops against a dynamic matrix based on absolute price (e.g., cheap items require a 15% drop, premium electronics only require a 3% drop), perfectly mapping to human psychological pricing without hardcoded limits.
+  - **Omnichannel Direct-Tracking Deep-Links:** Injected a `?start=track_{asin}` deep-link into all broadcast messages, allowing users to tap a "🎯 Track Deal" button in the public channel and instantly subscribe to the product inside the bot with zero friction.
+  - **CRM Visual Upgrade:** Injected native database-driven product images into the User Products, Top Charts, Graveyard, and Admin CRM layouts. Implemented a robust `<img onerror="...">` fallback mechanism that gracefully degrades to the Amazon URL path if the cached image fails to load.
+  - **Secure API Wrapper (`fetchAPI`):** Completely removed URL-based `adminId` parameter injection in the CRM frontend. Replaced all direct `fetch` calls with an interceptor that automatically attaches the Telegram Web App `initData` string as an `Authorization` header.
+  - **Backend Cryptographic Authentication:** Updated the `GET /api/crm/*` and `POST /api/crm/*` backend endpoints to extract and validate the Telegram `initData` header securely via SubtleCrypto. This guarantees zero-trust Root Admin verification for sensitive actions like global broadcasts and cache deletion.
+  - **Automated D1 Environment Synchronization:** Engineered a comprehensive `.github/workflows/sync-prod-to-dev.yml` pipeline that triggers Wrangler to execute a remote D1 export of `aztracker-prod-db`.
+  - **Safe SQL Transformation:** The sync workflow leverages `sed` to intelligently parse the exported SQL dump and replace destructive `INSERT INTO` commands with `INSERT OR REPLACE INTO`, ensuring smooth, collision-free dev imports without dropping existing tables or violating constraints.
+  - **Seamless KV Mirroring:** Hand-crafted a Node.js `sync-kv.js` script inside the CI/CD pipeline to query all keys from the Production KV Namespace and automatically bulk-write them into the Development KV Namespace using the Cloudflare REST API.
+  - **Principle of Least Privilege:** Enforced a strict permission matrix for the GitHub Actions Cloudflare API Token, binding it explicitly to three explicit permissions (`D1 Edit`, `Workers KV Storage Edit`, `Worker Scripts Edit`) instead of granting overarching Global API Key access.
+  </details>
+
 ---
 
 ## 🔮 Phase 7: Continuous Improvement & R&D

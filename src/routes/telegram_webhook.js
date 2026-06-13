@@ -182,7 +182,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
   const activeState = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(stateKey).first('value');
 
   // --- OVERRIDE BLOCK ---
-  if (text === "/start") {
+  if (text.startsWith("/start")) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
 
@@ -201,8 +201,20 @@ async function handleMessage(message, env, baseUrl, ctx) {
     const freshRoles = await getUserRoles(chatId, env, ctx);
     const effectiveLang = freshRoles.lang || osLang || 'en';
 
-    await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
-    return;
+    const startPayload = text.split(' ')[1];
+    if (startPayload && startPayload.startsWith('track_')) {
+      const asin = startPayload.replace('track_', '').trim();
+      if (asin) {
+        text = `https://www.amazon.eg/dp/${asin}`;
+        // Fall through to let URL parser handle it natively!
+      } else {
+        await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
+        return;
+      }
+    } else {
+      await renderMainMenu(env, chatId, null, isAdmin, baseUrl, effectiveLang);
+      return;
+    }
   } else if (text.startsWith('/')) {
     if (activeState) await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
     await deleteTelegramMessage(env, chatId, messageId);
@@ -226,6 +238,27 @@ async function handleMessage(message, env, baseUrl, ctx) {
       });
       return;
     }
+
+    // --- SNIPER MODE VALIDATION ---
+    let historyData = await env.AZTRACKER_DB.get(`history:${pid}`, "json") || [];
+    let atl = null;
+    if (historyData.length > 0) {
+      atl = Math.min(...historyData.map(h => h.price));
+    }
+
+    if (atl !== null && num < atl * 0.8) {
+      await deleteTelegramMessage(env, chatId, messageId);
+      const warnText = `⚠️ This product has never dropped below ${atl.toLocaleString()} ${t('chrome.currency_egp', lang)}.\nSetting a target of ${num.toLocaleString()} ${t('chrome.currency_egp', lang)} might never trigger.\n\nDo you want to set your target to ${atl.toLocaleString()} ${t('chrome.currency_egp', lang)} instead?`;
+      await sendAppMessage(env, chatId, warnText, {
+        inline_keyboard: [
+          [{ text: `🎯 Set to ${atl.toLocaleString()} ${t('chrome.currency_egp', lang)}`, callback_data: `forceset_${pid}_${atl}` }],
+          [{ text: `Keep ${num.toLocaleString()} ${t('chrome.currency_egp', lang)}`, callback_data: `forceset_${pid}_${num}` }],
+          [{ text: t('target.cancel', lang), callback_data: `view_${pid}` }]
+        ]
+      });
+      return;
+    }
+    // ------------------------------
 
     await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(num, chatId, pid).run();
 
@@ -301,7 +334,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       if (existingProducts && existingProducts.length >= userLimit) {
         await editTelegramMessage(env, chatId, tempMessageId, t('link.limit_reached_head', lang) + '\n\n' + t('link.limit_reached_body', lang, { used: existingProducts.length, limit: userLimit }), {
           inline_keyboard: [
-            [{ text: t('link.manage_products', lang), callback_data: "list_products_0" }],
+            [{ text: t('link.manage_products', lang), web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
             [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
           ]
         });
@@ -316,7 +349,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       return;
     }
 
-    const extractedName = extractNameFromUrl(expandedUrl);
+    let extractedName = extractNameFromUrl(expandedUrl);
 
     // Fetch Arabic product name (non-blocking — falls back to English only)
     let arabicName = null;
@@ -334,16 +367,22 @@ async function handleMessage(message, env, baseUrl, ctx) {
         if (!arabicName) {
           arabicName = await parser.scrapeArabicTitle(pid);
         }
+        // Fetch English if URL extraction failed
+        if (!extractedName) {
+          extractedName = await parser.scrapeEnglishTitle(pid);
+        }
       }
     } catch (e) {
-      console.warn('[Webhook] Arabic name fetch failed (non-blocking):', e.message);
+      console.warn('[Webhook] Name fetch failed (non-blocking):', e.message);
     }
 
     // Insert into Global_Products to track price globally
     await env.DB.prepare(`
       INSERT INTO Global_Products (asin, name, name_ar, last_updated)
       VALUES (?, ?, ?, 0)
-      ON CONFLICT(asin) DO UPDATE SET name = excluded.name, name_ar = COALESCE(excluded.name_ar, name_ar)
+      ON CONFLICT(asin) DO UPDATE SET 
+        name = COALESCE(NULLIF(excluded.name, excluded.asin), name), 
+        name_ar = COALESCE(excluded.name_ar, name_ar)
     `).bind(pid, extractedName || pid, arabicName).run();
 
     // Insert into User_Subscriptions
@@ -365,7 +404,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
                     `🕐 <b>${t('link.status_label', lang)}</b> ${t('link.pending_scan', lang)}\n\n${t('alert.boosted_label', lang)}`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
-        [{ text: "📦 View My Products", callback_data: "list_products_0" }],
+        [{ text: "📦 View My Products", web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
         [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
       ]
     });
@@ -870,8 +909,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
     }
     else if (data.startsWith("list_products_")) {
       await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
-      const page = parseInt(data.replace("list_products_", "")) || 0;
-      await renderProductList(env, chatId, messageId, page, lang);
+      await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, lang);
     }
     else if (data === "ignore") {
       return;
@@ -890,6 +928,20 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       const text = t('target.set_head', lang) + '\n\n' + t('target.set_prompt', lang, { asin: pid });
       await editTelegramMessage(env, chatId, messageId, text, {
         inline_keyboard: [[{ text: t('target.cancel', lang), callback_data: `view_${pid}` }]]
+      });
+    }
+    else if (data.startsWith("forceset_")) {
+      const parts = data.split("_");
+      const pid = parts[1];
+      const num = parseFloat(parts[2]);
+      
+      await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(num, chatId, pid).run();
+      await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
+
+      const rawPrice = num.toLocaleString();
+      const text = t('target.set_confirm_head', lang) + '\n\n' + t('target.set_confirm_body', lang, { asin: pid, price: t('chrome.currency_egp', lang) + ' ' + rawPrice });
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [[{ text: t('nav.back_to_product', lang), callback_data: `view_${pid}` }]]
       });
     }
     else if (data.startsWith("cleartarget_")) {
@@ -963,7 +1015,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
-async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "", lang = 'en') {
+export async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, baseUrl = "", lang = 'en') {
 
   const [stats, userRow] = await Promise.all([
       env.DB.prepare(`
@@ -995,7 +1047,7 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: t('menu.btn_my_products', lang), callback_data: "list_products_0" }],
+      [{ text: t('menu.btn_my_products', lang), web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
       [{ text: t('menu.btn_how_to_add', lang), callback_data: "help_add" }],
       [{ text: t('menu.btn_language', lang), callback_data: "toggle_lang" }]
     ]

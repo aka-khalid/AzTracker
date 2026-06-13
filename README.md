@@ -38,13 +38,22 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 AzTracker strictly separates relational state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all user tracking, subscriptions, concurrency locks, audit logs, and the Hysteresis Engine. **Cloudflare KV** serves as a NoSQL document store for massive time-series arrays and cached Amazon access tokens, avoiding database read-exhaustion.
 
 ### 🛡️ Edge-Rendered CRM & SIEM Auditing
-The Admin Panel opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
+The Admin Panel opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. The CRM seamlessly pulls actual database product thumbnails as fallback-aware product cards. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
 
 ### ⚛️ Decoupled Async Message Delivery
 Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The queue worker implements a Two-Phase Commit (2PC) that prevents duplicate alerts by updating D1 flags only upon a successful HTTP 200 Telegram delivery. Failed deliveries trigger automatic retry with exponential backoff.
 
 ### 📉 Distributed Scraping with Dynamic Governor Logic
 The scraper engine processes products in batches of 10 via Cloudflare Queues (`scraper-queue`). A dynamic Governor in the cron trigger calculates optimal batch sizes and distribution intervals based on the total active subscription pool.
+
+### 📱 User Web App Dashboard & Hot Deals Discovery
+The standard user product management has been fully upgraded to an interactive Telegram Web App, sharing the same secure HMAC-SHA256 edge-rendering architecture as the admin CRM. It introduces a global **Hot Deals (🔥 لقطات)** tab that allows standard users to effortlessly discover massive price drops dynamically detected by the engine. Additionally, an intelligent HTTP fallback scraper guarantees perfect cross-lingual localization.
+
+### ⏱️ Inflation-Resistant Deal Detection (EMA) & Dynamic Buckets
+The deal detection engine calculates a **Time-Weighted Average (EMA)** using a 30-day exponential decay half-life, naturally forgetting pre-inflation prices to establish a highly accurate baseline. It evaluates deals using **Dynamic Price Buckets** (e.g., requiring a 15% drop for 100 EGP items, but only a 3% drop for 100,000 EGP laptops), ensuring notifications perfectly mimic human psychological pricing without hardcoded limits.
+
+### 🔗 Omnichannel Direct-Tracking Deep-Links
+Omnichannel Telegram broadcast alerts now include a dynamic `https://t.me/AzTrackerr_bot?start=track_{asin}` deep-link. Clicking the "🎯 Track Deal" button opens the bot and triggers a fallback payload router that automatically subscribes the user to the product with zero friction.
 
 ---
 
@@ -138,7 +147,7 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `GITHUB_OWNER` | GitHub owner for the project. |
 | `GITHUB_REPO` | GitHub repository name. |
 
-### Secrets (must be injected via `wrangler secret put`)
+### Cloudflare Secrets (via `wrangler secret put`)
 
 | Variable | Description |
 |----------|-------------|
@@ -150,6 +159,16 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs. |
 | `AMZN_ASSOCIATES_TAG` | Amazon Associates Tracking ID for the Creators API payload. |
 | `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting. |
+
+### 🔄 Automated CI/CD Database Synchronization
+The project features a full CI/CD pipeline using GitHub Actions (`sync-prod-to-dev.yml`). On deployment, it safely mirrors the production D1 databases to the development environment by utilizing `sed` to intelligently transform destructive `INSERT INTO` SQL commands into safe `INSERT OR REPLACE INTO` commands. It simultaneously uses a custom Node.js script to bulk-mirror the Cloudflare KV namespaces, guaranteeing identical environments without breaking dev constraints.
+
+### GitHub Repository Secrets (for CI/CD Actions)
+
+| Variable | Description |
+|----------|-------------|
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID for `deploy_worker.yml` and `sync-prod-to-dev.yml`. |
+| `CLOUDFLARE_API_TOKEN` | Custom API Token with `D1 (Edit)`, `Worker Scripts (Edit)`, and `Workers KV Storage (Edit)`. |
 
 ### Cloudflare Bindings (configured in `wrangler.toml`)
 

@@ -19,8 +19,7 @@ async function deadLetter(env, queueName, msg, error) {
 }
 
 export async function queue(batch, env, ctx) {
-    if (batch.queue === 'scraper-queue') {
-      //return; // Kill switch to manual trigger for scraper engine to avoid infinite loops during development
+    if (batch.queue.startsWith('scraper-queue')) {
       for (const msg of batch.messages) {
         try {
           if ((msg.attempts || 0) >= MAX_RETRY_ATTEMPTS) {

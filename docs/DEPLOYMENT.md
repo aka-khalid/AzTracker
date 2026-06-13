@@ -13,15 +13,15 @@ The project utilizes a strict Dual-Environment Workflow to ensure safe developme
 
 ### 1.1 Worker Configurations
 We maintain two separate Worker environments defined in `wrangler.toml`:
-- **Development** (Default): `aztracker-v2`
-- **Production**: `aztracker-v2-prod`
+- **Development** (Default): `aztracker-dev-worker`
+- **Production**: `aztracker-prod-worker`
 
-When deploying or testing locally, `aztracker-v2` is used. Production releases require the `--env production` flag.
+When deploying or testing locally, `aztracker-dev-worker` is used. Production releases require the `--env production` flag.
 
 ### 1.2 Infrastructure Separation
-| Resource | Development (`aztracker-v2`) | Production (`aztracker-v2-prod`) |
+| Resource | Development (`aztracker-dev-worker`) | Production (`aztracker-prod-worker`) |
 |----------|-----------------------------|---------------------------------|
-| **D1 Database** | `aztracker-test-db` | `aztracker-prod-db` |
+| **D1 Database** | `aztracker-dev-db` | `aztracker-prod-db` |
 | **KV Namespace** | Shared (`AZTRACKER_DB`) | Shared (`AZTRACKER_DB`) |
 | **Queues** | `scraper-queue`, `telegram-outbox` | `scraper-queue`, `telegram-outbox` |
 | **Cron Trigger** | `* * * * *` (if active) | `* * * * *` (if active) |
@@ -63,17 +63,17 @@ src/
 npm install
 
 # 2. Provision D1 Databases
-npx wrangler d1 create aztracker-test-db
+npx wrangler d1 create aztracker-dev-db
 npx wrangler d1 create aztracker-prod-db
 # Add returned IDs to wrangler.toml
 
 # 3. Apply Schema
-npx wrangler d1 execute aztracker-test-db --local --file=schema.sql
+npx wrangler d1 execute aztracker-dev-db --local --file=schema.sql
 npx wrangler d1 execute aztracker-prod-db --env production --remote --file=schema.sql
 ```
 
 ### 3.2 Secret Management
-Secrets must be injected per environment. They are never stored in plaintext.
+Secrets must be injected per environment into Cloudflare. They are never stored in plaintext.
 ```bash
 # Development
 npx wrangler secret put TELEGRAM_BOT_TOKEN
@@ -81,11 +81,19 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_BOT_TOKEN --env production
 ```
 
-**Required Secrets:**
+**Required Cloudflare Secrets:**
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ROOT_ADMIN_IDS`
 - `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`, `AMZN_ASSOCIATES_TAG`
 
-### 3.3 Deploying Code
+### 3.3 GitHub Actions CI/CD Secrets
+To enable automated deployments and dual-environment database syncs via GitHub Actions, configure the following **Repository Secrets** in GitHub:
+- `CLOUDFLARE_ACCOUNT_ID`: Your Cloudflare Account ID.
+- `CLOUDFLARE_API_TOKEN`: A Custom API Token with the following permissions:
+  1. `Account` | `Worker Scripts` | `Edit` (Required for deploying)
+  2. `Account` | `D1` | `Edit` (Required for syncing D1 databases)
+  3. `Account` | `Workers KV Storage` | `Edit` (Required for syncing KV namespaces)
+
+### 3.4 Deploying Code
 ```bash
 # Deploy to Development
 npx wrangler deploy
@@ -94,10 +102,15 @@ npx wrangler deploy
 npx wrangler deploy --env production
 ```
 
-### 3.4 Webhook Registration
+Alternatively, push to the `main` or `dev` branches to automatically trigger the GitHub Actions deployment workflow (`deploy_worker.yml`).
+
+### 3.5 Synchronizing Environments
+Use the GitHub Action **"Sync Prod to Dev"** (`sync-prod-to-dev.yml`) to automatically export production data, transform it, and import it safely into the Dev D1 Database and KV namespace without dropping tables or breaking constraints.
+
+### 3.6 Webhook Registration
 To start receiving messages from Telegram, you must register the webhook URL:
 ```bash
-curl -F "url=https://aztracker-v2-prod.<your-cloudflare-subdomain>.workers.dev/webhook/<TELEGRAM_WEBHOOK_SECRET>" \
+curl -F "url=https://aztracker-prod-worker.<your-cloudflare-subdomain>.workers.dev/webhook/<TELEGRAM_WEBHOOK_SECRET>" \
      https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook
 ```
 *(Replace placeholders with your actual production domain and secret.)*
