@@ -335,6 +335,9 @@ function renderUserHTML(lang, partnerTag) {
       text-align: center;
       cursor: pointer;
       transition: background 0.2s, transform 0.2s;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
     .price-box:hover { background: rgba(255,255,255,0.06); }
     .price-box:active { transform: scale(0.95); }
