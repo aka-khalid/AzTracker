@@ -227,6 +227,27 @@ async function handleMessage(message, env, baseUrl, ctx) {
       return;
     }
 
+    // --- SNIPER MODE VALIDATION ---
+    let historyData = await env.AZTRACKER_DB.get(`history:${pid}`, "json") || [];
+    let atl = null;
+    if (historyData.length > 0) {
+      atl = Math.min(...historyData.map(h => h.price));
+    }
+
+    if (atl !== null && num < atl * 0.8) {
+      await deleteTelegramMessage(env, chatId, messageId);
+      const warnText = `⚠️ This product has never dropped below ${atl.toLocaleString()} ${t('chrome.currency_egp', lang)}.\nSetting a target of ${num.toLocaleString()} ${t('chrome.currency_egp', lang)} might never trigger.\n\nDo you want to set your target to ${atl.toLocaleString()} ${t('chrome.currency_egp', lang)} instead?`;
+      await sendAppMessage(env, chatId, warnText, {
+        inline_keyboard: [
+          [{ text: `🎯 Set to ${atl.toLocaleString()} ${t('chrome.currency_egp', lang)}`, callback_data: `forceset_${pid}_${atl}` }],
+          [{ text: `Keep ${num.toLocaleString()} ${t('chrome.currency_egp', lang)}`, callback_data: `forceset_${pid}_${num}` }],
+          [{ text: t('target.cancel', lang), callback_data: `view_${pid}` }]
+        ]
+      });
+      return;
+    }
+    // ------------------------------
+
     await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(num, chatId, pid).run();
 
     await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(stateKey).run();
@@ -301,7 +322,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       if (existingProducts && existingProducts.length >= userLimit) {
         await editTelegramMessage(env, chatId, tempMessageId, t('link.limit_reached_head', lang) + '\n\n' + t('link.limit_reached_body', lang, { used: existingProducts.length, limit: userLimit }), {
           inline_keyboard: [
-            [{ text: t('link.manage_products', lang), callback_data: "list_products_0" }],
+            [{ text: t('link.manage_products', lang), web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
             [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
           ]
         });
@@ -365,7 +386,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
                     `🕐 <b>${t('link.status_label', lang)}</b> ${t('link.pending_scan', lang)}\n\n${t('alert.boosted_label', lang)}`;
     await editTelegramMessage(env, chatId, tempMessageId, successText, {
       inline_keyboard: [
-        [{ text: "📦 View My Products", callback_data: "list_products_0" }],
+        [{ text: "📦 View My Products", web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
         [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
       ]
     });
@@ -892,6 +913,20 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         inline_keyboard: [[{ text: t('target.cancel', lang), callback_data: `view_${pid}` }]]
       });
     }
+    else if (data.startsWith("forceset_")) {
+      const parts = data.split("_");
+      const pid = parts[1];
+      const num = parseFloat(parts[2]);
+      
+      await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(num, chatId, pid).run();
+      await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();
+
+      const rawPrice = num.toLocaleString();
+      const text = t('target.set_confirm_head', lang) + '\n\n' + t('target.set_confirm_body', lang, { asin: pid, price: t('chrome.currency_egp', lang) + ' ' + rawPrice });
+      await editTelegramMessage(env, chatId, messageId, text, {
+        inline_keyboard: [[{ text: t('nav.back_to_product', lang), callback_data: `view_${pid}` }]]
+      });
+    }
     else if (data.startsWith("cleartarget_")) {
       const pid = data.replace("cleartarget_", "");
       await env.DB.prepare("UPDATE User_Subscriptions SET target_price = NULL WHERE chat_id = ? AND asin = ?").bind(chatId, pid).run();
@@ -995,7 +1030,7 @@ async function renderMainMenu(env, chatId, messageId = null, isAdmin = false, ba
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: t('menu.btn_my_products', lang), callback_data: "list_products_0" }],
+      [{ text: t('menu.btn_my_products', lang), web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
       [{ text: t('menu.btn_how_to_add', lang), callback_data: "help_add" }],
       [{ text: t('menu.btn_language', lang), callback_data: "toggle_lang" }]
     ]

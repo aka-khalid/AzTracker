@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - dev
+      - 'feature/**'
     paths:
       - 'src/**'
       - 'wrangler.toml'
@@ -23,7 +24,7 @@ jobs:
           node-version: "22"
 
       - name: Deploy to Cloudflare Workers (Development)
-        if: github.ref == 'refs/heads/dev'
+        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/')
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
