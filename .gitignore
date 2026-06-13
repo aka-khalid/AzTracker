@@ -58,5 +58,6 @@ wrangler.*.toml
 !wrangler.toml
 *.mjs
 *.sql
+!migrations/*.sql
 !schema.sql
 !scripts/schema_seed.sql
