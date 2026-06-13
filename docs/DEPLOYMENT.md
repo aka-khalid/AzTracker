@@ -63,12 +63,12 @@ src/
 npm install
 
 # 2. Provision D1 Databases
-npx wrangler d1 create aztracker-test-db
+npx wrangler d1 create aztracker-dev-db
 npx wrangler d1 create aztracker-prod-db
 # Add returned IDs to wrangler.toml
 
 # 3. Apply Schema
-npx wrangler d1 execute aztracker-test-db --local --file=schema.sql
+npx wrangler d1 execute aztracker-dev-db --local --file=schema.sql
 npx wrangler d1 execute aztracker-prod-db --env production --remote --file=schema.sql
 ```
 
