@@ -71,7 +71,7 @@ export async function executeScrapeEngine(env, offset = 0) {
   const cbState = await checkCircuitBreaker(env);
   if (cbState === "open") {
     console.warn("[CircuitBreaker] Amazon API circuit is OPEN — skipping scrape batch");
-    throw new Error("Amazon API circuit breaker open");
+    return false;
   }
 
   const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;

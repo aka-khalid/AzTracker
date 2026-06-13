@@ -392,7 +392,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
 
 
-  console.error(`[JOIN_QUEUE] handleCallback: data=${data}, chatId=${chatId}, isApproved=${isApproved}, isAdmin=${isAdmin}`);
+  console.log(`[JOIN_QUEUE] handleCallback: data=${data}, chatId=${chatId}, isApproved=${isApproved}, isAdmin=${isAdmin}`);
   try {
     if (data.startsWith("request_access_")) {
       const targetId = data.replace("request_access_", "");
