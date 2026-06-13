@@ -9,6 +9,9 @@ async function run() {
     const crmPath = path.join(__dirname, '..', 'src', 'routes', 'crm_dashboard.js');
     const crmBackupPath = path.join(__dirname, '..', 'src', 'routes', 'crm_dashboard.backup.js');
     
+    const userPath = path.join(__dirname, '..', 'src', 'routes', 'user_dashboard.js');
+    const userBackupPath = path.join(__dirname, '..', 'src', 'routes', 'user_dashboard.backup.js');
+    
     const tomlPath = path.join(__dirname, '..', 'wrangler.toml');
     const tempTomlPath = path.join(__dirname, '..', 'wrangler.temp.toml');
     
@@ -20,20 +23,38 @@ async function run() {
     const patchTarget = `async function authAdmin(req, environment) {`;
     const patchReplacement = `async function authAdmin(req, environment) {
       if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
-          return { user: { id: 317422571, first_name: "Khalid" }, isRootAdmin: true };
+          return { user: { id: 760872964, first_name: "Khalid" }, isRootAdmin: true };
       }
     `;
     code = code.replace(patchTarget, patchReplacement);
     fs.writeFileSync(crmPath, code);
 
+    console.log("Patching user_dashboard.js for Puppeteer auth bypass...");
+    fs.copyFileSync(userPath, userBackupPath);
+    
+    let userCode = fs.readFileSync(userPath, 'utf8');
+    const userPatchTarget = `    const initData = authHeader.substring("Bearer ".length);`;
+    const userPatchReplacement = `    const initData = authHeader.substring("Bearer ".length);
+    if (initData === "puppeteer_mock") {
+        var chatId = "760872964";
+    } else {
+    `;
+    const userClosePatchTarget = `    if (!chatId) return new Response("Unauthorized", { status: 401 });`;
+    const userClosePatchReplacement = `    } // close else block
+    if (!chatId) return new Response("Unauthorized", { status: 401 });`;
+    
+    userCode = userCode.replace(userPatchTarget, userPatchReplacement);
+    userCode = userCode.replace(userClosePatchTarget, userClosePatchReplacement);
+    fs.writeFileSync(userPath, userCode);
+
     console.log("Creating temporary wrangler.temp.toml targeting production database...");
     let tomlCode = fs.readFileSync(tomlPath, 'utf8');
-    tomlCode = tomlCode.replace(/name = "aztracker-v2"/, 'name = "aztracker-temp-ui"');
-    // Bind the top-level D1 to prod instead of test
-    tomlCode = tomlCode.replace(/database_name = "aztracker-test-db"/, 'database_name = "aztracker-prod-db"');
-    tomlCode = tomlCode.replace(/database_id = "5ba01682-b844-447d-8498-bc0cac846edd"/, 'database_id = "7998ba93-e8ef-42c5-b37b-580e233a2d6a"');
+    tomlCode = tomlCode.replace(/name = "aztracker-dev-worker"/, 'name = "aztracker-temp-ui"');
+    // Bind the top-level D1 to prod instead of dev
+    tomlCode = tomlCode.replace(/database_name = "aztracker-dev-db"/, 'database_name = "aztracker-prod-db"');
+    tomlCode = tomlCode.replace(/database_id = "8e5a0b8c-d5e7-4f2d-a738-388b0c60bb43"/, 'database_id = "7998ba93-e8ef-42c5-b37b-580e233a2d6a"');
     
-    tomlCode = tomlCode.replace(/\[vars\]/, '[vars]\nTELEGRAM_ROOT_ADMIN_IDS = "317422571"');
+    tomlCode = tomlCode.replace(/\[vars\]/, '[vars]\nTELEGRAM_ROOT_ADMIN_IDS = "760872964"');
     
     // Remove queues from the temp TOML because multiple workers cannot consume the same queue
     tomlCode = tomlCode.replace(/\[\[queues.*?\]\][\s\S]*?(?=\[|$)/g, '');
@@ -182,11 +203,21 @@ async function run() {
         await page.evaluate(() => closeChartModal());
         await delay(500);
 
-        // User Products Drawer (using user 317422571)
-        await page.evaluate(() => openDrawer('317422571'));
+        // User Products Drawer (using user 760872964)
+        await page.evaluate(() => openDrawer('760872964'));
         await snap('11_user_products_drawer' + langSuffix, 2000);
         await page.evaluate(() => closeDrawer());
         await delay(500);
+
+        // --- NEW USER DASHBOARD SCREENS ---
+        console.log(`Navigating to User Dashboard (${lang.toUpperCase()})...`);
+        const userUrl = url.replace('/crm', '/user_app') + '?lang=' + (lang === 'ar' ? 'masry' : 'en');
+        await page.goto(userUrl, { waitUntil: 'networkidle0' });
+        await snap('14_user_dashboard' + langSuffix, 3000); // User Products Tab
+
+        // Click Hot Deals tab
+        await page.click('#tab-hotdeals');
+        await snap('15_hot_deals' + langSuffix, 2000);
     }
 
     console.log("Closing browser...");
@@ -195,6 +226,10 @@ async function run() {
     console.log("Restoring crm_dashboard.js...");
     fs.copyFileSync(crmBackupPath, crmPath);
     fs.unlinkSync(crmBackupPath);
+    
+    console.log("Restoring user_dashboard.js...");
+    fs.copyFileSync(userBackupPath, userPath);
+    fs.unlinkSync(userBackupPath);
     
     console.log("Deleting temporary worker...");
     const cleanupArgs = ['wrangler', 'delete', '--config', 'wrangler.temp.toml', '--name', 'aztracker-temp-ui', '--force'];

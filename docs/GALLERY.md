@@ -19,6 +19,8 @@ Here is a side-by-side comparison of the entire CRM interface in both languages.
 | **11. User Profile Items**<br>Drawer displaying individual items tracked by a specific user. | <img src="assets/11_user_products_drawer.png" width="400"> | <img src="assets/11_user_products_drawer_ar.png" width="400"> |
 | **12. Product Subscribers**<br>Drawer showing all users tracking a specific product. | <img src="assets/12_product_subscribers_drawer.png" width="400"> | <img src="assets/12_product_subscribers_drawer_ar.png" width="400"> |
 | **13. Price History Chart**<br>Interactive Chart.js modal showing price trends over time. | <img src="assets/13_chart_modal.png" width="400"> | <img src="assets/13_chart_modal_ar.png" width="400"> |
+| **14. User Dashboard**<br>The new Telegram Mini App UI showing a user's personal active products. | <img src="assets/14_user_dashboard.png" width="400"> | <img src="assets/14_user_dashboard_ar.png" width="400"> |
+| **15. Hot Deals**<br>Curated list of algorithmically detected discounts for the user. | <img src="assets/15_hot_deals.png" width="400"> | <img src="assets/15_hot_deals_ar.png" width="400"> |
 
 ---
 *Note: Usernames and Chat IDs have been automatically blurred for privacy.*
