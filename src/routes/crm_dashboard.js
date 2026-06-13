@@ -887,7 +887,7 @@ export function renderCrmHTML(lang = 'en') {
       .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic' : 'font-sans'} bg-gray-900 text-gray-100 overflow-hidden">
+<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic' : 'font-sans'} bg-gray-900 text-gray-100">
     
     <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
         <div class="flex items-center gap-2">
