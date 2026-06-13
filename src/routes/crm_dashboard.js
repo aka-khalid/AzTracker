@@ -115,10 +115,6 @@ export async function fetchAPI(request, env, ctx) {
       }
     
       if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
-          return { user: { id: 760872964, first_name: "Khalid" }, isRootAdmin: true };
-      }
-    
-      if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
           return { user: { id: 317422571, first_name: "Khalid" }, isRootAdmin: true };
       }
     

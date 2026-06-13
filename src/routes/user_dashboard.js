@@ -11,10 +11,6 @@ export async function fetchUserAPI(request, env, ctx) {
       return new Response("Unauthorized", { status: 401 });
     }
     const initData = authHeader.substring("Bearer ".length);
-    if (initData === "puppeteer_mock") {
-        var chatId = "760872964";
-    } else {
-    
     const parsed = new URLSearchParams(initData);
     const hash = parsed.get("hash");
     parsed.delete("hash");
@@ -41,7 +37,6 @@ export async function fetchUserAPI(request, env, ctx) {
     const userObj = JSON.parse(parsed.get("user") || "{}");
     const chatId = userObj.id ? String(userObj.id) : null;
 
-    } // close else block
     if (!chatId) return new Response("Unauthorized", { status: 401 });
 
     if (url.pathname === "/api/user/products" && request.method === "GET") {
