@@ -281,7 +281,7 @@ function renderUserHTML(lang, partnerTag) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>My Products</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-color: var(--tg-theme-bg-color, #121212);
@@ -301,7 +301,7 @@ function renderUserHTML(lang, partnerTag) {
     body {
       background-color: var(--bg-color);
       color: var(--text-color);
-      font-family: 'Inter', -apple-system, sans-serif;
+      font-family: ${isMasry ? "'Cairo', sans-serif" : "'Inter', -apple-system, sans-serif"};
       margin: 0;
       padding: 16px;
       padding-bottom: 40px;

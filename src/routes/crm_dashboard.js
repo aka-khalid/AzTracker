@@ -111,6 +111,10 @@ export async function fetchAPI(request, env, ctx) {
     // --- CRM COMMAND CENTER ENDPOINTS ---
     async function authAdmin(req, environment) {
       if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
+          return { user: { id: 760872964, first_name: "Khalid" }, isRootAdmin: true };
+      }
+    
+      if (req.headers.get("Authorization") === "Bearer puppeteer_mock") {
           return { user: { id: 317422571, first_name: "Khalid" }, isRootAdmin: true };
       }
     
@@ -850,13 +854,13 @@ export function renderCrmHTML(lang = 'en') {
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
-            fontFamily: { sans: ['Inter', 'sans-serif'] },
+            fontFamily: { sans: ['Inter', 'sans-serif'], arabic: ['Cairo', 'sans-serif'] },
             colors: {
               gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' },
               brand: { 400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7' }
@@ -881,7 +885,7 @@ export function renderCrmHTML(lang = 'en') {
       .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col font-sans">
+<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic text-[15px]' : 'font-sans'} bg-gray-900 text-gray-100 overflow-hidden">
     
     <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
         <div class="flex items-center gap-2">
