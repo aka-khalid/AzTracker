@@ -677,7 +677,7 @@ function renderUserHTML(lang, partnerTag) {
           const amazonRecentlySeen = p.seen_amazon_eg_at && (now - p.seen_amazon_eg_at) < SEVEN_DAYS;
           const usedRecentlySeen = p.seen_resale_at && (now - p.seen_resale_at) < SEVEN_DAYS;
 
-          const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price && !amazonRecentlySeen && !usedRecentlySeen;
+          const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price;
           let pricesHtml = '';
           if (isOutOfStock) {
               pricesHtml = '<div style="background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: var(--destructive-color); padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0; font-weight: 500; font-size: 14px;">' +
