@@ -337,7 +337,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       return;
     }
 
-    const extractedName = extractNameFromUrl(expandedUrl);
+    let extractedName = extractNameFromUrl(expandedUrl);
 
     // Fetch Arabic product name (non-blocking — falls back to English only)
     let arabicName = null;
@@ -355,16 +355,22 @@ async function handleMessage(message, env, baseUrl, ctx) {
         if (!arabicName) {
           arabicName = await parser.scrapeArabicTitle(pid);
         }
+        // Fetch English if URL extraction failed
+        if (!extractedName) {
+          extractedName = await parser.scrapeEnglishTitle(pid);
+        }
       }
     } catch (e) {
-      console.warn('[Webhook] Arabic name fetch failed (non-blocking):', e.message);
+      console.warn('[Webhook] Name fetch failed (non-blocking):', e.message);
     }
 
     // Insert into Global_Products to track price globally
     await env.DB.prepare(`
       INSERT INTO Global_Products (asin, name, name_ar, last_updated)
       VALUES (?, ?, ?, 0)
-      ON CONFLICT(asin) DO UPDATE SET name = excluded.name, name_ar = COALESCE(excluded.name_ar, name_ar)
+      ON CONFLICT(asin) DO UPDATE SET 
+        name = COALESCE(NULLIF(excluded.name, excluded.asin), name), 
+        name_ar = COALESCE(excluded.name_ar, name_ar)
     `).bind(pid, extractedName || pid, arabicName).run();
 
     // Insert into User_Subscriptions

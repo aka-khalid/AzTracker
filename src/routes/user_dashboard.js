@@ -287,8 +287,8 @@ function renderUserHTML(lang, partnerTag) {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
-      font-size: 13px;
+      margin-bottom: 12px;
+      font-size: 14px;
     }
     .slider-header span { color: var(--accent); font-weight: 600; }
     input[type=range] {
@@ -418,13 +418,14 @@ function renderUserHTML(lang, partnerTag) {
       allProducts.forEach((p, idx) => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
         if(!name) name = isMasry ? 'منتج غير معروف' : 'Unknown Product';
-        let img = p.image_url ? p.image_url : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Crect width='70' height='70' rx='8' fill='%23222'/%3E%3C/svg%3E";
+        const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
+        let img = p.image_url ? p.image_url : placeholder;
         
         let targetSliderVal = p.target_price || p.atl || 0;
         let maxVal = Math.max(p.new_price||0, p.used_price||0, p.amazon_price||0) * 1.2 || 1000;
         if(targetSliderVal > maxVal) maxVal = targetSliderVal * 1.2;
 
-        let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString() : (isMasry ? 'أبداً' : 'Never');
+        let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString(isMasry ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'numeric', year: 'numeric' }) : (isMasry ? 'أبداً' : 'Never');
 
         let amzUrl = 'https://www.amazon.eg/dp/' + p.asin;
         let resaleUrl = 'https://www.amazon.eg/dp/' + p.asin + '?m=A2N2MP47XAP1MK';
@@ -456,15 +457,15 @@ function renderUserHTML(lang, partnerTag) {
           '<div class="prices-grid">' +
             '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
               '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
-              '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + formatEGP(p.new_price) + '</div>' +
+              '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : (isMasry ? 'شوف' : 'Check')) + '</div>' +
             '</div>' +
             '<div class="price-box" title="' + (isMasry ? 'مستعمل' : 'Resale') + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
               '<div class="price-label">' + (isMasry ? 'مستعمل' : 'Resale') + '</div>' +
-              '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + formatEGP(p.used_price) + '</div>' +
+              '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (isMasry ? 'شوف' : 'Check')) + '</div>' +
             '</div>' +
             '<div class="price-box" title="' + (isMasry ? 'أمازون' : 'Amazon.eg') + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
               '<div class="price-label">' + (isMasry ? 'أمازون' : 'Amazon.eg') + '</div>' +
-              '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + formatEGP(p.amazon_price) + '</div>' +
+              '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (isMasry ? 'شوف' : 'Check')) + '</div>' +
             '</div>' +
           '</div>' +
 
@@ -487,7 +488,7 @@ function renderUserHTML(lang, partnerTag) {
             '<button class="primary" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (isMasry ? 'شوفه على أمازون' : 'Open in Amazon') + '</button>' +
           '</div>' +
           
-          '<div class="last-updated">' + (isMasry ? 'آخر فحص: ' : 'Last Checked: ') + '<span dir="ltr" style="display:inline-block;">' + lastUpd + '</span></div>' +
+          '<div class="last-updated">' + (isMasry ? 'آخر فحص: ' : 'Last Checked: ') + '<span>' + lastUpd + '</span></div>' +
         '</div>';
       });
       document.getElementById('app').innerHTML = html;

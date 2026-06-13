@@ -56,7 +56,8 @@ export class AmazonEdgeParser {
         'images.primary.large'
       ],
       partnerTag: this.partnerTag,
-      condition: 'Any'
+      condition: 'Any',
+      languagesOfPreference: ['en_AE']
     };
 
     const response = await fetch(this.endpoint, {
@@ -155,7 +156,7 @@ export class AmazonEdgeParser {
    * Fallback when the Creators API doesn't return Arabic titles.
    */
   async scrapeArabicTitle(asin) {
-    const url = `https://www.amazon.eg/dp/${asin}`;
+    const url = `https://www.amazon.eg/dp/${asin}?language=ar_AE`;
     try {
       const response = await fetch(url, {
         headers: {
@@ -173,6 +174,33 @@ export class AmazonEdgeParser {
       }
     } catch (e) {
       console.warn(`[AmazonEdgeParser] Arabic scrape failed for ${asin}:`, e.message);
+    }
+    return null;
+  }
+
+  /**
+   * Scrape the English amazon.eg product page for the product title.
+   * Fallback when the Creators API doesn't return English titles.
+   */
+  async scrapeEnglishTitle(asin) {
+    const url = `https://www.amazon.eg/dp/${asin}?language=en_AE`;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept-Language': 'en,en-US;q=0.9',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) return null;
+      const html = await response.text();
+      const match = html.match(/id="productTitle"[^>]*>([^<]+)</);
+      if (match && match[1]) {
+        const title = match[1].trim();
+        return title;
+      }
+    } catch (e) {
+      console.warn(`[AmazonEdgeParser] English scrape failed for ${asin}:`, e.message);
     }
     return null;
   }

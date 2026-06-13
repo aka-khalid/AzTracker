@@ -51,6 +51,23 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Architectural Council Batch 2:** Resolved 3 critical audit findings — string parsing trap, absolute CSS in RTL context, and Fusha-translated technical constants — in a single coordinated fix pass.
   </details>
 
+- [x] **Phase 6.12: Telegram Web App & Resilient Fallback Scraping**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Replace the limited inline keyboard menu with a rich, interactive Telegram Web App UI for user product management, and enforce strict language-based name enrichment.
+
+  **The Strategy:** Fully deprecated the inline message-based user menu in favor of an edge-rendered HTML dashboard served natively from the Cloudflare Worker via `src/routes/user_dashboard.js`. Enforced strong cryptographic security using `crypto.subtle` for HMAC-SHA256 Telegram `initData` validation. Significantly upgraded the scraper engine's fallback logic to fetch English (`en_AE`) and Arabic (`ar_AE`) titles manually over HTTP if the Amazon Creators API fails or returns cross-pollinated languages.
+
+  **Execution Highlights:**
+  - **Telegram Web App CRM:** Built a fully responsive HTML/CSS/JS dashboard tracking UI with zero frontend frameworks. Users can pause, delete, and set target prices via a synchronized slider and input field.
+  - **Secure Edge Validation:** Implemented native HMAC verification for API requests (`/api/user/*`) using Cloudflare's SubtleCrypto API to cryptographically guarantee Web App requests originate from authenticated Telegram users.
+  - **Dynamic Affiliate Injection:** Injected the Amazon Associates `partnerTag` dynamically into the target URL buttons (New, Resale, Amazon.eg) within the Web App right before opening the browser.
+  - **Explicit HTTP Language Scraping:** Bypassed Amazon's IP-based geolocation by explicitly appending `?language=en_AE` and `?language=ar_AE` to the fallback HTTP scraper URLs. 
+  - **Arabic Cross-Pollination Fix:** Added intelligent detection for cases where the Creators API incorrectly returns an Arabic name in the English field. The scraper engine now detects Arabic characters (`/[\u0600-\u06FF]/`), forcefully shunts the text to the `name_ar` database column, and triggers the English fallback scraper to ensure English localization isn't corrupted.
+  - **Synchronous Webhook Scraping:** Upgraded the `telegram_webhook.js` link processor to immediately trigger synchronous HTTP extraction for both Arabic and English names (bypassing the queue) if they can't be extracted from the URL structure directly.
+  </details>
+
 ---
 
 ## 🔮 Phase 7: Continuous Improvement & R&D

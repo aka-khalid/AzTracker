@@ -115,9 +115,21 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
     // For ASINs still missing Arabic names, try scraping amazon.eg pages
     for (const item of liveItems) {
+      // If the API gave us an Arabic name in the English field, swap it!
+      if (item.name && /[\u0600-\u06FF]/.test(item.name)) {
+        if (!item.name_ar) item.name_ar = item.name;
+        item.name = null; 
+      }
+
       if (!item.name_ar) {
         const scraped = await parser.scrapeArabicTitle(item.asin);
         if (scraped) item.name_ar = scraped;
+        // Small delay to avoid rate-limiting
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (!item.name) {
+        const scraped = await parser.scrapeEnglishTitle(item.asin);
+        if (scraped) item.name = scraped;
         // Small delay to avoid rate-limiting
         await new Promise(r => setTimeout(r, 200));
       }

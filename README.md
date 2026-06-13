@@ -46,6 +46,9 @@ Telegram alerts are decoupled from the main scraper engine using Cloudflare Queu
 ### 📉 Distributed Scraping with Dynamic Governor Logic
 The scraper engine processes products in batches of 10 via Cloudflare Queues (`scraper-queue`). A dynamic Governor in the cron trigger calculates optimal batch sizes and distribution intervals based on the total active subscription pool.
 
+### 📱 User Web App Dashboard & Fallback Scraping
+The standard user product management has been fully upgraded to an interactive Telegram Web App. It shares the same secure HMAC-SHA256 edge-rendering architecture as the admin CRM. Additionally, an intelligent HTTP fallback scraper explicitly targets both English (`en_AE`) and Arabic (`ar_AE`) amazon.eg locales if the Creators API fails, guaranteeing perfect cross-lingual localization without relying on user IP logic.
+
 ---
 
 ## 🛠️ Architecture Pipeline

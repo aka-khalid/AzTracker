@@ -13,15 +13,15 @@ The project utilizes a strict Dual-Environment Workflow to ensure safe developme
 
 ### 1.1 Worker Configurations
 We maintain two separate Worker environments defined in `wrangler.toml`:
-- **Development** (Default): `aztracker-v2`
-- **Production**: `aztracker-v2-prod`
+- **Development** (Default): `aztracker-dev-worker`
+- **Production**: `aztracker-prod-worker`
 
-When deploying or testing locally, `aztracker-v2` is used. Production releases require the `--env production` flag.
+When deploying or testing locally, `aztracker-dev-worker` is used. Production releases require the `--env production` flag.
 
 ### 1.2 Infrastructure Separation
-| Resource | Development (`aztracker-v2`) | Production (`aztracker-v2-prod`) |
+| Resource | Development (`aztracker-dev-worker`) | Production (`aztracker-prod-worker`) |
 |----------|-----------------------------|---------------------------------|
-| **D1 Database** | `aztracker-test-db` | `aztracker-prod-db` |
+| **D1 Database** | `aztracker-dev-db` | `aztracker-prod-db` |
 | **KV Namespace** | Shared (`AZTRACKER_DB`) | Shared (`AZTRACKER_DB`) |
 | **Queues** | `scraper-queue`, `telegram-outbox` | `scraper-queue`, `telegram-outbox` |
 | **Cron Trigger** | `* * * * *` (if active) | `* * * * *` (if active) |
@@ -97,7 +97,7 @@ npx wrangler deploy --env production
 ### 3.4 Webhook Registration
 To start receiving messages from Telegram, you must register the webhook URL:
 ```bash
-curl -F "url=https://aztracker-v2-prod.<your-cloudflare-subdomain>.workers.dev/webhook/<TELEGRAM_WEBHOOK_SECRET>" \
+curl -F "url=https://aztracker-prod-worker.<your-cloudflare-subdomain>.workers.dev/webhook/<TELEGRAM_WEBHOOK_SECRET>" \
      https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook
 ```
 *(Replace placeholders with your actual production domain and secret.)*
