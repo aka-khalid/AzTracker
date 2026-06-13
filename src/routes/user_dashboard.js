@@ -351,6 +351,10 @@ function renderUserHTML(lang, partnerTag) {
     .price-val {
       font-size: 14px;
       font-weight: 700;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .price-val.active {
       color: #4ade80;
