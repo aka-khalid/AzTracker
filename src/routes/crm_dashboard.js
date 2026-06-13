@@ -839,14 +839,17 @@ export async function fetchAPI(request, env, ctx) {
 
   return new Response("Not Found", { status: 404 });
 }
-
 export function renderCrmHTML(lang = 'en') {
   // Escape a translated string for safe injection into a JS double-quoted string literal.
   // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
   const isMasry = lang === 'masry';
   const js = (key, vars) => JSON.stringify(t(key, lang, vars));
+  const htmlLang = lang === 'masry' ? 'ar' : 'en';
+  const htmlDir = isMasry ? 'rtl' : 'ltr';
+  const htmlScale = isMasry ? ' style="font-size: 115%;"' : '';
+
   return `<!DOCTYPE html>
-<html lang="${lang}" dir="${lang === 'masry' ? 'rtl' : 'ltr'}" class="dark">
+<html lang="${htmlLang}" dir="${htmlDir}"${htmlScale} class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -885,7 +888,7 @@ export function renderCrmHTML(lang = 'en') {
       .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic text-[15px]' : 'font-sans'} bg-gray-900 text-gray-100 overflow-hidden">
+<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic' : 'font-sans'} bg-gray-900 text-gray-100 overflow-hidden">
     
     <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
         <div class="flex items-center gap-2">
@@ -1774,7 +1777,7 @@ export function renderCrmHTML(lang = 'en') {
 
             const data = await fetchAPI('/paused-products');
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No paused products found.</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.empty_paused')} + '</div>';
                 return;
             }
 
