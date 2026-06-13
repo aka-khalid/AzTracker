@@ -587,9 +587,16 @@ export async function executeScrapeEngine(env, offset = 0) {
              const displayLastPrice = histMean > 0 ? histMean : lPrice;
              const dropPct = ((displayLastPrice - broadcastPrice) / displayLastPrice) * 100;
              
-             const isStandardDeal = (zScore <= -1.0) && (dropPct >= 10.0);
-             const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= 5.0);
-             const isFlashSale = dropPct >= 20.0;
+             let reqDrop = 10.0;
+             if (displayLastPrice <= 1000) reqDrop = 15.0;
+             else if (displayLastPrice <= 5000) reqDrop = 10.0;
+             else if (displayLastPrice <= 20000) reqDrop = 7.0;
+             else if (displayLastPrice <= 50000) reqDrop = 5.0;
+             else reqDrop = 3.0;
+             
+             const isStandardDeal = (zScore <= -1.0) && (dropPct >= reqDrop);
+             const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= reqDrop / 2.0);
+             const isFlashSale = dropPct >= (reqDrop * 2.0);
              
              if (isStandardDeal || isAtlDeal || isFlashSale) {
                  bestDeal.push({

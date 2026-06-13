@@ -46,8 +46,14 @@ Telegram alerts are decoupled from the main scraper engine using Cloudflare Queu
 ### 📉 Distributed Scraping with Dynamic Governor Logic
 The scraper engine processes products in batches of 10 via Cloudflare Queues (`scraper-queue`). A dynamic Governor in the cron trigger calculates optimal batch sizes and distribution intervals based on the total active subscription pool.
 
-### 📱 User Web App Dashboard & Fallback Scraping
-The standard user product management has been fully upgraded to an interactive Telegram Web App. It shares the same secure HMAC-SHA256 edge-rendering architecture as the admin CRM. Additionally, an intelligent HTTP fallback scraper explicitly targets both English (`en_AE`) and Arabic (`ar_AE`) amazon.eg locales if the Creators API fails, guaranteeing perfect cross-lingual localization without relying on user IP logic.
+### 📱 User Web App Dashboard & Hot Deals Discovery
+The standard user product management has been fully upgraded to an interactive Telegram Web App, sharing the same secure HMAC-SHA256 edge-rendering architecture as the admin CRM. It introduces a global **Hot Deals (🔥 لقطات)** tab that allows standard users to effortlessly discover massive price drops dynamically detected by the engine. Additionally, an intelligent HTTP fallback scraper guarantees perfect cross-lingual localization.
+
+### ⏱️ Inflation-Resistant Deal Detection (EMA) & Dynamic Buckets
+The deal detection engine calculates a **Time-Weighted Average (EMA)** using a 30-day exponential decay half-life, naturally forgetting pre-inflation prices to establish a highly accurate baseline. It evaluates deals using **Dynamic Price Buckets** (e.g., requiring a 15% drop for 100 EGP items, but only a 3% drop for 100,000 EGP laptops), ensuring notifications perfectly mimic human psychological pricing without hardcoded limits.
+
+### 🔗 Omnichannel Direct-Tracking Deep-Links
+Omnichannel Telegram broadcast alerts now include a dynamic `https://t.me/AzTrackerr_bot?start=track_{asin}` deep-link. Clicking the "🎯 Track Deal" button opens the bot and triggers a fallback payload router that automatically subscribes the user to the product with zero friction.
 
 ---
 
@@ -153,6 +159,9 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs. |
 | `AMZN_ASSOCIATES_TAG` | Amazon Associates Tracking ID for the Creators API payload. |
 | `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting. |
+
+### 🔄 Automated CI/CD Database Synchronization
+The project features a full CI/CD pipeline using GitHub Actions (`sync-prod-to-dev.yml`). On deployment, it safely mirrors the production D1 databases to the development environment by utilizing `sed` to intelligently transform destructive `INSERT INTO` SQL commands into safe `INSERT OR REPLACE INTO` commands. It simultaneously uses a custom Node.js script to bulk-mirror the Cloudflare KV namespaces, guaranteeing identical environments without breaking dev constraints.
 
 ### GitHub Repository Secrets (for CI/CD Actions)
 
