@@ -38,7 +38,7 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 AzTracker strictly separates relational state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all user tracking, subscriptions, concurrency locks, audit logs, and the Hysteresis Engine. **Cloudflare KV** serves as a NoSQL document store for massive time-series arrays and cached Amazon access tokens, avoiding database read-exhaustion.
 
 ### 🛡️ Edge-Rendered CRM & SIEM Auditing
-The Admin Panel opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
+The Admin Panel opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. The CRM seamlessly pulls actual database product thumbnails as fallback-aware product cards. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
 
 ### ⚛️ Decoupled Async Message Delivery
 Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The queue worker implements a Two-Phase Commit (2PC) that prevents duplicate alerts by updating D1 flags only upon a successful HTTP 200 Telegram delivery. Failed deliveries trigger automatic retry with exponential backoff.
@@ -141,7 +141,7 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `GITHUB_OWNER` | GitHub owner for the project. |
 | `GITHUB_REPO` | GitHub repository name. |
 
-### Secrets (must be injected via `wrangler secret put`)
+### Cloudflare Secrets (via `wrangler secret put`)
 
 | Variable | Description |
 |----------|-------------|
@@ -153,6 +153,13 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs. |
 | `AMZN_ASSOCIATES_TAG` | Amazon Associates Tracking ID for the Creators API payload. |
 | `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting. |
+
+### GitHub Repository Secrets (for CI/CD Actions)
+
+| Variable | Description |
+|----------|-------------|
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID for `deploy_worker.yml` and `sync-prod-to-dev.yml`. |
+| `CLOUDFLARE_API_TOKEN` | Custom API Token with `D1 (Edit)`, `Worker Scripts (Edit)`, and `Workers KV Storage (Edit)`. |
 
 ### Cloudflare Bindings (configured in `wrangler.toml`)
 

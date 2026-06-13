@@ -73,7 +73,7 @@ npx wrangler d1 execute aztracker-prod-db --env production --remote --file=schem
 ```
 
 ### 3.2 Secret Management
-Secrets must be injected per environment. They are never stored in plaintext.
+Secrets must be injected per environment into Cloudflare. They are never stored in plaintext.
 ```bash
 # Development
 npx wrangler secret put TELEGRAM_BOT_TOKEN
@@ -81,11 +81,19 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_BOT_TOKEN --env production
 ```
 
-**Required Secrets:**
+**Required Cloudflare Secrets:**
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ROOT_ADMIN_IDS`
 - `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`, `AMZN_ASSOCIATES_TAG`
 
-### 3.3 Deploying Code
+### 3.3 GitHub Actions CI/CD Secrets
+To enable automated deployments and dual-environment database syncs via GitHub Actions, configure the following **Repository Secrets** in GitHub:
+- `CLOUDFLARE_ACCOUNT_ID`: Your Cloudflare Account ID.
+- `CLOUDFLARE_API_TOKEN`: A Custom API Token with the following permissions:
+  1. `Account` | `Worker Scripts` | `Edit` (Required for deploying)
+  2. `Account` | `D1` | `Edit` (Required for syncing D1 databases)
+  3. `Account` | `Workers KV Storage` | `Edit` (Required for syncing KV namespaces)
+
+### 3.4 Deploying Code
 ```bash
 # Deploy to Development
 npx wrangler deploy
@@ -94,7 +102,12 @@ npx wrangler deploy
 npx wrangler deploy --env production
 ```
 
-### 3.4 Webhook Registration
+Alternatively, push to the `main` or `dev` branches to automatically trigger the GitHub Actions deployment workflow (`deploy_worker.yml`).
+
+### 3.5 Synchronizing Environments
+Use the GitHub Action **"Sync Prod to Dev"** (`sync-prod-to-dev.yml`) to automatically export production data, transform it, and import it safely into the Dev D1 Database and KV namespace without dropping tables or breaking constraints.
+
+### 3.6 Webhook Registration
 To start receiving messages from Telegram, you must register the webhook URL:
 ```bash
 curl -F "url=https://aztracker-prod-worker.<your-cloudflare-subdomain>.workers.dev/webhook/<TELEGRAM_WEBHOOK_SECRET>" \
