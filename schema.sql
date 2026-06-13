@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS Global_Products (
     asin TEXT PRIMARY KEY,
     name TEXT,
     name_ar TEXT, -- Arabic product name (fetched from Amazon.eg)
+    image_url TEXT, -- Product image URL
 
     -- Live Pricing & Sellers
     new_price REAL,
