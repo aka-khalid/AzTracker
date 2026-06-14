@@ -293,11 +293,11 @@ export async function fetchAPI(request, env, ctx) {
             FROM Users u
             LEFT JOIN User_Subscriptions s ON u.chat_id = s.chat_id AND s.is_paused = 0
             GROUP BY u.chat_id
-            ORDER BY u.created_at DESC
+            ORDER BY u.last_active DESC
           `).all(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first(),
-          env.DB.prepare("SELECT COUNT(DISTINCT asin) as pausedCount FROM User_Subscriptions WHERE is_paused = 1").first(),
+          env.DB.prepare("SELECT COUNT(*) as pausedCount FROM (SELECT g.asin FROM Global_Products g LEFT JOIN User_Subscriptions s ON g.asin = s.asin GROUP BY g.asin HAVING SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) = 0)").first(),
           env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
           env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value')
         ]);
@@ -378,14 +378,15 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       const rows = await env.DB.prepare(`
-        SELECT s.chat_id, s.asin, s.added_at, s.paused_at, p.image_url,
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price,
-               u.first_name, u.username
-        FROM User_Subscriptions s
-        JOIN Global_Products p ON s.asin = p.asin
-        JOIN Users u ON s.chat_id = u.chat_id
-        WHERE s.is_paused = 1
-        ORDER BY s.paused_at DESC NULLS LAST, s.added_at DESC
+        SELECT 
+            g.asin, g.name, g.name_ar, g.image_url, g.amazon_price, g.new_price, g.used_price, g.always_track,
+            SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) as active_subs,
+            SUM(CASE WHEN s.is_paused = 1 THEN 1 ELSE 0 END) as paused_subs
+        FROM Global_Products g
+        LEFT JOIN User_Subscriptions s ON g.asin = s.asin
+        GROUP BY g.asin
+        HAVING active_subs = 0 AND (paused_subs > 0 OR s.asin IS NULL)
+        ORDER BY g.always_track DESC, paused_subs DESC
         LIMIT 100
       `).all();
 
@@ -403,13 +404,13 @@ export async function fetchAPI(request, env, ctx) {
 
       const rows = await env.DB.prepare(`
         SELECT s.chat_id, s.asin, s.added_at, s.target_price, p.image_url,
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price,
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.always_track,
                u.first_name, u.username
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         JOIN Users u ON s.chat_id = u.chat_id
         WHERE s.is_paused = 0
-        ORDER BY s.added_at DESC
+        ORDER BY s.added_at DESC, s.asin ASC
       `).all();
 
       return new Response(JSON.stringify({
@@ -493,7 +494,7 @@ export async function fetchAPI(request, env, ctx) {
       await env.DB.batch(stmts);
 
       const adminId = auth.user.id.toString();
-      ctx.waitUntil(logAudit(env, adminId, "PURGE_GHOSTS", "global", `Purged ${validAsins.length} ghost products: ${validAsins.join(", ")}`));
+      ctx.waitUntil(logAudit(env, adminId, "PURGE_GHOSTS", "global", { count: validAsins.length }));
 
       return new Response(JSON.stringify({
         success: true,
@@ -514,7 +515,7 @@ export async function fetchAPI(request, env, ctx) {
       
       const subs = await env.DB.prepare(`
         SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at, p.image_url,
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin,
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin, p.always_track,
                u.first_name, u.username
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
@@ -538,10 +539,11 @@ export async function fetchAPI(request, env, ctx) {
       
       const products = await env.DB.prepare(`
         SELECT s.asin, s.target_price, s.is_paused, p.image_url, 
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller, p.always_track
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
+        ORDER BY s.added_at DESC, s.asin ASC
       `).bind(targetId).all();
       
       return new Response(JSON.stringify(products.results || []), {
@@ -584,7 +586,7 @@ export async function fetchAPI(request, env, ctx) {
           "SELECT COUNT(*) as cnt, MAX(last_updated) as max_ts FROM Global_Products"
         ).first();
         await env.SCRAPER_QUEUE.send({ offset: 0 });
-        ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", "Triggered global price check (queued)"));
+        ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", {}));
 
         // Removed 120s polling loop to prevent hitting Cloudflare 30s waitUntil timeout limit.
         // We notify immediately that the scrape is queued.
@@ -610,7 +612,7 @@ export async function fetchAPI(request, env, ctx) {
           for (let i = 0; i < queueMsgs.length; i += 100) {
             await env.MESSAGE_QUEUE.sendBatch(queueMsgs.slice(i, i + 100));
           }
-          await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", "Sent global broadcast");
+          await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", {});
         })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
       }
@@ -646,7 +648,7 @@ export async function fetchAPI(request, env, ctx) {
         ).run();
 
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, getWelcomeMessage(tl, defaultLimit)); })());
-        ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, "Approved join request"));
+        ctx.waitUntil(logAudit(env, adminId, "APPROVE_USER", targetId, {}));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
         // Invalidate other admins' inline messages so buttons disappear automatically
         if (queueRow?.admin_messages) {
@@ -683,7 +685,7 @@ export async function fetchAPI(request, env, ctx) {
           await env.DB.prepare("INSERT INTO Users (chat_id, first_name, username, role, item_limit, created_at, lang) VALUES (?, ?, ?, 'rejected', ?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET role = 'rejected'").bind(targetId, queueRow?.first_name || '', queueRow?.username || '', env.DEFAULT_USER_PRODUCT_LIMIT || "3", Date.now(), userLang).run();
           ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_rejected', tl)); })());
         }
-        ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, `Rejected join request${queueRow?.request_type === 'unban' ? ' (unban — permanent)' : ''}`));
+        ctx.waitUntil(logAudit(env, adminId, "REJECT_USER", targetId, { unban: queueRow?.request_type === 'unban' }));
         // Invalidate other admins' inline messages so buttons disappear automatically
         if (queueRow?.admin_messages) {
           let adminMessages = {};
@@ -702,7 +704,7 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("UPDATE Users SET role = 'rejected', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_revoked', tl)); })());
-        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, "Revoked user access (soft) — subscriptions paused"));
+        ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, {}));
       } else if (action === "unban") {
         // Check if there's a pending unban request in Join_Queue (from user's unban request)
         const queueRow = await env.DB.prepare("SELECT admin_messages FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
@@ -720,7 +722,7 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("UPDATE Users SET role = 'approved', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_restored', tl)); ctx.waitUntil(setChatMenuButton(env, targetId, 'https://' + new URL(request.url).hostname, tl, false)); })());
-        ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user and resumed subscriptions"));
+        ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, {}));
         // Invalidate other admins' inline messages so buttons disappear automatically
         if (queueRow?.admin_messages) {
           let adminMessages = {};
@@ -734,51 +736,52 @@ export async function fetchAPI(request, env, ctx) {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         await env.DB.prepare("UPDATE Users SET role = 'admin' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_promoted', tl)); })());
-        ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, "Promoted user to Admin"));
+        ctx.waitUntil(logAudit(env, adminId, "PROMOTE_ADMIN", targetId, {}));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "demote") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (targetId === adminId) return new Response("Cannot demote yourself", { status: 400 });
         await env.DB.prepare("UPDATE Users SET role = 'approved' WHERE chat_id = ?").bind(targetId).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_demoted', tl)); })());
-        ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, "Demoted Admin to standard user"));
+        ctx.waitUntil(logAudit(env, adminId, "DEMOTE_ADMIN", targetId, {}));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "set_limit") {
         const newLimit = parseInt(data.limit);
         if (isNaN(newLimit) || newLimit < 1) return new Response("Invalid limit", { status: 400 });
         await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_limit_updated', tl, { limit: newLimit })); })());
-        ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, `Changed limit to ${newLimit}`));
+        ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, { limit: newLimit }));
       } else if (action === "delete_product") {
         const asin = data.asin;
         const result = await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, `Deleted product ${asin}`));
+        ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, { asin }));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
-      } else if (action === "pause_product") {
+      } else if (action === "toggle_keep_alive") {
         const asin = data.asin;
-        const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(Date.now(), targetId, asin).run();
+        const currentTracker = await env.DB.prepare("SELECT always_track FROM Global_Products WHERE asin = ?").bind(asin).first('always_track');
+        if (!currentTracker) {
+             const limitRes = await env.DB.prepare("SELECT COUNT(*) as count FROM Global_Products WHERE always_track = 1").first();
+             if (limitRes && limitRes.count >= 500) {
+                 return new Response(JSON.stringify({ error: 'limit_reached', message: 'Maximum 500 global products allowed.' }), { status: 400 });
+             }
+        }
+        const result = await env.DB.prepare("UPDATE Global_Products SET always_track = CASE WHEN always_track = 1 THEN 0 ELSE 1 END WHERE asin = ?").bind(asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
-      } else if (action === "resume_product") {
-        const asin = data.asin;
-        const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
-        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
+        const actionLog = currentTracker ? "DISABLE_KEEP_ALIVE" : "ENABLE_KEEP_ALIVE";
+        ctx.waitUntil(logAudit(env, adminId, actionLog, "global", { asin }));
       } else if (action === "set_target") {
         const asin = data.asin;
         const target = parseFloat(data.target);
         if (isNaN(target)) return new Response("Invalid target", { status: 400 });
         const result = await env.DB.prepare("UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?").bind(target, targetId, asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, `Set target price for ${asin} to ${target}`));
+        ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, { asin, target }));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_direct_message', tl, { message: data.message })); })());
-        ctx.waitUntil(logAudit(env, adminId, "DIRECT_MESSAGE", targetId, "Sent direct message"));
+        ctx.waitUntil(logAudit(env, adminId, "DIRECT_MESSAGE", targetId, {}));
       } else {
         return new Response("Unknown action", { status: 400 });
       }
@@ -829,7 +832,7 @@ export async function fetchAPI(request, env, ctx) {
             throw new Error(`GitHub API returned ${ghRes.status}: ${errBody}`);
         }
         
-        ctx.waitUntil(logAudit(env, adminId, "SYNC_ENV", "global", "Triggered Prod-to-Dev synchronization via GitHub Actions"));
+        ctx.waitUntil(logAudit(env, adminId, "SYNC_ENV", "global", {}));
         return new Response(JSON.stringify({ success: true, message: "Synchronization started in background." }), {
             headers: { "Content-Type": "application/json" }
         });
@@ -989,15 +992,21 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             ${isProd ? '' : `
             <!-- ENV SYNC -->
             <section id="env-sync-section" class="mb-6">
-                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${isMasry ? 'مزامنة البيئة' : 'Environment Sync'}</h2>
-                <div class="glass rounded-xl p-4 flex flex-col gap-3">
-                    <div class="text-sm text-gray-400">
-                        ${isMasry ? 'نسخ بيانات الإنتاج (Prod) إلى التطوير (Dev).' : 'Copy Prod data to Dev using Github Actions.'}
-                    </div>
-                    <div class="w-full">
-                        <button onclick="triggerSync(this)" class="w-full justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 
-                            ${isMasry ? 'مزامنة الآن' : 'Sync Prod to Dev'}
+                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.env_sync_title', lang)}</h2>
+                <div class="glass rounded-xl p-4 border border-gray-800/50 relative overflow-hidden group">
+                    <div class="flex items-center gap-4 mb-4 relative z-10">
+                        <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shadow-inner group-hover:bg-brand-500/10 transition-colors">
+                            <span class="text-lg">🔄</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm font-semibold">${t('crm.env_sync_title', lang)}</div>
+                            <div class="text-[10px] text-gray-500 mt-1">
+                                ${t('crm.env_sync_desc', lang)}
+                            </div>
+                        </div>
+                        <button onclick="triggerSync(this)" class="px-4 py-2 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20 flex items-center gap-2 group-hover:shadow-[0_0_15px_rgba(14,165,233,0.3)]">
+                            <span>🔄</span>
+                            ${t('crm.btn_sync', lang)}
                         </button>
                     </div>
                 </div>
@@ -1224,6 +1233,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <div class="font-bold text-green-400 text-sm" id="chart-atl">--</div>
                 </div>
             </div>
+            <div class="flex gap-2 mb-4 overflow-x-auto pb-1" id="chart-intervals" style="display: none;">
+                <button data-interval="1W" onclick="renderChartInterval('1W')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_1w', lang)}</button>
+                <button data-interval="1M" onclick="renderChartInterval('1M')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_1m', lang)}</button>
+                <button data-interval="3M" onclick="renderChartInterval('3M')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_3m', lang)}</button>
+                <button data-interval="6M" onclick="renderChartInterval('6M')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_6m', lang)}</button>
+                <button data-interval="ALL" onclick="renderChartInterval('ALL')" class="flex-1 py-1 bg-brand-500/20 text-brand-400 text-xs rounded-full border border-brand-500/50 hover:text-brand-300 transition whitespace-nowrap">${t('crm.chart_all', lang)}</button>
+            </div>
 
             <div id="chart-loading" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_chart', lang)}</div>
             <div class="w-full relative flex-1 min-h-[300px]">
@@ -1435,23 +1451,54 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 return;
             }
             
+            const locale = document.documentElement.lang === 'masry' ? 'ar-EG' : 'en-GB';
+            const actionMap = {
+                'PURGE_GHOSTS': ${js('audit.action.purge_ghosts')},
+                'FORCE_SCRAPE': ${js('audit.action.force_scrape')},
+                'GLOBAL_BROADCAST': ${js('audit.action.global_broadcast')},
+                'APPROVE_USER': ${js('audit.action.approve_user')},
+                'REJECT_USER': ${js('audit.action.reject_user')},
+                'REVOKE_USER': ${js('audit.action.revoke_user')},
+                'UNBAN_USER': ${js('audit.action.unban_user')},
+                'PROMOTE_ADMIN': ${js('audit.action.promote_admin')},
+                'DEMOTE_ADMIN': ${js('audit.action.demote_admin')},
+                'SET_LIMIT': ${js('audit.action.set_limit')},
+                'DELETE_PRODUCT': ${js('audit.action.delete_product')},
+                'TOGGLE_KEEP_ALIVE': ${js('audit.action.toggle_keep_alive')},
+                'ENABLE_KEEP_ALIVE': ${js('audit.action.enable_keep_alive')},
+                'DISABLE_KEEP_ALIVE': ${js('audit.action.disable_keep_alive')},
+                'DIRECT_MESSAGE': ${js('audit.action.direct_message')},
+                'SET_TARGET': ${js('audit.action.set_target')},
+                'SYNC_ENV': ${js('audit.action.sync_env')}
+            };
+
             container.innerHTML = logs.map(log => {
                 const date = new Date(log.ts);
-                const timeStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' +
-                              date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                const timeStr = date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
                 const adminDisplay = log.adminHandle ? escapeHtml(log.adminHandle) + ' <span class="text-[10px] opacity-60">(' + escapeHtml(log.adminId) + ')</span>' : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.adminId) + '</code>';
                 let targetDisplay = '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.target) + '</code>';
                 if (log.targetHandle) targetDisplay = escapeHtml(log.targetHandle) + ' <span class="text-[10px] opacity-60">(' + escapeHtml(log.target) + ')</span>';
                 const actionEsc = escapeHtml(log.action);
-                const detailsEsc = escapeHtml(log.details || '');
+
+                let detailsStr = log.details || '';
+                if (typeof log.details === 'object' && log.details !== null) {
+                    let template = actionMap[log.action] || log.action;
+                    for (const [k, v] of Object.entries(log.details)) {
+                        template = template.replace(new RegExp('{' + k + '}', 'g'), escapeHtml(String(v)));
+                    }
+                    if (log.action === 'REJECT_USER' && log.details.unban) {
+                        template += (document.documentElement.lang === 'masry' ? ' (رفض فك البلوك)' : ' (unban — permanent)');
+                    }
+                    detailsStr = template;
+                }
+                const detailsEsc = typeof log.details === 'string' ? escapeHtml(log.details) : detailsStr;
 
                 return '<div class="glass rounded-xl p-4">' +
                     '<div class="flex justify-between items-center text-xs opacity-80 border-b border-gray-700/50 pb-2 mb-2">' +
-                        '<span>\u{1F552} ' + timeStr + '</span>' +
                         '<span>' + adminDisplay + '</span>' +
+                        '<span>\u{1F552} ' + timeStr + '</span>' +
                     '</div>' +
-                    '<div class="text-brand-400 font-bold text-sm mb-2">' + actionEsc + '</div>' +
                     '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold opacity-80 w-16">' + ${js('crm.audit_target')} + '</span><span class="break-all">' + targetDisplay + '</span></div>' +
                     '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">' + ${js('crm.audit_details')} + '</span><span class="break-all">' + detailsEsc + '</span></div>' +
                 '</div>';
@@ -1566,15 +1613,19 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const itemLimit = isPrivileged ? '∞' : u.item_limit;
                 const joinedDate = new Date(u.created_at).toLocaleDateString('en-GB');
 
-                let activeDaysAgo = (u.last_active && u.last_active > 0) ? (Date.now() - u.last_active) / 86400000 : Infinity;
-                let activeColor = activeDaysAgo < 7 ? 'text-emerald-500' : (activeDaysAgo < 30 ? 'text-amber-500' : 'text-red-500');
+                let activeDaysAgo = (u.last_active && u.last_active > 0) ? (Date.now() - u.last_active) / 86400000 : null;
+                let activeColor = activeDaysAgo === null ? 'text-gray-500' : (activeDaysAgo < 7 ? 'text-emerald-500' : (activeDaysAgo < 30 ? 'text-amber-500' : 'text-red-500'));
                 let activeDate = (u.last_active && u.last_active > 0) ? new Date(u.last_active).toLocaleDateString('en-GB') : '-';
 
                 let rootGlow = '';
                 if (isRoot) rootGlow = '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>';
 
                 let roleBadge = '';
-                if (isPrivileged) roleBadge = '<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border ' + roleStyle + '">' + roleEsc + '</span>';
+                if (isPrivileged) {
+                    roleBadge = '<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border ' + roleStyle + '">' + roleEsc + '</span>';
+                } else {
+                    roleBadge = '<div class="w-2 h-2 rounded-full bg-current ' + activeColor + '"></div>';
+                }
 
                 let actionBtns = '';
                 if (isRejected) {
@@ -1651,6 +1702,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> ' + ${js('crm.audit_target')} + ' ' + p.target_price + '</div>'
                     : '';
 
+                const btnIcon = p.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = p.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = p.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
@@ -1665,7 +1722,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         targetBadge +
                     '</div>' +
                     '<div class="flex gap-2">' +
-                        '<button onclick="performAction(\\'' + actionType + '\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">' + pauseIcon + ' ' + pauseLabel + '</button>' +
+                        '<button onclick="performAction(\\'toggle_keep_alive\\', \\'global\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'}, this)" class="flex-1 py-1.5 rounded text-xs font-medium transition border ' + btnClass + '">' + btnIcon + ' ' + btnLabel + '</button>' +
                         '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>' +
                         '<button onclick="performAction(\\'delete_product\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ' + ${js('crm.btn_delete_drawer')} + '</button>' +
                     '</div>' +
@@ -1739,7 +1796,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             const data = await fetchAPI('/active-products');
             const isMasry = document.documentElement.lang === 'masry';
-            const subsText = isMasry ? 'اشتراك' : 'subscriptions';
+            const subsText = ${js('crm.subscriptions_text')};
             if (!data || !data.items || data.items.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.no_active_products')} + '</div>';
                 document.getElementById('drawer-active-count').innerText = '0 ' + subsText;
@@ -1770,6 +1827,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
                 
+                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = item.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex gap-3 mb-2">
@@ -1790,11 +1853,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         \${targetBadge}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('pause_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50">
-                            \${isMasry ? '⏸️ ايقاف' : '⏸️ Pause'}
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                            \${btnIcon} \${btnLabel}
                         </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
-                            \${isMasry ? '📊 الرسم' : '📊 Chart'}
+                            📊 ${t('crm.btn_chart', lang)}
                         </button>
                     </div>
                 </div>\`;
@@ -1837,35 +1900,42 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
                 const name = (isMasry && item.name_ar) ? item.name_ar : (item.name || item.asin);
-                const userName = escapeHtml(item.first_name || 'User');
-                const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
-                const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
-                const pausedAgo = item.paused_at ? Math.round((Date.now() - item.paused_at)/86400000) + 'd ago' : 'Unknown';
+                const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
+                const tagColor = item.active_subs === 0 && item.paused_subs > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-400 bg-gray-400/10';
+                const tagLabel = item.active_subs === 0 && item.paused_subs > 0 ? ${js('crm.tag_asleep')} : ${js('crm.tag_orphaned')};
                 
+                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = item.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+
                 return \`
-                <div class="bg-gray-800/50 rounded-xl p-3 border border-amber-500/20" id="paused-item-\${item.chat_id}-\${item.asin}">
+                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" id="paused-item-\${item.asin}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                        <div class="text-xs text-gray-400">\${pausedAgo}</div>
-                    </div>
-                    <div class="flex items-center justify-between text-xs mb-3">
-                        <code class="text-gray-400">\${item.asin}</code>
-                        <span class="text-brand-400">\${displayUser}</span>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs mb-3">
+                                <code class="text-gray-400">\${item.asin}</code>
+                                <div class="mt-2 text-[10px] bg-gray-800/50 rounded-lg py-1 px-2 border border-gray-700 inline-block font-mono tracking-wider shadow-inner">
+                                    <span class="text-gray-500">0 ${t('crm.user_active', lang)} | \${item.paused_subs} ${t('crm.user_paused', lang)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
+                    <div class="flex justify-between items-end mb-3">
+                        <div class="text-sm font-semibold">\${price}</div>
+                    </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
-                            \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                            \${btnIcon} \${btnLabel}
                         </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
-                            \${isMasry ? '📊 الرسم' : '📊 Chart'}
-                        </button>
-                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
-                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
+                            📊 ${t('crm.btn_chart', lang)}
                         </button>
                     </div>
                 </div>\`;
@@ -1964,15 +2034,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
                 
-                const actionBtnHtml = item.is_paused === 1
-                    ? \`
-                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
-                            \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
-                        </button>\`
-                    : \`
-                        <button onclick="performAction('pause_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50">
-                            \${isMasry ? '⏸️ ايقاف' : '⏸️ Pause'}
-                        </button>\`;
+                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = item.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
                 return \`
                 <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
@@ -1994,12 +2060,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         \${targetBadge}
                     </div>
                     <div class="flex gap-2">
-                        \${actionBtnHtml}
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                            \${btnIcon} \${btnLabel}
+                        </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
-                            \${isMasry ? '📊 الرسم' : '📊 Chart'}
+                            📊 ${t('crm.btn_chart', lang)}
                         </button>
                         <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
-                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
+                            🗑️ ${t('crm.btn_delete_drawer', lang)}
                         </button>
                     </div>
                 </div>\`;
@@ -2039,6 +2107,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         let crmChartInstance = null;
+        let activeChartData = null;
 
         function closeChartModal() {
             document.getElementById('chart-modal').classList.add('hidden');
@@ -2053,6 +2122,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             document.getElementById('chart-loading').style.display = 'block';
             document.getElementById('crmPriceChart').style.display = 'none';
             document.getElementById('chart-metrics').style.display = 'none';
+            document.getElementById('chart-intervals').style.display = 'none';
             document.getElementById('chart-loading').innerText = ${js('crm.chart_loading')};
             
             const data = await fetchAPI('/history/' + asin); // This actually maps to /api/crm/history/ASIN due to fetchAPI prefix
@@ -2071,21 +2141,63 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 data.push({ ...lastPoint, t: currentUnix });
             }
 
+            activeChartData = data;
+            document.getElementById('chart-intervals').style.display = 'flex';
             document.getElementById('crmPriceChart').style.display = 'block';
+            
+            renderChartInterval('ALL');
+        }
+
+        function renderChartInterval(interval) {
+            if (!activeChartData || activeChartData.length === 0) return;
+
+            const buttons = document.getElementById('chart-intervals').querySelectorAll('button');
+            buttons.forEach(btn => {
+                if (btn.dataset.interval === interval) {
+                    btn.className = 'flex-1 py-1 bg-brand-500/20 text-brand-400 text-xs rounded-full border border-brand-500/50 transition whitespace-nowrap';
+                } else {
+                    btn.className = 'flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap';
+                }
+            });
+
+            const currentUnix = Math.floor(Date.now() / 1000);
+            let cutoff = 0;
+            if (interval === '1W') cutoff = currentUnix - (7 * 86400);
+            if (interval === '1M') cutoff = currentUnix - (30 * 86400);
+            if (interval === '3M') cutoff = currentUnix - (90 * 86400);
+            if (interval === '6M') cutoff = currentUnix - (180 * 86400);
+
+            let data = activeChartData.filter(p => {
+                const t = p.t !== undefined ? p.t : p.timestamp;
+                return t >= cutoff;
+            });
+
+            if (data.length === 0) data = activeChartData;
+
+            let xMin = undefined;
+            if (cutoff > 0) {
+                xMin = cutoff;
+            } else if (data.length > 0) {
+                const firstP = data[0];
+                xMin = firstP.t !== undefined ? firstP.t : firstP.timestamp;
+            }
 
             const locale = document.documentElement.lang === 'masry' ? 'ar-EG' : 'en-GB';
-            const labels = data.map(point => {
-                const t = point.t !== undefined ? point.t : point.timestamp;
-                const date = new Date(t * 1000);
-                return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) + ' ' + 
-                       date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-            });
             
-            const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
-            const usedPrices = data.map(point => point.u !== undefined ? point.u : null);
+            const newPrices = data.map(point => {
+                const t = point.t !== undefined ? point.t : point.timestamp;
+                const n = point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null);
+                return { x: t, y: n };
+            });
+            const usedPrices = data.map(point => {
+                const t = point.t !== undefined ? point.t : point.timestamp;
+                const u = point.u !== undefined ? point.u : null;
+                return { x: t, y: u };
+            });
 
-            let validPrices = newPrices.filter(p => p !== null);
-            if (validPrices.length === 0) validPrices = usedPrices.filter(p => p !== null);
+            let validPrices = newPrices.filter(p => p.y !== null).map(p => p.y);
+            if (validPrices.length === 0) validPrices = usedPrices.filter(p => p.y !== null).map(p => p.y);
+
             if (validPrices.length > 0) {
                 const ath = Math.max(...validPrices);
                 const atl = Math.min(...validPrices);
@@ -2094,18 +2206,25 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 document.getElementById('chart-ath').innerText = ath.toLocaleString() + ' ' + ${js('chrome.currency_egp')};
                 document.getElementById('chart-atl').innerText = atl.toLocaleString() + ' ' + ${js('chrome.currency_egp')};
                 document.getElementById('chart-avg').innerText = avg.toLocaleString() + ' ' + ${js('chrome.currency_egp')};
-                document.getElementById('chart-metrics').style.display = 'flex';
+            } else {
+                document.getElementById('chart-ath').innerText = '--';
+                document.getElementById('chart-atl').innerText = '--';
+                document.getElementById('chart-avg').innerText = '--';
             }
+            document.getElementById('chart-metrics').style.display = 'flex';
 
             const ctx = document.getElementById('crmPriceChart').getContext('2d');
             const lineColor = '#38bdf8';
             
             Chart.defaults.font.family = '${isMasry ? "Cairo, sans-serif" : "Inter, sans-serif"}';
 
+            if (crmChartInstance) {
+                crmChartInstance.destroy();
+            }
+
             crmChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels,
                     datasets: [
                         {
                             label: ${js('crm.new_price')},
@@ -2117,9 +2236,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                             pointRadius: function(ctx) {
                                 const index = ctx.dataIndex;
                                 const data = ctx.dataset.data;
-                                if (data[index] === null) return 0;
-                                const prev = index > 0 ? data[index - 1] : null;
-                                const next = index < data.length - 1 ? data[index + 1] : null;
+                                if (data[index].y === null) return 0;
+                                const prev = index > 0 ? data[index - 1].y : null;
+                                const next = index < data.length - 1 ? data[index + 1].y : null;
                                 return (prev === null || next === null) ? 4 : 0;
                             },
                             stepped: true,
@@ -2136,9 +2255,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                             pointRadius: function(ctx) {
                                 const index = ctx.dataIndex;
                                 const data = ctx.dataset.data;
-                                if (data[index] === null) return 0;
-                                const prev = index > 0 ? data[index - 1] : null;
-                                const next = index < data.length - 1 ? data[index + 1] : null;
+                                if (data[index].y === null) return 0;
+                                const prev = index > 0 ? data[index - 1].y : null;
+                                const next = index < data.length - 1 ? data[index + 1].y : null;
                                 return (prev === null || next === null) ? 4 : 0;
                             },
                             stepped: true,
@@ -2159,6 +2278,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                             bodyColor: '#fff', 
                             textDirection: locale === 'ar-EG' ? 'rtl' : 'ltr',
                             callbacks: {
+                                title: function(context) {
+                                    if (!context.length) return '';
+                                    const t = context[0].parsed.x;
+                                    const date = new Date(t * 1000);
+                                    return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) + ' ' + 
+                                           date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+                                },
                                 label: function(context) {
                                     let label = context.dataset.label || '';
                                     if (label) {
@@ -2173,7 +2299,22 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         }
                     },
                     scales: {
-                        x: { display: false },
+                        x: { 
+                            type: 'linear',
+                            min: xMin,
+                            max: currentUnix,
+                            display: true, 
+                            grid: { display: false, drawBorder: false },
+                            ticks: { 
+                                color: '#6b7280', 
+                                maxTicksLimit: 5, 
+                                maxRotation: 0,
+                                callback: function(value) {
+                                    const date = new Date(value * 1000);
+                                    return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+                                }
+                            }
+                        },
                         y: { 
                             grid: { color: '#374151', drawBorder: false },
                             ticks: { color: '#9ca3af', callback: function(value) { return value.toLocaleString(); } }
@@ -2184,23 +2325,26 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         async function triggerSync(btn) {
-            const originalContent = btn.innerHTML;
-            btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
-            btn.disabled = true;
-            try {
-                const json = await fetchAPI('/sync-env', 'POST');
-                if (!json) return;
-                if (json.error) {
-                    showToast(json.error, 'error');
-                } else {
-                    showToast(json.message || 'Sync started successfully', 'success');
+            tg.showConfirm(${js('crm.env_sync_confirm')}, async (ok) => {
+                if (!ok) return;
+                const originalContent = btn.innerHTML;
+                btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+                btn.disabled = true;
+                try {
+                    const json = await fetchAPI('/sync-env', 'POST');
+                    if (!json) return;
+                    if (json.error) {
+                        showToast(json.error, 'error');
+                    } else {
+                        showToast(json.message || 'Sync started successfully', 'success');
+                    }
+                } catch (err) {
+                    showToast('Failed to trigger sync: ' + err.message, 'error');
+                } finally {
+                    btn.innerHTML = originalContent;
+                    btn.disabled = false;
                 }
-            } catch (err) {
-                showToast('Failed to trigger sync: ' + err.message, 'error');
-            } finally {
-                btn.innerHTML = originalContent;
-                btn.disabled = false;
-            }
+            });
         }
 
         async function performAction(action, targetId, data = null, btn = null) {
@@ -2238,18 +2382,16 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 } else {
                     showToast(${js('crm.toast_success')}, "success");
 
-                    if (btn && (action === 'pause_product' || action === 'resume_product')) {
+                    if (btn && (action === 'pause_product' || action === 'resume_product' || action === 'toggle_keep_alive')) {
                         const isMasry = (document.documentElement.lang || 'masry') === 'masry';
-                        if (action === 'pause_product') {
-                            btn.setAttribute('onclick', \`performAction('resume_product', '\${targetId}', { asin: '\${data.asin}' }, this)\`);
-                            btn.innerHTML = isMasry ? '▶️ تشغيل' : '▶️ Unpause';
+                        if (action === 'toggle_keep_alive') {
+                            const wasOn = btn.className.includes('bg-emerald');
+                            const isOn = !wasOn;
+                            btn.className = isOn ? 'flex-1 py-1.5 rounded-lg text-xs font-bold transition border bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_10px_rgba(5,150,105,0.5)] border-emerald-500' 
+                                                 : 'flex-1 py-1.5 rounded-lg text-xs font-bold transition border bg-gray-700 hover:bg-gray-600 text-gray-300 border-gray-600';
+                            btn.innerHTML = isOn ? ('🟢 ' + ${js('crm.btn_tracking_global')}) 
+                                                 : ('📡 ' + ${js('crm.btn_track_global')});
                             btn.dataset.origHtml = btn.innerHTML;
-                            btn.className = 'flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20';
-                        } else {
-                            btn.setAttribute('onclick', \`performAction('pause_product', '\${targetId}', { asin: '\${data.asin}' }, this)\`);
-                            btn.innerHTML = isMasry ? '⏸️ ايقاف' : '⏸️ Pause';
-                            btn.dataset.origHtml = btn.innerHTML;
-                            btn.className = 'flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50';
                         }
                     } else if (action.includes('_product') && !btn) {
                         openDrawer(targetId); // legacy refresh

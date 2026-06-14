@@ -62,7 +62,7 @@ function truncateMessage(msg) {
 export async function executeScrapeEngine(env, offset = 0) {
   // Use stable ordering for pagination. 
   // No need for 'force' or time checks since the Governor handles intervals.
-  const query = "SELECT DISTINCT g.* FROM Global_Products g INNER JOIN User_Subscriptions u ON g.asin = u.asin WHERE u.is_paused = 0 ORDER BY g.asin LIMIT 10 OFFSET ?";
+  const query = "SELECT * FROM Global_Products g WHERE always_track = 1 OR EXISTS (SELECT 1 FROM User_Subscriptions u WHERE u.asin = g.asin AND u.is_paused = 0) ORDER BY g.asin LIMIT 10 OFFSET ?";
   
   const { results: staleProducts } = await env.DB.prepare(query).bind(offset).all();
   if (!staleProducts || staleProducts.length === 0) return false;
@@ -372,25 +372,37 @@ export async function executeScrapeEngine(env, offset = 0) {
                const HALF_LIFE_SEC = 30 * 24 * 60 * 60; // 30 Days
                const DECAY_CONSTANT = Math.LN2 / HALF_LIFE_SEC;
                
-               let sumWeights = 0;
-               let weightedSum = 0;
+               let totalInStockTime = 0;
+               let timeWeightedSum = 0;
                
-               validHistory.forEach(h => {
+               validHistory.forEach((h, index) => {
+                   const nextTime = index < validHistory.length - 1 ? validHistory[index + 1].t : nowSec;
+                   const durationSec = nextTime - h.t;
                    const age = Math.max(0, nowSec - h.t);
-                   h.weight = Math.exp(-DECAY_CONSTANT * age);
-                   sumWeights += h.weight;
-                   weightedSum += (h.n * h.weight);
+                   const decayWeight = Math.exp(-DECAY_CONSTANT * age);
+                   const finalWeight = durationSec * decayWeight;
+                   
+                   totalInStockTime += finalWeight;
+                   timeWeightedSum += (h.n * finalWeight);
                });
                
-               const mean = sumWeights > 0 ? (weightedSum / sumWeights) : 0;
+               const mean = totalInStockTime > 0 ? (timeWeightedSum / totalInStockTime) : 0;
                
-               let weightedVarianceSum = 0;
-               validHistory.forEach(h => {
-                   weightedVarianceSum += h.weight * Math.pow(h.n - mean, 2);
+               let timeWeightedVarSum = 0;
+               validHistory.forEach((h, index) => {
+                   const nextTime = index < validHistory.length - 1 ? validHistory[index + 1].t : nowSec;
+                   const durationSec = nextTime - h.t;
+                   const age = Math.max(0, nowSec - h.t);
+                   const decayWeight = Math.exp(-DECAY_CONSTANT * age);
+                   const finalWeight = durationSec * decayWeight;
+                   
+                   timeWeightedVarSum += finalWeight * Math.pow(h.n - mean, 2);
                });
                
-               const variance = sumWeights > 0 ? (weightedVarianceSum / sumWeights) : 0;
+               const variance = totalInStockTime > 0 ? (timeWeightedVarSum / totalInStockTime) : 0;
                const stdev = Math.sqrt(variance);
+               
+               liveItem.totalInStockTime = totalInStockTime;
                
                const atl = Math.min(...validHistory.map(h => h.n));
                
@@ -587,7 +599,17 @@ export async function executeScrapeEngine(env, offset = 0) {
              else if (displayLastPrice <= 50000) reqDrop = 5.0;
              else reqDrop = 3.0;
              
-             const isStandardDeal = (zScore <= -1.0) && (dropPct >= reqDrop);
+             // 604800 seconds = 7 Days
+             const totalInStockTime = liveItem.totalInStockTime || 0;
+             const hasLowLifespan = totalInStockTime < 604800;
+
+             let isStandardDeal = false;
+             if (hasLowLifespan && dropPct >= reqDrop) {
+                 isStandardDeal = true; 
+             } else {
+                 isStandardDeal = (zScore <= -1.0) && (dropPct >= reqDrop);
+             }
+             
              const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= reqDrop / 2.0);
              const isFlashSale = dropPct >= (reqDrop * 2.0);
              

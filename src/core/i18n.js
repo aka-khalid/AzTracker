@@ -33,6 +33,18 @@ const dict = {
     en: "⛔ <b>Access Denied</b>",
     masry: "⛔ <b>ممنوع الدخول</b>"
   },
+  "access.dev_bot_lockdown_head": {
+    en: "🚧 <b>Development Bot</b>",
+    masry: "🚧 <b>نسخة المطورين</b>"
+  },
+  "access.dev_bot_lockdown": {
+    en: "This is a private development environment. Access is restricted strictly to administrators.",
+    masry: "ده البوت الخاص بالتجارب والتطوير. الدخول مسموح للادمنز بس."
+  },
+  "access.dev_bot_lockdown_short": {
+    en: "🚧 Dev Bot: Admin access required.",
+    masry: "🚧 نسخة مطورين: للادمنز بس."
+  },
   "access.denied_body_private": {
     en: "This is a private Amazon deals server. You are not authorized to use it.",
     masry: "ده سيرفر برايفت مقفول على حبايبنا لعروض أمازون، للأسف لسه مش معاك صلاحية."
@@ -685,7 +697,7 @@ const dict = {
   },
   "crm.loading_chart": {
     en: "Loading chart data...",
-    masry: "بنحمل بيانات الرسم البياني..."
+    masry: "بنحمل سجل السعر..."
   },
   "crm.no_price_history": {
     en: "No price history available yet.",
@@ -753,7 +765,7 @@ const dict = {
   },
   "crm.btn_chart": {
     en: "Chart",
-    masry: "رسم بياني"
+    masry: "سجل السعر"
   },
   "crm.btn_delete_drawer": {
     en: "Delete",
@@ -990,22 +1002,58 @@ const dict = {
     masry: "اكتب رسالتك لكل المستخدمين..."
   },
   "crm.empty_paused": {
-    en: "No paused products found.",
-    masry: "مفيش منتجات موقوفة حالياً."
+    en: "No abandoned products found.",
+    masry: "مفيش منتجات منسية حالياً."
   },
   "crm.chart_loading": {
     en: "Loading chart data...",
-    masry: "بنحمل بيانات الرسم البياني..."
+    masry: "بنحمل سجل السعر..."
   },
 
   // ── System Overview: New Stats ──────────────────────────────────────────────
   "crm.paused_products": {
-    en: "Paused Products",
-    masry: "منتجات موقوفة"
+    en: "Abandoned Products Hub",
+    masry: "منتجات منسية"
+  },
+  "crm.btn_track_global": {
+    en: "Track Globally",
+    masry: "تتبع عام"
+  },
+  "crm.btn_tracking_global": {
+    en: "Tracking Globally",
+    masry: "بيتتبع عام"
   },
   "crm.ghost_products": {
     en: "Ghost Products",
-    masry: "منتجات أشباح"
+    masry: "منتجات مهجورة"
+  },
+  "crm.tag_asleep": {
+    en: "[Asleep]",
+    masry: "[مركون]"
+  },
+  "crm.tag_orphaned": {
+    en: "[Orphaned]",
+    masry: "[منسي]"
+  },
+  "crm.chart_1w": {
+    en: "1W",
+    masry: "أسبوع"
+  },
+  "crm.chart_1m": {
+    en: "1M",
+    masry: "شهر"
+  },
+  "crm.chart_3m": {
+    en: "3M",
+    masry: "٣ شهور"
+  },
+  "crm.chart_6m": {
+    en: "6M",
+    masry: "٦ شهور"
+  },
+  "crm.chart_all": {
+    en: "ALL",
+    masry: "الكل"
   },
   "crm.click_to_expand": {
     en: "Tap to view details",
@@ -1084,7 +1132,7 @@ const dict = {
   // ── Graveyard Drawer ─────────────────────────────────────────────────────────
   "crm.graveyard_title": {
     en: "💀 Ghost & Delisted Products",
-    masry: "💀 منتجات أشباح ومش متوفرة"
+    masry: "💀 منتجات مهجورة ومش متوفرة"
   },
   "crm.graveyard_purge_btn": {
     en: "🗑️ Purge Selected",
@@ -1100,7 +1148,7 @@ const dict = {
   },
   "crm.graveyard_empty": {
     en: "No ghost products found. Database is clean!",
-    masry: "مفيش منتجات أشباح. قاعدة البيانات نظيفة!"
+    masry: "مفيش منتجات مهجورة. قاعدة البيانات نظيفة!"
   },
   "crm.graveyard_subs": {
     en: "active subscribers",
@@ -1337,6 +1385,94 @@ const dict = {
   "crm.role_admin": {
     en: "ADMIN",
     masry: "أدمن"
+  },
+  "audit.action.purge_ghosts": {
+    en: "🧹 Purged {count} ghost items",
+    masry: "🧹 مسح {count} منتجات مهجورة"
+  },
+  "audit.action.force_scrape": {
+    en: "⚡ Triggered global price check",
+    masry: "⚡ تحديث إجباري لأسعار كل المنتجات"
+  },
+  "audit.action.global_broadcast": {
+    en: "📢 Sent global broadcast",
+    masry: "📢 رسالة جماعية لكل الناس"
+  },
+  "audit.action.approve_user": {
+    en: "✅ Approved access",
+    masry: "✅ الموافقة على طلب الدخول"
+  },
+  "audit.action.reject_user": {
+    en: "❌ Rejected access",
+    masry: "❌ رفض طلب الدخول"
+  },
+  "audit.action.revoke_user": {
+    en: "🚫 Revoked access (Subscriptions Paused)",
+    masry: "🚫 إيقاف الحساب مؤقتاً (بلوك)"
+  },
+  "audit.action.unban_user": {
+    en: "🔓 Unbanned (Subscriptions Resumed)",
+    masry: "🔓 فك البلوك (وتشغيل التتبع)"
+  },
+  "audit.action.promote_admin": {
+    en: "👑 Promoted to Admin",
+    masry: "👑 ترقية لأدمن"
+  },
+  "audit.action.demote_admin": {
+    en: "⬇️ Demoted to standard user",
+    masry: "⬇️ سحب صلاحيات الأدمن"
+  },
+  "audit.action.set_limit": {
+    en: "📈 Changed limit to {limit}",
+    masry: "📈 تعديل الليميت لـ {limit}"
+  },
+  "audit.action.delete_product": {
+    en: "🗑️ Deleted item {asin}",
+    masry: "🗑️ مسح المنتج {asin} من حسابه"
+  },
+  "audit.action.toggle_keep_alive": {
+    en: "🔄 Toggled Global Tracking for {asin}",
+    masry: "🔄 تغيير التتبع العام للمنتج {asin}"
+  },
+  "audit.action.enable_keep_alive": {
+    en: "🟢 Enabled Global Tracking for {asin}",
+    masry: "🟢 تفعيل التتبع العام للمنتج {asin}"
+  },
+  "audit.action.disable_keep_alive": {
+    en: "🔴 Disabled Global Tracking for {asin}",
+    masry: "🔴 تعطيل التتبع العام للمنتج {asin}"
+  },
+  "audit.action.direct_message": {
+    en: "💬 Sent direct message",
+    masry: "💬 بعت رسالة مباشرة"
+  },
+  "audit.action.set_target": {
+    en: "🎯 Set target for {asin} to {target} EGP",
+    masry: "🎯 حط تارجت {target} جنيه للمنتج {asin}"
+  },
+  "audit.action.sync_env": {
+    en: "🔄 Triggered Environment Sync",
+    masry: "🔄 عمل Sync لنسخة المطورين"
+  },
+  "crm.env_sync_title": {
+    en: "Environment Sync",
+    masry: "مزامنة البيئة"
+  },
+  "crm.env_sync_confirm": {
+    en: "Are you sure you want to completely overwrite Dev data with Prod data? This cannot be undone.",
+    masry: "متأكد إنك عايز تمسح بيانات التطوير (Dev) وتحط مكانها بيانات الإنتاج (Prod)؟ الخطوة دي مبتتراجعش."
+  },
+  "crm.env_sync_desc": {
+    en: "Copy Prod data to Dev using Github Actions.",
+    masry: "نسخ بيانات الإنتاج (Prod) إلى التطوير (Dev)."
+  },
+  "crm.btn_sync": {
+    en: "Sync Prod to Dev",
+    masry: "مزامنة الآن"
+  },
+  "crm.subscriptions_text": {
+    en: "subscriptions",
+    masry: "اشتراك"
   }
 };
 

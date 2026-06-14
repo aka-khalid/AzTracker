@@ -104,6 +104,16 @@ async function handleMessage(message, env, baseUrl, ctx) {
   // For unapproved users: detect from Telegram OS language_code
   const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
 
+  // ── Dev Bot Lockdown ────────────────────────────────────────────────────
+  if (env.ENVIRONMENT === 'dev' && !isRootAdmin && !isAdmin) {
+    if (text === "/start") {
+      const lang = dbLang || 'masry';
+      const lockMsg = t('access.dev_bot_lockdown_head', lang) + "\n\n" + t('access.dev_bot_lockdown', lang);
+      await sendAppMessage(env, chatId, lockMsg);
+    }
+    return new Response("OK", { status: 200 });
+  }
+
   if (isApproved || isAdmin) {
     ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
   }
@@ -328,13 +338,11 @@ async function handleMessage(message, env, baseUrl, ctx) {
         name_ar = COALESCE(excluded.name_ar, name_ar)
     `).bind(pid, extractedName || pid, arabicName).run();
 
-    // Insert into User_Subscriptions
     await env.DB.prepare(`
       INSERT INTO User_Subscriptions (chat_id, asin, added_at)
       VALUES (?, ?, ?)
       ON CONFLICT(chat_id, asin) DO NOTHING
     `).bind(chatId, pid, Date.now()).run();
-    if (ctx && ctx.waitUntil) ctx.waitUntil(logAudit(env, chatId, "ADD_PRODUCT", chatId, `Added product ${pid}`));
 
 
     const title = extractedName ? extractedName : pid;
@@ -362,6 +370,20 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
   // Validate User & Role Configuration
   const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
+
+  // ── Dev Bot Lockdown ────────────────────────────────────────────────────
+  if (env.ENVIRONMENT === 'dev' && !isRootAdmin && !isAdmin) {
+    await env.DB.prepare(`
+      INSERT INTO Outbox (chat_id, payload)
+      VALUES (?, ?)
+    `).bind(chatId, JSON.stringify({
+      method: "answerCallbackQuery",
+      callback_query_id: callback.id,
+      text: t('access.dev_bot_lockdown_short', dbLang || 'masry'),
+      show_alert: true
+    })).run();
+    return new Response("OK", { status: 200 });
+  }
 
   if (isApproved || isAdmin) {
     ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
@@ -593,7 +615,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       }
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, `Rejected via Join Queue${queueObj?.request_type === 'unban' ? ' (unban — permanent)' : ''}`));
+      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, { unban: queueObj?.request_type === 'unban' }));
     }
     else if (data.startsWith("queueApprove_") && isAdmin) {
       const targetId = data.replace("queueApprove_", "");
@@ -674,7 +696,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await sendTelegram(env, targetId, welcomeMessage);
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Approved via Join Queue"));
+      ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, {}));
     }
     else if (data.startsWith("confRevoke_") && isAdmin) {
       const targetId = data.replace("confRevoke_", "");
@@ -737,7 +759,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected_manual', lang, { id: targetId }));
       await sendTelegram(env, targetId, t('access.denied_notify', targetLang));
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, "Manually rejected access"));
+      ctx.waitUntil(logAudit(env, chatId, "REJECT_USER", targetId, {}));
     }
     else if (data.startsWith("unban_") && isAdmin) {
       const targetId = data.replace("unban_", "");
@@ -771,7 +793,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       } catch(e) { /* user may still have bot blocked */ }
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "UNBAN_USER", targetId, `Unbanned (was ${userRow?.role || 'unknown'})`));
+      ctx.waitUntil(logAudit(env, chatId, "UNBAN_USER", targetId, {}));
     }
     else if (data.startsWith("approve_") && isAdmin) {
       const targetId = data.replace("approve_", "");
@@ -786,7 +808,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await sendTelegram(env, targetId, welcomeMessage);
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, "Manually approved"));
+      ctx.waitUntil(logAudit(env, chatId, "APPROVE_USER", targetId, {}));
     }
     else if (data.startsWith("revoke_") && isAdmin) {
       const targetId = data.replace("revoke_", "");
@@ -811,7 +833,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await editTelegramMessage(env, chatId, messageId, t('admin.revoked_result', lang, { id: targetId }));
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "REVOKE_USER", targetId, "Revoked access (soft) — subscriptions paused"));
+      ctx.waitUntil(logAudit(env, chatId, "REVOKE_USER", targetId, {}));
     }
     else if (data.startsWith("promote_") && isRootAdmin) {
       const targetId = data.replace("promote_", "");
@@ -833,7 +855,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       await sendTelegram(env, targetId, t('admin.promoted_notify', targetLang));
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "PROMOTE_ADMIN", targetId, "Elevated to full Admin privileges"));
+      ctx.waitUntil(logAudit(env, chatId, "PROMOTE_ADMIN", targetId, {}));
     }
     else if (data.startsWith("demote_") && isRootAdmin) {
       const targetId = data.replace("demote_", "");
@@ -850,7 +872,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       });
 
       // AUDIT LOG
-      ctx.waitUntil(logAudit(env, chatId, "DEMOTE_ADMIN", targetId, "Demoted to standard access tier"));
+      ctx.waitUntil(logAudit(env, chatId, "DEMOTE_ADMIN", targetId, {}));
     }
     else if (data === "main_menu") {
       await env.DB.prepare("DELETE FROM Bot_States WHERE key = ?").bind(`state:${chatId}`).run();

@@ -23,9 +23,20 @@
 
 AzTracker features a securely embedded Telegram WebApp CRM that natively supports both LTR (English) and RTL (Masry/Arabic) modes out-of-the-box.
 
-<a href="docs/GALLERY.md">
-  <img src="docs/assets/01_dashboard.png" width="800" alt="Dashboard Hero">
-</a>
+<table>
+  <thead>
+    <tr>
+      <th width="50%">LTR (English)</th>
+      <th width="50%">RTL (Masry / Arabic)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="50%" align="center"><a href="docs/GALLERY.md"><img src="docs/assets/01_dashboard.png" width="100%" alt="English Dashboard"></a></td>
+      <td width="50%" align="center"><a href="docs/GALLERY.md"><img src="docs/assets/01_dashboard_ar.png" width="100%" alt="Arabic Dashboard"></a></td>
+    </tr>
+  </tbody>
+</table>
 
 👉 **[View Full Screenshot Gallery](docs/GALLERY.md)**  
 *(Contains side-by-side LTR/RTL comparisons of all 15 interactive views, drawers, and charts!)*
@@ -48,6 +59,9 @@ The scraper engine processes products in batches of 10 via Cloudflare Queues (`s
 
 ### 📱 User Web App Dashboard & Hot Deals Discovery
 The standard user product management has been fully upgraded to an interactive Telegram Web App, sharing the same secure HMAC-SHA256 edge-rendering architecture as the admin CRM. It introduces a global **Hot Deals (🔥 عروض نار)** tab that allows standard users to effortlessly discover massive price drops dynamically detected by the engine. Additionally, an intelligent HTTP fallback scraper guarantees perfect cross-lingual localization, while a dynamic viewport engine applies specialized typography scaling (e.g., Cairo font) to equalize Arabic and English UI layouts. A global Cloudflare fetch handler also suppresses all unhandled errors (Error 1101) to prevent secure worker URL leaks.
+
+### 🧟 Abandoned Products Hub & API-Safe Global Hijacking
+The CRM replaces traditional user-level product pausing with an intelligent **Abandoned Products Hub** that securely catalogs orphaned items (products with 0 active users). Admins can utilize a seamless UI toggle to instantly flag any user-discovered product for `always_track` (Keep-Alive) regardless of user abandonment. The dynamic Cron Governor automatically stretches the global polling interval to absorb up to 500 of these hijacked products without ever exceeding the strict 8,640 Amazon PA-API daily quota limit.
 
 ### ⏱️ Inflation-Resistant Deal Detection (EMA) & Dynamic Buckets
 The deal detection engine calculates a **Time-Weighted Average (EMA)** using a 30-day exponential decay half-life, naturally forgetting pre-inflation prices to establish a highly accurate baseline. It evaluates deals using **Dynamic Price Buckets** (e.g., requiring a 15% drop for 100 EGP items, but only a 3% drop for 100,000 EGP laptops), ensuring notifications perfectly mimic human psychological pricing without hardcoded limits.
@@ -99,7 +113,8 @@ src/
 │   └── utils.js             # Shared Utilities (Formatting, Time, Delay)
 ├── routes/
 │   ├── crm_dashboard.js     # Admin CRM Web App & API Endpoints
-│   └── telegram_webhook.js  # Telegram Bot Command & Callback Router
+│   ├── telegram_webhook.js  # Telegram Bot Command & Callback Router
+│   └── user_dashboard.js    # Public User Hot Deals & Managed Subs Web App
 └── workers/
     ├── cron_trigger.js      # Dynamic Governor & D1 Garbage Collection
     ├── queue_worker.js      # Consumer for Telegram Outbox & Scraper Engine

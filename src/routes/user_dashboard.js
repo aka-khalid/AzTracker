@@ -52,6 +52,11 @@ export async function fetchUserAPI(request, env, ctx) {
     const roles = await getUserRoles(chatId, env, ctx);
     const { isRootAdmin, isAdmin, isApproved } = roles;
 
+    // ── Dev Bot Lockdown ────────────────────────────────────────────────────
+    if (env.ENVIRONMENT === 'dev' && !isRootAdmin && !isAdmin) {
+      return new Response(JSON.stringify({ error: "FORBIDDEN: Dev Environment" }), { status: 403, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    }
+
     if (isApproved || isAdmin) {
       ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
     }
@@ -71,6 +76,7 @@ export async function fetchUserAPI(request, env, ctx) {
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
+        ORDER BY s.added_at DESC, s.asin ASC
       `).bind(chatId).all();
 
       // Get historical ATL from KV
@@ -283,6 +289,8 @@ function renderUserHTML(lang, partnerTag) {
   const ui = {
     access_denied_head: t('access.denied_head', lang) || "Access Denied",
     access_denied_body: t('access.denied_body_private', lang) || "You do not have permission to access this page.",
+    access_dev_lockdown_head: t('access.dev_bot_lockdown_head', lang) || "🚧 Development Bot",
+    access_dev_lockdown: t('access.dev_bot_lockdown', lang) || "🚧 Dev Bot: Admin access required.",
     my_products: t('dashboard.my_products', lang),
     hot_deals: t('dashboard.hot_deals', lang),
     syncing: t('dashboard.syncing', lang),
@@ -654,12 +662,16 @@ function renderUserHTML(lang, partnerTag) {
             try {
                 const text = await res.clone().text();
                 if (text.includes("FORBIDDEN")) {
+                    const isDevLockdown = text.includes("FORBIDDEN: Dev Environment");
+                    const headTxt = isDevLockdown ? ui.access_dev_lockdown_head : ui.access_denied_head;
+                    const bodyTxt = isDevLockdown ? ui.access_dev_lockdown.replace(/\\n/g, '<br>') : ui.access_denied_body;
+
                     document.body.style.backgroundColor = '#000000';
                     document.body.style.display = 'flex';
                     document.body.style.alignItems = 'center';
                     document.body.style.justifyContent = 'center';
                     document.body.style.minHeight = 'var(--tg-viewport-height, 100vh)';
-                    document.body.innerHTML = '<div style="background-color: #111827; padding: 32px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); max-width: 24rem; width: calc(100% - 32px); text-align: center;"><h1 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; color: #ffffff; display: flex; justify-content: center; align-items: center; gap: 8px;">' + ui.access_denied_head + '</h1><p style="color: #d1d5db; font-size: 1rem; line-height: 1.625;">' + ui.access_denied_body + '</p></div>';
+                    document.body.innerHTML = '<div style="background-color: #111827; padding: 32px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); max-width: 24rem; width: calc(100% - 32px); text-align: center;"><h1 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; color: #ffffff; display: flex; justify-content: center; align-items: center; gap: 8px;">' + headTxt + '</h1><p style="color: #d1d5db; font-size: 1rem; line-height: 1.625;">' + bodyTxt + '</p></div>';
                     // Halt execution of caller permanently to prevent DOM exception race conditions
                     return new Promise(() => {});
                 }
