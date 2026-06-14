@@ -4,6 +4,22 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## 🚀 Active Architecture: Core Engine Modernization (Phase 6)
 
+- [x] **Phase 6.14: Statistical Engine Overhaul & Global Abandoned Tracking**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Upgrade the statistical engine to eliminate false positives on highly volatile items and introduce Time-Weighted calculus, while granting admins the ability to hijack orphaned products for global tracking without blowing up API limits.
+
+  **The Strategy:** Refactored the standard deviation calculation in `scraper_engine.js` from discrete arrays to Time-Weighted Integrals (`durationSec * decayWeight`). Implemented a 7-day low-lifespan failsafe for new products. Converted the CRM's legacy Paused Products UI into an "Abandoned Products Hub" that displays orphaned items. Stripped the per-user pause button and replaced it with a dynamic global "Keep Alive" (`always_track`) toggle to hijack products.
+
+  **Execution Highlights:**
+  - **Time-Weighted Math:** Calculated the integral area of price durations to natively suppress anomalous fast-flapping prices, ensuring the Z-score correctly evaluates stable deals.
+  - **Low-Lifespan Failsafe:** Introduced a 168-hour failsafe that bypasses the Z-Score logic entirely for items lacking statistical mass, evaluating them purely on dynamic Hot Deals percentage thresholds.
+  - **API-Safe Global Pool:** Modified the Cloudflare Queue governor in `cron_trigger.js` to accurately aggregate active user subscriptions and `always_track` global items, automatically stretching the polling interval to safely absorb up to 500 orphaned items within the 8,640 PA-API daily limit.
+  - **Abandoned Products Hub:** Gutted the useless per-user pause UX in the CRM. Renamed the drawer to "Abandoned Products" (`منتجات مهجورة`), returning aggregated items that have 0 active users.
+  - **Keep Alive UX:** Replaced the legacy admin pause button on all user product cards with a dynamic `Keep Alive` toggle switch, enabling instantaneous omnichannel hijacking of user-discovered items.
+  </details>
+
 - [x] **Phase 6.8: Native D1 Migration & UI Overhaul**
   <details>
   <summary><b>View Execution Brief</b></summary>
