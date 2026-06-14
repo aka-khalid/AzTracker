@@ -2094,6 +2094,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             const ctx = document.getElementById('crmPriceChart').getContext('2d');
             const lineColor = '#38bdf8';
+            
+            Chart.defaults.font.family = '${isMasry ? "Cairo, sans-serif" : "Inter, sans-serif"}';
 
             crmChartInstance = new Chart(ctx, {
                 type: 'line',
