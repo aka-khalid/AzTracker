@@ -297,6 +297,7 @@ function renderUserHTML(lang, partnerTag) {
     error_loading_products: t('dashboard.error_loading_products', lang),
     currency_egp: t('chrome.currency_egp', lang),
     help_text: t('dashboard.help_text', lang),
+    close: t('dashboard.close', lang),
     no_products_found: t('dashboard.no_products_found', lang),
     last_checked: t('dashboard.last_checked', lang),
     never: t('dashboard.never', lang),
@@ -608,7 +609,7 @@ function renderUserHTML(lang, partnerTag) {
       <button onclick="toggleLang()" id="btn-lang" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
         ${isMasry ? 'EN' : 'مصري'}
       </button>
-      <button onclick="tg.showAlert(ui.help_text)" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
+      <button onclick="customAlert(ui.help_text)" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
         ℹ️
       </button>
     </div>
@@ -627,6 +628,19 @@ function renderUserHTML(lang, partnerTag) {
     tg.expand();
     tg.ready();
     const initData = tg.initData || '';
+
+    function customAlert(msg) {
+        let modal = document.getElementById('custom-alert');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'custom-alert';
+            modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+            modal.innerHTML = '<div style="background:var(--secondary-bg-color);padding:24px;border-radius:16px;max-width:80%;width:300px;text-align:center;border:1px solid rgba(255,255,255,0.1);box-shadow:0 10px 25px rgba(0,0,0,0.5);"><div id="custom-alert-text" style="margin-bottom:24px;font-size:15px;line-height:1.5;"></div><button onclick="document.getElementById(\\'custom-alert\\').style.display=\\'none\\'" style="width:100%;padding:12px;border-radius:10px;background:var(--button-color);color:var(--button-text-color);border:none;font-weight:700;cursor:pointer;font-size:14px;font-family:inherit;">' + (ui.close || 'Close') + '</button></div>';
+            document.body.appendChild(modal);
+        }
+        document.getElementById('custom-alert-text').innerText = msg;
+        modal.style.display = 'flex';
+    }
 
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
@@ -671,12 +685,12 @@ function renderUserHTML(lang, partnerTag) {
                 currentUrl.searchParams.set('lang', newLang);
                 window.location.replace(currentUrl.toString());
             } else {
-                tg.showAlert("Failed to update language.");
+                customAlert("Failed to update language.");
                 btn.innerText = prevText;
                 btn.disabled = false;
             }
         } catch (e) {
-            tg.showAlert("Network error.");
+            customAlert("Network error.");
             btn.innerText = prevText;
             btn.disabled = false;
         }
@@ -787,12 +801,12 @@ function renderUserHTML(lang, partnerTag) {
            renderHotDeals();
            loadProducts(); // refresh my products list quietly
         } else if(res.status === 403) {
-           tg.showAlert(ui.limit_reached);
+           customAlert(ui.limit_reached);
         } else {
-           tg.showAlert(ui.error_tracking);
+           customAlert(ui.error_tracking);
         }
       } catch(e) {
-        tg.showAlert('Error');
+        customAlert('Error');
       }
     }
 

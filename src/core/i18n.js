@@ -1038,6 +1038,14 @@ const dict = {
     en: "📬 <b>Message from Admin:</b>",
     masry: "📬 <b>رسالة من الأدمن:</b>"
   },
+  "dashboard.help_text": {
+    en: "Welcome to AzTracker! Send any Amazon link to the bot to track its price history. You will be notified instantly when the price drops.",
+    masry: "‏أهلاً بيك في AzTracker! ابعت أي لينك من أمازون للبوت عشان تتابع سعره، وهنبعتلك إشعار في ثواني أول ما السعر ينزل."
+  },
+  "dashboard.close": {
+    en: "Close",
+    masry: "اقفل"
+  },
   "crm.action_restoration_complete": {
     en: "✅ <b>Restoration Complete</b>",
     masry: "✅ <b>كل حاجة اترجعت</b>"
