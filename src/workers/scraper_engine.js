@@ -154,6 +154,7 @@ export async function executeScrapeEngine(env, offset = 0) {
   // Products no longer auto-pause or get delisted when absent from a scrape batch.
 
   let bestDeal = [];
+  let globalMatrix = {};
   
   function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice, isUsed) {
       const base_url = `https://www.amazon.eg/dp/${liveItem.asin}`;
