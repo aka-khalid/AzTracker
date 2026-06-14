@@ -701,7 +701,8 @@ function renderUserHTML(lang, partnerTag) {
         if (dot) dot.style.display = 'none';
         
         if (hotDeals.length === 0) {
-        loadHotDeals();
+          loadHotDeals();
+        }
       }
     }
 
