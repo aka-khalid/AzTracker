@@ -137,7 +137,8 @@ export async function fetchAPI(request, env, ctx) {
       // Detect language from query param or default to English
       const langParam = url.searchParams.get("lang");
       const lang = langParam === 'masry' ? 'masry' : 'en';
-      return new Response(renderCrmHTML(lang), {
+      const isProd = url.hostname.includes('-prod-worker') || url.hostname.includes('prod');
+      return new Response(renderCrmHTML(lang, isProd), {
         status: 200,
         headers: { "Content-Type": "text/html;charset=UTF-8" }
       });
@@ -839,7 +840,7 @@ export async function fetchAPI(request, env, ctx) {
 
   return new Response("Not Found", { status: 404 });
 }
-export function renderCrmHTML(lang = 'en') {
+export function renderCrmHTML(lang = 'en', isProd = false) {
   // Escape a translated string for safe injection into a JS double-quoted string literal.
   // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
   const isMasry = lang === 'masry';
@@ -985,6 +986,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                 </div>
             </section>
+            ${isProd ? '' : `
             <!-- ENV SYNC -->
             <section id="env-sync-section" class="mb-6">
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${isMasry ? 'مزامنة البيئة' : 'Environment Sync'}</h2>
@@ -1000,6 +1002,7 @@ export function renderCrmHTML(lang = 'en') {
                     </div>
                 </div>
             </section>
+            `}
 
             <!-- BROADCAST -->
             <section id="broadcast-section">
