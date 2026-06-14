@@ -51,6 +51,15 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Architectural Council Batch 2:** Resolved 3 critical audit findings — string parsing trap, absolute CSS in RTL context, and Fusha-translated technical constants — in a single coordinated fix pass.
   </details>
 
+- [x] **Phase 6.13: Legacy Interface Deprecation & Web App Exclusivity**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Eliminate the deprecated text-based product management interfaces and permanently shift all users to the Web App Deals Dashboard to reduce UI noise.
+
+  **The Strategy:** Aggressively pruned the massive legacy rendering functions (`renderProductList`, `renderProductView`) from `telegram_webhook.js`. Caught all legacy inline button callbacks (`list_products_`, `view_`, `settarget_`, `remove_`, etc.) and seamlessly routed them to the `/start` handler as a safe fallback for users clicking old messages. Scrubbed `i18n.js` of over 100 lines of orphaned translation keys (`list.*`, `delete.*`, `target.*`), while strictly preserving `product.*` keys actively used by the Scraper Engine.
+  </details>
+
 - [x] **Phase 6.12: Telegram Web App & Resilient Fallback Scraping**
   <details>
   <summary><b>View Execution Brief</b></summary>

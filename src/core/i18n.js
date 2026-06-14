@@ -256,19 +256,6 @@ const dict = {
     masry: "⚠️ خطأ"
   },
 
-  // ── How to Add ────────────────────────────────────────────────────────────
-  "howto.head": {
-    en: "💡 <b>How to Add a Product:</b>",
-    masry: "💡 <b>إزاي تضيف منتج:</b>"
-  },
-  "howto.body": {
-    en: "Copy any Amazon.eg product link from your browser or app and paste it directly into this chat box as a message.",
-    masry: "هات لينك أي منتج من أمازون مصر وارميه في الشات هنا على طول."
-  },
-  "howto.shortlinks": {
-    en: "📱 <b>Short links shared directly from the mobile app are fully supported!</b>",
-    masry: "📱 <b>لينكات أمازون المختصرة من الأبلكيشن شغالة عادي!</b>"
-  },
 
   // ── Product Link Processing ───────────────────────────────────────────────
   "link.processing": {
@@ -328,77 +315,7 @@ const dict = {
     masry: "⚠️ <b>إيه اللي انت كاتبه ده؟ مش فاهم حاجة!</b>\n\nاستخدم الزراير اللي تحت أو ارمي لينك أمازون شغال."
   },
 
-  // ── Product List ──────────────────────────────────────────────────────────
-  "list.my_saved_products": {
-    en: "📦 <b>My Saved Products</b>",
-    masry: "📦 <b>منتجاتي المحفوظة</b>"
-  },
-  "list.page_of": {
-    en: "Page {page} of {total}",
-    masry: "صفحة {page} من {total}"
-  },
-  "list.empty_head": {
-    en: "❌ <b>Your saved list is empty.</b>",
-    masry: "❌ <b>قايمتك بتصفر، مفيش حاجة هنا.</b>"
-  },
-  "list.empty_hint": {
-    en: "Paste an Amazon.eg link in the chat box to add it to your list.",
-    masry: "ارمي أي لينك أمازون مصر في الشات عشان تضيفه لقايمتك."
-  },
-  "list.select_hint": {
-    en: "Select an item below to modify its checking parameters:",
-    masry: "اختار منتج من دول عشان تظبط إعداداته:"
-  },
-  "list.prev": {
-    en: "⬅️ Prev",
-    masry: "⬅️ السابق"
-  },
-  "list.next": {
-    en: "Next ➡️",
-    masry: "التالي ➡️"
-  },
 
-  // ── Product View ──────────────────────────────────────────────────────────
-  "product.price_label": {
-    en: "💰 <b>Price:</b>",
-    masry: "💰 <b>السعر:</b>"
-  },
-  "product.target_label": {
-    en: "🎯 <b>Target:</b>",
-    masry: "🎯 <b>التارجت:</b>"
-  },
-  "product.seller_label": {
-    en: "🏬 <b>Seller:</b>",
-    masry: "🏬 <b>البائع:</b>"
-  },
-  "product.status_label": {
-    en: "📡 <b>Status:</b>",
-    masry: "📡 <b>الحالة:</b>"
-  },
-  "product.status_active": {
-    en: "✅ Active",
-    masry: "نشط ✅"
-  },
-  "product.status_paused": {
-    en: "⏸️ Paused",
-    masry: "مريح شوية ⏸️"
-  },
-  "product.waiting_check": {
-    en: "⏳ Waiting for next automated check...",
-    masry: "⏳ ثواني بنبص على السعر وراجعين..."
-  },
-  "product.out_of_stock": {
-    en: "❌ Out of Stock",
-    masry: "❌ غير متوفر"
-  },
-  "product.checked_today": {
-    en: "(Checked: Today at {time})",
-    masry: "(شوفناه: النهارده الساعة {time})"
-  },
-  "product.checked_date": {
-    en: "(Checked: {date} {time})",
-    masry: "(شوفناه: {date} {time})"
-  },
   "product.used_tag": {
     en: "(Used)",
     masry: "(مستعمل)"
@@ -436,104 +353,7 @@ const dict = {
     masry: "\u200F🆔 \u200E<code>{asin}</code>\u200E"
   },
   
-  // ── Product View Buttons ──────────────────────────────────────────────────
-  "product.btn.open_amazon": {
-    en: "🛒 Open in Amazon.eg",
-    masry: "🛒 شوفه على أمازون"
-  },
-  "product.btn.set_target": {
-    en: "🎯 Set Target",
-    masry: "🎯 قول السعر اللي عايزه"
-  },
-  "product.btn.clear_target": {
-    en: "❌ Clear Target",
-    masry: "❌ امسح التارجت"
-  },
-  "product.btn.pause": {
-    en: "⏸️ Pause Checking",
-    masry: "⏸️ وقف المتابعة"
-  },
-  "product.btn.resume": {
-    en: "▶️ Resume Checking",
-    masry: "▶️ كمل المتابعة"
-  },
-  "product.btn.delete": {
-    en: "🗑️ Delete Product",
-    masry: "🗑️ امسح المنتج"
-  },
-  "product.btn.back_to_products": {
-    en: "⬅️ Back to Products",
-    masry: "⬅️ رجوع للمنتجات"
-  },
-  "product.btn.main_menu": {
-    en: "🏠 Main Menu",
-    masry: "🏠 القائمة الرئيسية"
-  },
 
-  // ── Set Target Flow ───────────────────────────────────────────────────────
-  "target.set_head": {
-    en: "🎯 <b>Set Target Price</b>",
-    masry: "🎯 <b>قول السعر اللي عايزه</b>"
-  },
-  "target.set_prompt": {
-    en: "ASIN: <code>{asin}</code>\n\nPlease type your desired maximum price in EGP as a message (e.g., <code>4500</code>).",
-    masry: "ASIN: ‏<code>{asin}</code>‏\n\nاكتب السعر الأقصى اللي عايزه بالجنيه في رسالة (مثلاً: ‏<code>4500</code>‏)."
-  },
-  "target.cancel": {
-    en: "❌ Cancel",
-    masry: "❌ إلغاء"
-  },
-  "target.invalid_amount": {
-    en: "⚠️ <b>Invalid amount.</b> Please enter a valid number.",
-    masry: "⚠️ <b>الرقم ده مش مظبوط.</b> اكتب رقم صحيح."
-  },
-  "target.set_confirm_head": {
-    en: "🎯 <b>Target Price Set!</b>",
-    masry: "🎯 <b>حطينا السعر اللي عايزه!</b>"
-  },
-  "target.set_confirm_body": {
-    en: "You will only be notified when ASIN <code>{asin}</code> drops to or below <b>{price}</b>.",
-    masry: "هيجيلك إشعار بس لما ASIN ‏<code>{asin}</code>‏ ينزل لـ <b>{price}</b> أو أقل."
-  },
-  // ── Confirm Target Removal ────────────────────────────────────────────────
-  "target.remove_confirm_head": {
-    en: "⚠️ <b>Confirm Target Removal</b>",
-    masry: "⚠️ <b>عايز تمسح التارجت؟</b>"
-  },
-  "target.remove_confirm_body": {
-    en: "Are you sure you want to clear the target price for ASIN <code>{asin}</code>?",
-    masry: "متأكد إنك عايز تمسح التارجت لـ ASIN ‏<code>{asin}</code>‏؟"
-  },
-  "target.btn_yes_clear": {
-    en: "✅ Yes, Clear Target",
-    masry: "✅ أيوة، امسح التارجت"
-  },
-  "target.remove_cancelled": {
-    en: "❌ Cancel",
-    masry: "❌ إلغاء"
-  },
-
-  // ── Confirm Deletion ─────────────────────────────────────────────────────
-  "delete.confirm_head": {
-    en: "⚠️ <b>Confirm Deletion</b>",
-    masry: "⚠️ <b>عايز تمسح؟</b>"
-  },
-  "delete.confirm_body": {
-    en: "Are you sure you want to permanently delete ASIN <code>{asin}</code> from your saved list?\n\n<i>This action cannot be undone.</i>",
-    masry: "متأكد إنك عايز تمسح ASIN ‏<code>{asin}</code>‏ من قايمتك نهائياً؟\n\n<i>العملية دي ملهاش رجعة.</i>"
-  },
-  "delete.btn_yes_delete": {
-    en: "✅ Yes, Delete",
-    masry: "✅ أيوة، امسح"
-  },
-  "delete.deleted_head": {
-    en: "🗑️ <b>Product Deleted</b>",
-    masry: "🗑️ <b>تم مسح المنتج</b>"
-  },
-  "delete.deleted_body": {
-    en: "ASIN <code>{asin}</code> has been completely removed from your active register.",
-    masry: "ASIN ‏<code>{asin}</code>‏ اتمسح خلاص."
-  },
 
   // ── Admin: Confirm Revocation ─────────────────────────────────────────────
   "admin.confirm_revoke_head": {
@@ -632,18 +452,7 @@ const dict = {
     en: "🏠 Main Menu",
     masry: "🏠 القائمة الرئيسية"
   },
-  "nav.back": {
-    en: "⬅️ Back",
-    masry: "⬅️ رجوع"
-  },
-  "nav.open_menu": {
-    en: "🏠 Open Main Menu",
-    masry: "🏠 القائمة الرئيسية"
-  },
-  "nav.back_to_product": {
-    en: "⬅️ Back to Product",
-    masry: "⬅️ رجوع للمنتج"
-  },
+
 
   // ── Scraper Alerts ─────────────────────────────────────────────────────────
   "alert.target_met_head": {
