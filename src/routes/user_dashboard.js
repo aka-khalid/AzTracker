@@ -570,6 +570,22 @@ function renderUserHTML(lang, partnerTag) {
       border-radius: 2px;
       box-shadow: 0 0 8px var(--glow);
     }
+    @keyframes pulse-red {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .hotdeals-dot {
+      position: absolute;
+      top: -2px;
+      right: ${isMasry ? 'auto' : '-8px'};
+      left: ${isMasry ? '-8px' : 'auto'};
+      width: 8px;
+      height: 8px;
+      background-color: #ef4444;
+      border-radius: 50%;
+      animation: pulse-red 2s infinite;
+    }
 </style>
 </head>
 <body>
@@ -580,7 +596,10 @@ function renderUserHTML(lang, partnerTag) {
   <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); margin-bottom: 20px; padding-bottom: 8px;">
     <div class="tabs" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
       <div class="tab active" id="tab-products" onclick="switchTab('products')">${ui.my_products}</div>
-      <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')">${ui.hot_deals}</div>
+      <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')" style="position: relative;">
+        ${ui.hot_deals}
+        <span id="dot-hotdeals" class="hotdeals-dot"></span>
+      </div>
     </div>
     <div style="display: flex; gap: 8px;">
       <button onclick="toggleLang()" id="btn-lang" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
@@ -677,7 +696,11 @@ function renderUserHTML(lang, partnerTag) {
       document.getElementById('tab-' + tabId).classList.add('active');
       document.getElementById('content-' + tabId).style.display = 'block';
 
-      if(tabId === 'hotdeals' && hotDeals.length === 0) {
+      if (tabId === 'hotdeals') {
+        const dot = document.getElementById('dot-hotdeals');
+        if (dot) dot.style.display = 'none';
+        
+        if (hotDeals.length === 0) {
         loadHotDeals();
       }
     }
