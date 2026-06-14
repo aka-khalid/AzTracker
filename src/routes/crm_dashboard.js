@@ -543,6 +543,7 @@ export async function fetchAPI(request, env, ctx) {
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
+        ORDER BY s.added_at DESC
       `).bind(targetId).all();
       
       return new Response(JSON.stringify(products.results || []), {
