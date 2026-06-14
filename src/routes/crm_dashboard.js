@@ -915,7 +915,12 @@ export function renderCrmHTML(lang = 'en') {
         <!-- MAIN TABS -->
         <div class="flex gap-4 border-b border-gray-800 mb-6" id="main-tabs">
             <button onclick="switchMainTab('system-view')" id="main-tab-system-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">🔧 ${t('crm.tab_system', lang)}</button>
-            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">👥 ${t('crm.users_title', lang)}</button>
+            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">
+                <span class="relative">
+                    👥 ${t('crm.users_title', lang)}
+                    <span id="dot-users" class="hidden absolute -top-0.5 -end-2.5 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse"></span>
+                </span>
+            </button>
             <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">${t('crm.security_audit', lang)}</button>
         </div>
 
@@ -1019,7 +1024,9 @@ export function renderCrmHTML(lang = 'en') {
             <!-- DIRECTORY NAVIGATION -->
             <section>
                 <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
-                    <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap">${t('crm.tab_approved', lang)}</button>
+                    <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap relative">
+                        ${t('crm.tab_approved', lang)}
+                    </button>
                     <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition flex items-center gap-1.5 whitespace-nowrap">
                         ${t('crm.tab_pending', lang)} <span id="badge-queue" class="hidden bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
                     </button>
@@ -1320,11 +1327,14 @@ export function renderCrmHTML(lang = 'en') {
             renderEngineHealth(appData.systemStats.activeWatchPool || 0);
 
             const badge = document.getElementById('badge-queue');
+            const dot = document.getElementById('dot-users');
             if(appData.joinQueue.length > 0) {
                 badge.innerText = appData.joinQueue.length;
                 badge.classList.remove('hidden');
+                if(dot) dot.classList.remove('hidden');
             } else {
                 badge.classList.add('hidden');
+                if(dot) dot.classList.add('hidden');
             }
         }
 
@@ -1448,12 +1458,17 @@ export function renderCrmHTML(lang = 'en') {
         function switchTab(tab) {
             activeTab = tab;
             const tabs = ['users', 'queue', 'banned', 'admins'];
+            const baseClasses = {
+                'users': 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap relative',
+                'queue': 'px-4 pb-3 text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap',
+                'banned': 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap text-red-400/80',
+                'admins': 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap'
+            };
             tabs.forEach(t => {
                 const el = document.getElementById('tab-' + t);
                 if (el) {
-                    const isBanned = t === 'banned';
-                    const cls = t === tab ? 'tab-active' : (isBanned ? 'tab-inactive text-red-400/80' : 'tab-inactive');
-                    el.className = 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap relative ' + cls;
+                    const cls = t === tab ? 'tab-active' : 'tab-inactive';
+                    el.className = baseClasses[t] + ' ' + cls;
                 }
             });
             
