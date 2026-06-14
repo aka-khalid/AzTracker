@@ -1590,11 +1590,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">' +
                     rootGlow +
                     '<div class="flex justify-between items-center mb-2 relative z-10">' +
-                        '<div class="font-medium text-sm font-semibold truncate">' + firstNameEsc + ' <sub class="text-gray-500 font-normal text-[10px] ml-1">' + usernameEsc + '</sub></div>' +
+                        '<div class="font-medium text-sm font-semibold truncate flex items-center gap-2">' + roleBadge + firstNameEsc + ' <sub class="text-gray-500 font-normal text-[10px]">' + usernameEsc + '</sub></div>' +
                         '<button onclick="openDrawer(\\'' + chatIdEsc + '\\')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">' + ${js('crm.btn_view_items')} + '</button>' +
                     '</div>' +
                     '<div class="flex items-center gap-2 mb-3 relative z-10">' +
-                        roleBadge +
                         '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' ' + ${js('crm.items_label')} + '</span>' +
                         '<span class="text-xs text-gray-500">•</span>' +
                         '<span class="text-xs text-gray-500">' + ${js('crm.joined_date')} + ' ' + joinedDate + '</span>' +
