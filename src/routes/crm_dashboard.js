@@ -1566,6 +1566,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const itemLimit = isPrivileged ? '∞' : u.item_limit;
                 const joinedDate = new Date(u.created_at).toLocaleDateString();
 
+                let activeDaysAgo = (u.last_active && u.last_active > 0) ? (Date.now() - u.last_active) / 86400000 : Infinity;
+                let activeColor = activeDaysAgo < 7 ? 'text-emerald-500' : (activeDaysAgo < 30 ? 'text-amber-500' : 'text-red-500');
+                let activeDate = (u.last_active && u.last_active > 0) ? new Date(u.last_active).toLocaleDateString() : '-';
+
                 let rootGlow = '';
                 if (isRoot) rootGlow = '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>';
 
@@ -1594,6 +1598,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' ' + ${js('crm.items_label')} + '</span>' +
                         '<span class="text-xs text-gray-500">•</span>' +
                         '<span class="text-xs text-gray-500">' + ${js('crm.joined_date')} + ' ' + joinedDate + '</span>' +
+                        '<span class="text-xs text-gray-500">•</span>' +
+                        '<span class="text-xs font-medium ' + activeColor + '">⚡ ' + activeDate + '</span>' +
                     '</div>' +
                     '<div class="flex gap-2 relative z-10">' + actionBtns + '</div>' +
                 '</div>';

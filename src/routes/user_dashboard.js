@@ -50,6 +50,11 @@ export async function fetchUserAPI(request, env, ctx) {
     if (!chatId) return new Response("Unauthorized", { status: 401 });
 
     const roles = await getUserRoles(chatId, env, ctx);
+    const { isRootAdmin, isAdmin, isApproved } = roles;
+
+    if (isApproved || isAdmin) {
+      ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
+    }
     if (!roles.isApproved) {
         return new Response(JSON.stringify({ error: "FORBIDDEN" }), { 
           status: 403,

@@ -103,6 +103,10 @@ async function handleMessage(message, env, baseUrl, ctx) {
   // For approved users: read lang from DB via getUserRoles
   // For unapproved users: detect from Telegram OS language_code
   const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
+
+  if (isApproved || isAdmin) {
+    ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
+  }
   // Enforce masry for all new users unconditionally instead of checking OS language
   const lang = dbLang || 'masry';
 
@@ -354,9 +358,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const data = callback.data;
   const message = callback.message;
   const chatId = message.chat.id.toString();
-  const messageId = message.message_id;
 
-  const { isRootAdmin, isAdmin, isApproved, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
+  // Validate User & Role Configuration
+  const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
+
+  if (isApproved || isAdmin) {
+    ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
+  }
   const lang = dbLang || 'masry';
   if (ctx && ctx.waitUntil) ctx.waitUntil(syncUserNames(env, chatId, callback.from, baseUrl));
 

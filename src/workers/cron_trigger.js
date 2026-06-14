@@ -14,9 +14,14 @@ export async function scheduled(event, env, ctx) {
     const hardwareCronMs = hardwareMinutes * 60000;
     try {
         const now = Date.now();
-        // 1. D1 Garbage Collection & Save Hardware Cron
+        // 1. D1 Garbage Collection, Dormancy Sweep & Save Hardware Cron
         await env.DB.prepare("DELETE FROM Bot_States WHERE expires_at < ?").bind(now).run();
         await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('hardware_cron_interval', ?, ?)").bind(hardwareCronMs.toString(), now + 86400000 * 30).run();
+
+        // 1b. Dormancy Sweep (30 Days)
+        const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+        const dormantCutoff = now - thirtyDaysMs;
+        await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE is_paused = 0 AND chat_id IN (SELECT chat_id FROM Users WHERE last_active > 0 AND last_active < ?)").bind(dormantCutoff).run();
 
         // 2. Dynamic Governor Logic
         const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');
