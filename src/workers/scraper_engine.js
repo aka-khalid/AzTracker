@@ -293,17 +293,16 @@ export async function executeScrapeEngine(env, offset = 0) {
       if (amazonMissingSince !== null) { amazonMissingSince = null; timersChanged = true; }
     }
 
-    const MS_2_5_HOURS = 9000000;
     const MS_1_HOUR = 3600000;
     
-    let finalNewPrice = (newMissingSince && (now - newMissingSince < MS_2_5_HOURS)) ? oldItem.new_price : (liveItem.newPrice ?? null);
-    let finalUsedPrice = (usedMissingSince && (now - usedMissingSince < MS_2_5_HOURS)) ? oldItem.used_price : (liveItem.usedPrice ?? null);
+    let finalNewPrice = (newMissingSince && (now - newMissingSince < MS_1_HOUR)) ? oldItem.new_price : (liveItem.newPrice ?? null);
+    let finalUsedPrice = (usedMissingSince && (now - usedMissingSince < MS_1_HOUR)) ? oldItem.used_price : (liveItem.usedPrice ?? null);
     let finalAmazonPrice = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_price : (liveItem.amazonPrice ?? null);
     
-    let finalNewSeller = (newMissingSince && (now - newMissingSince < MS_2_5_HOURS)) ? oldItem.new_seller : (liveItem.newSeller ?? null);
-    let finalNewMid = (newMissingSince && (now - newMissingSince < MS_2_5_HOURS)) ? oldItem.new_mid : (liveItem.newMid ?? null);
-    let finalUsedSeller = (usedMissingSince && (now - usedMissingSince < MS_2_5_HOURS)) ? oldItem.used_seller : (liveItem.usedSeller ?? null);
-    let finalUsedMid = (usedMissingSince && (now - usedMissingSince < MS_2_5_HOURS)) ? oldItem.used_mid : (liveItem.usedMid ?? null);
+    let finalNewSeller = (newMissingSince && (now - newMissingSince < MS_1_HOUR)) ? oldItem.new_seller : (liveItem.newSeller ?? null);
+    let finalNewMid = (newMissingSince && (now - newMissingSince < MS_1_HOUR)) ? oldItem.new_mid : (liveItem.newMid ?? null);
+    let finalUsedSeller = (usedMissingSince && (now - usedMissingSince < MS_1_HOUR)) ? oldItem.used_seller : (liveItem.usedSeller ?? null);
+    let finalUsedMid = (usedMissingSince && (now - usedMissingSince < MS_1_HOUR)) ? oldItem.used_mid : (liveItem.usedMid ?? null);
     let finalAmazonSeller = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_seller : (liveItem.amazonSeller ?? null);
     let finalAmazonMid = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_mid : (liveItem.amazonMid ?? null);
     let finalAmazonIsBuybox = (amazonMissingSince && (now - amazonMissingSince < MS_1_HOUR)) ? oldItem.amazon_is_buybox : (liveItem.amazonIsBuybox ? 1 : 0);
