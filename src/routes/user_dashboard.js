@@ -349,7 +349,7 @@ function renderUserHTML(lang, partnerTag) {
     body {
       background-color: var(--bg-color);
       color: var(--text-color);
-      font-family: ${isMasry ? "'Cairo', sans-serif" : "'Inter', -apple-system, sans-serif"};
+      font-family: ${isMasry ? "'Cairo', sans-serif" : "'Inter', 'Cairo', -apple-system, sans-serif"};
       ${isMasry ? 'line-height: 1.3;' : ''}
       margin: 0;
       padding: 16px;
