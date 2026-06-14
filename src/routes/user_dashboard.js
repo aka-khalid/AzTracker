@@ -355,6 +355,9 @@ function renderUserHTML(lang, partnerTag) {
       padding: 16px;
       padding-bottom: 40px;
     }
+    button, input {
+      font-family: inherit;
+    }
     .header {
       font-size: 24px;
       font-weight: 700;
