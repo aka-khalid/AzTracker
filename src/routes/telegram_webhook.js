@@ -358,6 +358,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
   const data = callback.data;
   const message = callback.message;
   const chatId = message.chat.id.toString();
+  const messageId = message.message_id;
 
   // Validate User & Role Configuration
   const { isRootAdmin, isAdmin, isApproved, isRejected, rootAdmins, admins, approvedUsers, lang: dbLang } = await getUserRoles(chatId, env, ctx);
