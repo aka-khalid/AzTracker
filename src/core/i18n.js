@@ -1443,8 +1443,12 @@ const dict = {
     masry: "خلصان دلوقتي"
   },
   "dashboard.likely_out_of_stock": {
-    en: "Likely Out of Stock",
-    masry: "غالبًا خلص"
+    en: "Likely out of stock",
+    masry: "غالباً خلصان"
+  },
+  "dashboard.amazon_hidden_price": {
+    en: "See Amazon's price",
+    masry: "شوف أمازون بايعاها بكام"
   },
   "dashboard.check_stock": {
     en: "Check Stock",

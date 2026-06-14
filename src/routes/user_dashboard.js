@@ -307,6 +307,7 @@ function renderUserHTML(lang, partnerTag) {
     currently_out_of_stock: t('dashboard.currently_out_of_stock', lang),
     likely_out_of_stock: t('dashboard.likely_out_of_stock', lang),
     check_stock: t('dashboard.check_stock', lang),
+    amazon_hidden_price: t('dashboard.amazon_hidden_price', lang),
     resale: t('dashboard.resale', lang),
     target_price: t('dashboard.target_price', lang),
     none: t('dashboard.none', lang),
@@ -878,7 +879,7 @@ function renderUserHTML(lang, partnerTag) {
                 (isAmzDuplicate ? '' : 
                 '<div class="price-box" title="' + (ui.amazon_eg) + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
                   '<div class="price-label">' + (ui.amazon_eg) + '</div>' +
-                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--destructive-color);">' + ui.likely_out_of_stock + '</span>'))) + '</div>' +
+                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:#3b82f6;">' + ui.amazon_hidden_price + '</span>'))) + '</div>' +
                 '</div>') +
               '</div>';
           }
