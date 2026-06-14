@@ -1344,7 +1344,7 @@ const dict = {
   },
   "dashboard.help_text": {
     en: "Welcome to AzTracker! Send any Amazon link to the bot to track its price history. You will be notified instantly when the price drops.",
-    masry: "أهلاً بيك في AzTracker! ابعت أي لينك من أمازون للبوت عشان تتابع سعره، وهنبعتلك إشعار في ثواني أول ما السعر ينزل."
+    masry: "\u200Fأهلاً بيك في AzTracker! ابعت أي لينك من أمازون للبوت عشان تتابع سعره، وهنبعتلك إشعار في ثواني أول ما السعر ينزل."
   },
   "dashboard.hot_deals": {
     en: "🔥 Hot Deals",

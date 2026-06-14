@@ -598,7 +598,7 @@ export async function fetchAPI(request, env, ctx) {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         
         ctx.waitUntil((async () => {
-          const users = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role IN ('approved', 'admin')").all();
+          const users = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role = 'approved'").all();
           const queueMsgs = users.results.map(row => ({
             body: {
               type: 'telegram_broadcast',
