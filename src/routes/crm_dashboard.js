@@ -1564,11 +1564,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const isRejected = u.role === 'rejected';
                 const isPrivileged = isAdmin || isRoot;
                 const itemLimit = isPrivileged ? '∞' : u.item_limit;
-                const joinedDate = new Date(u.created_at).toLocaleDateString();
+                const joinedDate = new Date(u.created_at).toLocaleDateString('en-GB');
 
                 let activeDaysAgo = (u.last_active && u.last_active > 0) ? (Date.now() - u.last_active) / 86400000 : Infinity;
                 let activeColor = activeDaysAgo < 7 ? 'text-emerald-500' : (activeDaysAgo < 30 ? 'text-amber-500' : 'text-red-500');
-                let activeDate = (u.last_active && u.last_active > 0) ? new Date(u.last_active).toLocaleDateString() : '-';
+                let activeDate = (u.last_active && u.last_active > 0) ? new Date(u.last_active).toLocaleDateString('en-GB') : '-';
 
                 let rootGlow = '';
                 if (isRoot) rootGlow = '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>';
