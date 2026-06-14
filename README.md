@@ -55,6 +55,9 @@ The deal detection engine calculates a **Time-Weighted Average (EMA)** using a 3
 ### 🔗 Omnichannel Direct-Tracking Deep-Links
 Omnichannel Telegram broadcast alerts now include a dynamic `https://t.me/AzTrackerr_bot?start=track_{asin}` deep-link. Clicking the "🎯 Track Deal" button opens the bot and triggers a fallback payload router that automatically subscribes the user to the product with zero friction.
 
+### 🗺️ Persistent Menu & Edge Navigation Resilience
+The bot utilizes the native Telegram API to provision a bilingual Persistent Menu (`/lang`, `/help`), entirely replacing legacy inline keyboards. The Web App routing layer enforces strict navigation resilience by bypassing iOS/Android WebKit `history.back()` traps using absolute URL replacements. To protect against layout flashing during authentication, the UI deploys a full-screen CSS loader overlay. Additionally, users who block the bot are no longer permanently banned; instead, a graceful HTTP 403 interceptor safely pauses their active subscriptions, preserving their history for instant reactivation.
+
 ---
 
 ## 🛠️ Architecture Pipeline

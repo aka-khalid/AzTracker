@@ -117,5 +117,12 @@ Here is a side-by-side comparison of the entire CRM interface in both languages.
       <td width="50%" align="center"><img src="assets/15_hot_deals.png" width="100%"></td>
       <td width="50%" align="center"><img src="assets/15_hot_deals_ar.png" width="100%"></td>
     </tr>
+    <tr>
+      <td colspan="2"><b>16. Access Denied</b><br>Graceful blocking UI shown to unauthorized or banned users.</td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><img src="assets/16_access_denied.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/16_access_denied_ar.png" width="100%"></td>
+    </tr>
   </tbody>
 </table>

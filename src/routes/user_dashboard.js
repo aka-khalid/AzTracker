@@ -1,5 +1,6 @@
-import { renderMainMenu } from './telegram_webhook.js';
+import { renderMainMenu, setChatMenuButton } from './telegram_webhook.js';
 import { t } from '../core/i18n.js';
+import { getUserRoles } from '../core/db.js';
 
 export async function fetchUserAPI(request, env, ctx) {
   const url = new URL(request.url);
@@ -48,6 +49,14 @@ export async function fetchUserAPI(request, env, ctx) {
 
     if (!chatId) return new Response("Unauthorized", { status: 401 });
 
+    const roles = await getUserRoles(chatId, env, ctx);
+    if (!roles.isApproved) {
+        return new Response(JSON.stringify({ error: "FORBIDDEN" }), { 
+          status: 403,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
+        });
+    }
+
     if (url.pathname === "/api/user/products" && request.method === "GET") {
       const { results } = await env.DB.prepare(`
         SELECT s.asin, s.is_paused as paused, s.target_price, p.name, p.name_ar, 
@@ -71,7 +80,7 @@ export async function fetchUserAPI(request, env, ctx) {
 
       return new Response(JSON.stringify(results), {
         status: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
       });
     }
 
@@ -94,7 +103,7 @@ export async function fetchUserAPI(request, env, ctx) {
         ctx.waitUntil((async () => {
            const userRow = await env.DB.prepare("SELECT lang, role FROM Users WHERE chat_id = ?").bind(chatId).first();
            if(userRow) {
-               const lang = userRow.lang || 'en';
+               const lang = userRow.lang || 'masry';
                const isAdmin = userRow.role === 'admin';
                const baseUrl = url.origin;
                const state = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(`ui:${chatId}`).first();
@@ -106,7 +115,7 @@ export async function fetchUserAPI(request, env, ctx) {
 
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
         });
       } catch (e) {
         return new Response("Bad Request", { status: 400 });
@@ -126,7 +135,7 @@ export async function fetchUserAPI(request, env, ctx) {
         ctx.waitUntil((async () => {
            const userRow = await env.DB.prepare("SELECT lang, role FROM Users WHERE chat_id = ?").bind(chatId).first();
            if(userRow) {
-               const lang = userRow.lang || 'en';
+               const lang = userRow.lang || 'masry';
                const isAdmin = userRow.role === 'admin';
                const baseUrl = url.origin;
                const state = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(`ui:${chatId}`).first();
@@ -138,7 +147,34 @@ export async function fetchUserAPI(request, env, ctx) {
 
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
+        });
+      } catch (e) {
+        return new Response("Bad Request", { status: 400 });
+      }
+    }
+
+    if (url.pathname === "/api/user/lang" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const { lang } = body;
+        if (!lang || !['en', 'masry'].includes(lang)) return new Response("Invalid lang", { status: 400 });
+
+        await env.DB.prepare(
+          "UPDATE Users SET lang = ? WHERE chat_id = ?"
+        ).bind(lang, chatId).run();
+
+        ctx.waitUntil((async () => {
+          const cache = caches.default;
+          await cache.delete(new Request(`https://auth.internal/roles/${chatId}`));
+          const userRow = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
+          const isAdmin = userRow && userRow.role === 'admin';
+          await setChatMenuButton(env, chatId, url.origin, lang, isAdmin);
+        })());
+
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
         });
       } catch (e) {
         return new Response("Bad Request", { status: 400 });
@@ -163,7 +199,7 @@ export async function fetchUserAPI(request, env, ctx) {
 
       return new Response(JSON.stringify(results), {
         status: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
       });
     }
 
@@ -185,7 +221,7 @@ export async function fetchUserAPI(request, env, ctx) {
             if (countRow && countRow.c >= customLimit) {
                 return new Response(JSON.stringify({ error: "LIMIT_REACHED" }), {
                     status: 403,
-                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
                 });
             }
         }
@@ -204,7 +240,7 @@ export async function fetchUserAPI(request, env, ctx) {
         ctx.waitUntil((async () => {
              const state = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(`ui:${chatId}`).first();
              if (state && state.value) {
-                 const lang = userRow ? userRow.lang || 'en' : 'en';
+                 const lang = userRow ? userRow.lang || 'masry' : 'masry';
                  const isAdmin = userRow ? userRow.role === 'admin' : false;
                  await renderMainMenu(env, chatId, parseInt(state.value), isAdmin, url.origin, lang);
              }
@@ -212,7 +248,7 @@ export async function fetchUserAPI(request, env, ctx) {
 
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
         });
       } catch (e) {
         return new Response("Bad Request", { status: 400 });
@@ -222,7 +258,7 @@ export async function fetchUserAPI(request, env, ctx) {
 
   // 2. Serve HTML WebApp
   if (url.pathname === "/user_app") {
-    const lang = url.searchParams.get("lang") || "en";
+    const lang = url.searchParams.get("lang") || "masry";
     const html = renderUserHTML(lang, env.AMAZON_PARTNER_TAG);
     return new Response(html, {
       status: 200,
@@ -235,11 +271,13 @@ export async function fetchUserAPI(request, env, ctx) {
 
 function renderUserHTML(lang, partnerTag) {
   const isMasry = lang === 'masry';
-  const htmlLang = isMasry ? 'ar' : 'en';
+  const htmlLang = lang;
   const htmlDir = isMasry ? 'rtl' : 'ltr';
   const pTagStr = partnerTag ? partnerTag : '';
 
   const ui = {
+    access_denied_head: t('access.denied_head', lang) || "Access Denied",
+    access_denied_body: t('access.denied_body_private', lang) || "You do not have permission to access this page.",
     my_products: t('dashboard.my_products', lang),
     hot_deals: t('dashboard.hot_deals', lang),
     syncing: t('dashboard.syncing', lang),
@@ -258,6 +296,7 @@ function renderUserHTML(lang, partnerTag) {
     open_in_telegram: t('dashboard.open_in_telegram', lang),
     error_loading_products: t('dashboard.error_loading_products', lang),
     currency_egp: t('chrome.currency_egp', lang),
+    help_text: t('dashboard.help_text', lang),
     no_products_found: t('dashboard.no_products_found', lang),
     last_checked: t('dashboard.last_checked', lang),
     never: t('dashboard.never', lang),
@@ -533,9 +572,23 @@ function renderUserHTML(lang, partnerTag) {
 </style>
 </head>
 <body>
-  <div class="tabs">
-    <div class="tab active" id="tab-products" onclick="switchTab('products')">${ui.my_products}</div>
-    <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')">${ui.hot_deals}</div>
+  <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+  <div id="init-loader" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background-color: var(--bg-color);">
+    <div style="width: 48px; height: 48px; border: 4px solid var(--secondary-bg-color); border-top-color: var(--button-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); margin-bottom: 20px; padding-bottom: 8px;">
+    <div class="tabs" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+      <div class="tab active" id="tab-products" onclick="switchTab('products')">${ui.my_products}</div>
+      <div class="tab" id="tab-hotdeals" onclick="switchTab('hotdeals')">${ui.hot_deals}</div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button onclick="toggleLang()" id="btn-lang" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
+        ${isMasry ? 'EN' : 'عربي'}
+      </button>
+      <button onclick="tg.showAlert(ui.help_text)" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
+        ℹ️
+      </button>
+    </div>
   </div>
   
   <div id="content-products">
@@ -551,6 +604,61 @@ function renderUserHTML(lang, partnerTag) {
     tg.expand();
     tg.ready();
     const initData = tg.initData || '';
+
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const res = await originalFetch.apply(this, args);
+        if (res.status === 403) {
+            try {
+                const text = await res.clone().text();
+                if (text.includes("FORBIDDEN")) {
+                    document.body.style.backgroundColor = '#000000';
+                    document.body.style.display = 'flex';
+                    document.body.style.alignItems = 'center';
+                    document.body.style.justifyContent = 'center';
+                    document.body.style.minHeight = 'var(--tg-viewport-height, 100vh)';
+                    document.body.innerHTML = '<div style="background-color: #111827; padding: 32px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); max-width: 24rem; width: calc(100% - 32px); text-align: center;"><h1 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; color: #ffffff; display: flex; justify-content: center; align-items: center; gap: 8px;">' + ui.access_denied_head + '</h1><p style="color: #d1d5db; font-size: 1rem; line-height: 1.625;">' + ui.access_denied_body + '</p></div>';
+                    // Halt execution of caller permanently to prevent DOM exception race conditions
+                    return new Promise(() => {});
+                }
+            } catch(e) {}
+        }
+        return res;
+    };
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('admin') === 'true') {
+        tg.BackButton.show();
+        const handleBack = () => {
+            window.location.href = '/crm?lang=' + (new URLSearchParams(window.location.search).get('lang') || 'masry') + window.location.hash;
+        };
+        tg.BackButton.onClick(handleBack);
+    }
+
+    async function toggleLang() {
+        const btn = document.getElementById('btn-lang');
+        const prevText = btn.innerText;
+        btn.innerText = '...';
+        btn.disabled = true;
+        try {
+            const res = await apiCall('/api/user/lang', { lang: ${isMasry ? "'en'" : "'masry'"} });
+            if (res && res.ok) {
+                const newLang = ${isMasry ? "'en'" : "'masry'"};
+                const currentUrl = new URL(window.location.href);
+                currentUrl.searchParams.set('lang', newLang);
+                window.location.replace(currentUrl.toString());
+            } else {
+                tg.showAlert("Failed to update language.");
+                btn.innerText = prevText;
+                btn.disabled = false;
+            }
+        } catch (e) {
+            tg.showAlert("Network error.");
+            btn.innerText = prevText;
+            btn.disabled = false;
+        }
+    }
+
     const ui = ${JSON.stringify(ui)};
     const isMasry = ${isMasry};
     const pTag = '${pTagStr}';
@@ -670,7 +778,14 @@ function renderUserHTML(lang, partnerTag) {
         const res = await fetch('/api/user/products', {
           headers: { 'Authorization': 'Bearer ' + initData }
         });
+        const dbLang = res.headers.get("X-User-Lang");
+        if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry') && initData !== 'puppeteer_mock') {
+            window.location.replace(window.location.pathname + '?lang=' + dbLang + window.location.hash);
+            return;
+        }
         allProducts = await res.json();
+        const initLoader = document.getElementById('init-loader');
+        if (initLoader) initLoader.remove();
         renderProducts();
       } catch (e) {
         document.getElementById('app').innerHTML = ui.error_loading_products;

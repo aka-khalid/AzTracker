@@ -67,9 +67,8 @@ export async function queue(batch, env, ctx) {
               msg.retry({ delaySeconds: retryDelay });
               continue;
             } else if (res.error_code === 403) {
-              // User blocked the bot - Pause subscriptions AND block role to prevent re-adding
+              // User blocked the bot - Pause subscriptions to save resources
               await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ?").bind(payload.chatId).run();
-              await env.DB.prepare("UPDATE Users SET role = 'blocked' WHERE chat_id = ?").bind(payload.chatId).run();
               msg.ack();
               continue;
             }

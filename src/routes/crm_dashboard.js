@@ -4,6 +4,7 @@ import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
 import { executeScrapeEngine } from '../workers/scraper_engine.js';
 import { sendTelegramMessage as sendTelegram, editTelegramMessage } from '../core/telegram.js';
 import { escapeHtml } from '../core/utils.js';
+import { setChatMenuButton } from './telegram_webhook.js';
 
 async function generateSignature(secret, asin, exp) {
   const enc = new TextEncoder();
@@ -79,13 +80,13 @@ async function authAdmin(req, environment) {
   const userData = await verifyInitData(initData, environment.TELEGRAM_BOT_TOKEN);
   if (!userData) return null;
   
-  const { admins, rootAdmins } = await getUserRoles(userData.id.toString(), environment);
+  const { admins, rootAdmins, lang } = await getUserRoles(userData.id.toString(), environment);
   
   const rootAdminsStr = (rootAdmins || []).map(String);
   const adminsStr = (admins || []).map(String);
   
-  if (rootAdminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: true };
-  if (adminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: false };
+  if (rootAdminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: true, lang };
+  if (adminsStr.includes(userData.id.toString())) return { user: userData, isRootAdmin: false, lang };
   
   return null;
 }
@@ -354,9 +355,8 @@ export async function fetchAPI(request, env, ctx) {
           },
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
-          auth: {
-            isRootAdmin: auth.isRootAdmin
-          }
+          auth: { isRootAdmin: auth.isRootAdmin },
+          lang: auth.lang || 'masry'
         };
         const response = new Response(JSON.stringify(data), {
           status: 200,
@@ -559,7 +559,7 @@ export async function fetchAPI(request, env, ctx) {
       
       // Resolve admin's language preference for localized action feedback
       const adminLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(adminId).first();
-      const adminLang = adminLangRow?.lang || auth.lang || 'en';
+      const adminLang = adminLangRow?.lang || auth.lang || 'masry';
 
       // Helper: resolve target user's language (falls back to admin lang, then 'en')
       const resolveTargetLang = async (tid) => {
@@ -570,7 +570,7 @@ export async function fetchAPI(request, env, ctx) {
       const adminLangPref = async (aid) => {
         if (aid === adminId) return adminLang;
         const row = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(aid).first();
-        return row?.lang || 'en';
+        return row?.lang || 'masry';
       };
 
       if (action === "force_scrape") {
@@ -603,7 +603,7 @@ export async function fetchAPI(request, env, ctx) {
             body: {
               type: 'telegram_broadcast',
               chatId: row.chat_id,
-              text: t('crm.broadcast_prefix', row.lang || 'en', { message: data.message })
+              text: t('crm.broadcast_prefix', row.lang || 'masry', { message: data.message })
             }
           }));
           for (let i = 0; i < queueMsgs.length; i += 100) {
@@ -641,7 +641,7 @@ export async function fetchAPI(request, env, ctx) {
           defaultLimit, 
           adminId, 
           Date.now(), 
-          queueRow?.lang || 'en'
+          queueRow?.lang || 'masry'
         ).run();
 
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, getWelcomeMessage(tl, defaultLimit)); })());
@@ -660,7 +660,7 @@ export async function fetchAPI(request, env, ctx) {
         const queueRow = await env.DB.prepare("SELECT request_type, admin_messages, first_name, username FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
         // Get lang from Users if row exists, else default to 'en' (Join_Queue has no language_code column)
         const existingUser = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
-        const userLang = existingUser?.lang || 'en';
+        const userLang = existingUser?.lang || 'masry';
         // Race guard: delete queue row, check if another admin already handled it
         const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         if (deleteResult.meta.changes === 0) {
@@ -718,7 +718,7 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ?").bind(targetId),
           env.DB.prepare("UPDATE Users SET role = 'approved', unban_rejected = 0 WHERE chat_id = ?").bind(targetId)
         ]);
-        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_restored', tl)); })());
+        ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_restored', tl)); ctx.waitUntil(setChatMenuButton(env, targetId, 'https://' + new URL(request.url).hostname, tl, false)); })());
         ctx.waitUntil(logAudit(env, adminId, "UNBAN_USER", targetId, "Unbanned user and resumed subscriptions"));
         // Invalidate other admins' inline messages so buttons disappear automatically
         if (queueRow?.admin_messages) {
@@ -796,9 +796,12 @@ export async function fetchAPI(request, env, ctx) {
             return new Response(JSON.stringify({ error: "GITHUB_PAT not set in environment." }), { status: 500 });
         }
         let targetRef = "main";
-        const branchesRes = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/branches`, {
+        const owner = env.GITHUB_OWNER || 'aka-khalid';
+        const repo = env.GITHUB_REPO || 'AzTracker';
+        
+        const branchesRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/branches`, {
             headers: {
-                "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+                "Authorization": `Bearer ${pat}`,
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "AzTracker-Worker"
             }
@@ -809,11 +812,11 @@ export async function fetchAPI(request, env, ctx) {
             if (featureBranch) targetRef = featureBranch.name;
         }
         
-        const ghRes = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/sync-prod-to-dev.yml/dispatches`, {
+        const ghRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync-prod-to-dev.yml/dispatches`, {
             method: "POST",
             headers: {
                 "Accept": "application/vnd.github.v3+json",
-                "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+                "Authorization": `Bearer ${pat}`,
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "AzTracker-Worker"
             },
@@ -841,7 +844,7 @@ export function renderCrmHTML(lang = 'en') {
   // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
   const isMasry = lang === 'masry';
   const js = (key, vars) => JSON.stringify(t(key, lang, vars));
-  const htmlLang = lang === 'masry' ? 'ar' : 'en';
+  const htmlLang = lang;
   const htmlDir = isMasry ? 'rtl' : 'ltr';
 
   return `<!DOCTYPE html>
@@ -885,6 +888,10 @@ export function renderCrmHTML(lang = 'en') {
     </style>
 </head>
 <body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic' : 'font-sans'} bg-gray-900 text-gray-100">
+  <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+  <div id="init-loader" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background-color: #0f172a;">
+    <div style="width: 48px; height: 48px; border: 4px solid #1e293b; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+  </div>
     
     <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
         <div class="flex items-center gap-2">
@@ -898,6 +905,13 @@ export function renderCrmHTML(lang = 'en') {
 
     <main class="flex-1 px-4 py-6 pb-24 space-y-6 max-w-2xl mx-auto w-full" id="app-container">
         
+        <!-- HIGHER LEVEL TAB -->
+        <div class="mb-4">
+            <button onclick="window.location.href='/user_app?lang=${lang}&admin=true'" class="w-full py-3 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-brand-400 font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg">
+                ${t('dashboard.my_products', lang)}
+            </button>
+        </div>
+
         <!-- MAIN TABS -->
         <div class="flex gap-4 border-b border-gray-800 mb-6" id="main-tabs">
             <button onclick="switchMainTab('system-view')" id="main-tab-system-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">🔧 ${t('crm.tab_system', lang)}</button>
@@ -1215,6 +1229,11 @@ export function renderCrmHTML(lang = 'en') {
         const tg = window.Telegram?.WebApp || {};
         if (tg.expand) tg.expand();
         if (tg.ready) tg.ready();
+        if (tg.BackButton) tg.BackButton.hide();
+        window.addEventListener('pageshow', (e) => {
+            if (e.persisted) { window.location.reload(); }
+            if (tg.BackButton) tg.BackButton.hide();
+        });
         try {
             if (tg.setHeaderColor) tg.setHeaderColor('#030712');
             if (tg.setBackgroundColor) tg.setBackgroundColor('#030712');
@@ -1244,10 +1263,22 @@ export function renderCrmHTML(lang = 'en') {
                 if (body) opts.body = JSON.stringify(body);
                 
                 const res = await fetch('/api/crm' + path, opts);
-                if (!res.ok) throw new Error('HTTP ' + res.status);
+                if (!res.ok) {
+                    let errMsg = 'HTTP ' + res.status;
+                    try {
+                        const errJson = await res.json();
+                        if (errJson.error) errMsg = errJson.error;
+                    } catch (e) {}
+                    throw new Error(errMsg);
+                }
                 
                 if (res.status === 202) return { status: 'queued' };
                 const json = await res.json();
+                const dbLang = res.headers.get("X-User-Lang") || json.lang;
+                if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry') && initData !== 'puppeteer_mock') {
+                    window.location.replace(window.location.pathname + '?lang=' + dbLang + window.location.hash);
+                    return null;
+                }
                 const currentUser = res.headers.get("X-Current-User");
                 if (currentUser) json._currentUser = currentUser;
                 return json;
@@ -1262,6 +1293,8 @@ export function renderCrmHTML(lang = 'en') {
             showLoader(${js('crm.toast_syncing')});
             const data = await fetchAPI('/data');
             hideLoader();
+            const initLoader = document.getElementById('init-loader');
+            if (initLoader) initLoader.remove();
             if (data) {
                 appData = data;
                 renderTelemetry();
@@ -1576,7 +1609,7 @@ export function renderCrmHTML(lang = 'en') {
                 return;
             }
 
-            const isMasry = document.documentElement.lang === 'ar';
+            const isMasry = document.documentElement.lang === 'masry';
             itemsCont.innerHTML = products.map(p => {
                 const isPaused = p.is_paused === 1;
                 const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
@@ -1641,7 +1674,7 @@ export function renderCrmHTML(lang = 'en') {
                 return;
             }
 
-            const lang = document.documentElement.lang || 'en';
+            const lang = document.documentElement.lang || 'masry';
             let html = '';
             data.items.forEach((item, idx) => {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
@@ -1682,7 +1715,7 @@ export function renderCrmHTML(lang = 'en') {
             setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
 
             const data = await fetchAPI('/active-products');
-            const isMasry = document.documentElement.lang === 'ar';
+            const isMasry = document.documentElement.lang === 'masry';
             const subsText = isMasry ? 'اشتراك' : 'subscriptions';
             if (!data || !data.items || data.items.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.no_active_products')} + '</div>';
@@ -1702,7 +1735,7 @@ export function renderCrmHTML(lang = 'en') {
             const itemsCont = document.getElementById('drawer-active-items');
             const chunk = activeProductsData.slice(activeRenderIndex, activeRenderIndex + 50);
             activeRenderIndex += 50;
-            const lang = document.documentElement.lang || 'en';
+            const lang = document.documentElement.lang || 'masry';
             const isMasry = lang === 'masry';
 
             const html = chunk.map((item) => {
@@ -1777,7 +1810,7 @@ export function renderCrmHTML(lang = 'en') {
                 return;
             }
 
-            const lang = document.documentElement.lang || 'en';
+            const lang = document.documentElement.lang || 'masry';
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
                 const name = (isMasry && item.name_ar) ? item.name_ar : (item.name || item.asin);
@@ -1844,7 +1877,7 @@ export function renderCrmHTML(lang = 'en') {
 
             document.getElementById('drawer-graveyard-count').innerText = data.items.length + ' ' + ${js('crm.items_label')};
 
-            const lang = document.documentElement.lang || 'en';
+            const lang = document.documentElement.lang || 'masry';
             let html = '';
             data.items.forEach(item => {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
@@ -1896,7 +1929,7 @@ export function renderCrmHTML(lang = 'en') {
             }
 
             document.getElementById('drawer-product-subs-count').innerText = data.items.length + ' ' + ${js('crm.items_label')};
-            const lang = document.documentElement.lang || 'en';
+            const lang = document.documentElement.lang || 'masry';
             
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
@@ -1921,7 +1954,7 @@ export function renderCrmHTML(lang = 'en') {
                 return \`
                 <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex gap-3 mb-2">
-                        <img src="https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
+                        <img src="\${item.image_url || 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
@@ -2017,11 +2050,12 @@ export function renderCrmHTML(lang = 'en') {
 
             document.getElementById('crmPriceChart').style.display = 'block';
 
+            const locale = document.documentElement.lang === 'masry' ? 'ar-EG' : 'en-GB';
             const labels = data.map(point => {
                 const t = point.t !== undefined ? point.t : point.timestamp;
                 const date = new Date(t * 1000);
-                return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + 
-                       date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) + ' ' + 
+                       date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
             });
             
             const newPrices = data.map(point => point.n !== undefined ? point.n : (point.p !== undefined ? point.p : null));
@@ -2094,7 +2128,24 @@ export function renderCrmHTML(lang = 'en') {
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
                         legend: { labels: { color: '#f3f4f6' } },
-                        tooltip: { backgroundColor: 'rgba(31, 41, 55, 0.9)', titleColor: '#fff', bodyColor: '#fff' }
+                        tooltip: { 
+                            backgroundColor: 'rgba(31, 41, 55, 0.9)', 
+                            titleColor: '#fff', 
+                            bodyColor: '#fff', 
+                            textDirection: locale === 'ar-EG' ? 'rtl' : 'ltr',
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toLocaleString(locale) + ' ' + ${js('chrome.currency_egp')};
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
                     },
                     scales: {
                         x: { display: false },
@@ -2113,6 +2164,7 @@ export function renderCrmHTML(lang = 'en') {
             btn.disabled = true;
             try {
                 const json = await fetchAPI('/sync-env', 'POST');
+                if (!json) return;
                 if (json.error) {
                     showToast(json.error, 'error');
                 } else {
@@ -2162,7 +2214,7 @@ export function renderCrmHTML(lang = 'en') {
                     showToast(${js('crm.toast_success')}, "success");
 
                     if (btn && (action === 'pause_product' || action === 'resume_product')) {
-                        const isMasry = (document.documentElement.lang || 'en') === 'masry';
+                        const isMasry = (document.documentElement.lang || 'masry') === 'masry';
                         if (action === 'pause_product') {
                             btn.setAttribute('onclick', \`performAction('resume_product', '\${targetId}', { asin: '\${data.asin}' }, this)\`);
                             btn.innerHTML = isMasry ? '▶️ تشغيل' : '▶️ Unpause';

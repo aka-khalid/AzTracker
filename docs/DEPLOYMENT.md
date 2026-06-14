@@ -115,4 +115,14 @@ curl -F "url=https://aztracker-prod-worker.<your-cloudflare-subdomain>.workers.d
 ```
 *(Replace placeholders with your actual production domain and secret.)*
 
+### 3.7 Persistent Menu Initialization
+The bot utilizes the native Telegram API to construct a bilingual persistent menu (`/lang`, `/help`) instead of legacy inline keyboards. Because of the Dual-Environment workflow, this must be executed locally twice (once for the Dev Bot Token, once for the Prod Bot Token):
+```bash
+# Set Dev Bot Menu
+TELEGRAM_BOT_TOKEN="YOUR_DEV_BOT_TOKEN" node scripts/setup_bot_commands.js
+
+# Set Prod Bot Menu
+TELEGRAM_BOT_TOKEN="YOUR_PROD_BOT_TOKEN" node scripts/setup_bot_commands.js
+```
+
 

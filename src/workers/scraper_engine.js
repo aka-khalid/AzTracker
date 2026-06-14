@@ -408,7 +408,7 @@ export async function executeScrapeEngine(env, offset = 0) {
         d1Batch.push(env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE chat_id = ? AND asin = ?").bind(sub.chat_id, liveItem.asin));
         
         // Gap 9.4: Python-parity rich message — differentiate target-price vs general expiry
-        const subLang = sub.lang || 'en';
+        const subLang = sub.lang || 'masry';
         const safeProductName = escapeHtml(truncateName(resolveProductName(liveItem, subLang)));
         let expiryMsg;
         if (sub.target_price) {
@@ -508,15 +508,8 @@ export async function executeScrapeEngine(env, offset = 0) {
       if (history.length > 500) history = history.slice(-500);
       kvPromises.push(env.AZTRACKER_DB.put(historyKey, JSON.stringify(history)));
 
-      const globalKey = "global:history_all_new";
-      let globalHist = await env.AZTRACKER_DB.get(globalKey, "json") || [];
-      const currentMatrix = {};
-      if (finalNewPrice !== null) currentMatrix[liveItem.asin] = [finalNewPrice, 0];
-      
-      if (Object.keys(currentMatrix).length > 0) {
-          globalHist.push({t: Math.floor(now / 1000), p: currentMatrix});
-          if (globalHist.length > 150) globalHist = globalHist.slice(-150);
-          kvPromises.push(env.AZTRACKER_DB.put(globalKey, JSON.stringify(globalHist)));
+      if (finalNewPrice !== null) {
+          globalMatrix[liveItem.asin] = [finalNewPrice, 0];
       }
     }
     
@@ -660,6 +653,15 @@ export async function executeScrapeEngine(env, offset = 0) {
           });
           d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_broadcast_time_ms = ?, last_broadcast_price = ? WHERE asin = ?").bind(now, deal.price, deal.asin));
       }
+  }
+
+  // Process Batched Global Matrix for CRM Chart
+  if (Object.keys(globalMatrix).length > 0) {
+    const globalKey = "global:history_all_new";
+    let globalHist = await env.AZTRACKER_DB.get(globalKey, "json") || [];
+    globalHist.push({t: Math.floor(now / 1000), p: globalMatrix});
+    if (globalHist.length > 150) globalHist = globalHist.slice(-150);
+    kvPromises.push(env.AZTRACKER_DB.put(globalKey, JSON.stringify(globalHist)));
   }
 
   // FIX: Queue Dispatch MUST execute BEFORE DB batch. 

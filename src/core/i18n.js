@@ -55,7 +55,7 @@ const dict = {
   },
   "access.request_sent": {
     en: "⏳ <b>Request Sent.</b>\n\nPlease wait for an administrator to review your application.",
-    masry: "⏳ <b>استلمنا طلبك يا غالي.</b>\n\nاستنى الادمنز يراجعوه وهنرد عليك."
+    masry: "⏳ <b>استلمنا طلبك.</b>\n\nاستنى الادمنز يراجعوه وهنرد عليك."
   },
   "access.queue_full_head": {
     en: "⚠️ <b>Queue Full</b>",
@@ -83,7 +83,7 @@ const dict = {
   },
   "access.denied_notify": {
     en: "⛔ <b>Access Request Denied</b>\n\nYour request to join the server has been declined by an administrator.",
-    masry: "⛔ <b>الطلب اترفض</b>\n\nمعلش يا صاحبي، الادمن رفض طلب دخولك للسيرفر."
+    masry: "⛔ <b>الطلب اترفض</b>\n\nمعلش، الادمن رفض طلب دخولك للسيرفر."
   },
   "access.blocked_head": {
     en: "🚫 <b>Account Blocked</b>",
@@ -123,7 +123,7 @@ const dict = {
   },
   "access.unban_notify": {
     en: "✅ <b>Your account has been unbanned.</b>\n\nSend /start to continue.",
-    masry: "✅ <b>الحظر اتشال من عليك يا غالي.</b>\n\nابعت /start عشان تكمل وتشوف العروض."
+    masry: "✅ <b>الحظر اتشال من عليك.</b>\n\nابعت /start عشان تكمل وتشوف العروض."
   },
   "admin.unban_request_btn_keep": {
     en: "🚫 Keep Banned",
@@ -157,7 +157,7 @@ const dict = {
   // ── Welcome Message ───────────────────────────────────────────────────────
   "welcome.head": {
     en: "🎉 <b>You have been approved! Welcome!</b>",
-    masry: "🎉 <b>ألف مبروك! نورتنا يا غالي!</b>"
+    masry: "🎉 <b>ألف مبروك! نورتنا!</b>"
   },
   "welcome.step1": {
     en: "<b>1️⃣ Find your item</b>\nOpen the Amazon app or website and find the product you want to buy.",
@@ -180,8 +180,12 @@ const dict = {
     masry: "<b>5️⃣ الحد الأقصى للمنتجات</b>\nعشان السيرفرات متفرقعش مننا، كل واحد ليه <b>{limit}</b> منتجات. لو محتاج أكتر، راضي الادمن اللي دخلك (شاورما وقهوة بيعملوا المعجزات 😉)."
   },
   "welcome.protip": {
-    en: "💡 <i>Pro-Tip: You can always click \"📦 My Products\" from the Main Menu to manage your items, update target prices, or pause checking on things you've already bought.</i>",
-    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على '📦 منتجاتي' من القائمة الرئيسية عشان تدير منتجاتك، تعدل أسعار التارجت، أو توقف متابعة حاجة اشتريتها خلاص عشان تفضي مكان.</i>"
+    en: "💡 <i>Pro-Tip: You can always click the \"📦 My Products\" button next to the chat input to manage your items, update target prices, or delete items to free up space.</i>",
+    masry: "💡 <i>خد بالك: تقدر في أي وقت تدوس على زرار '📦 My Products' اللي جنب مكان الكتابة تحت، عشان تدير منتجاتك، وتعدل أسعار التارجت، أو تمسح حاجة عشان تفضي مكان.</i>"
+  },
+  "happy_shopping": {
+    en: "🛒 <b>Happy Shopping!</b>",
+    masry: "🛒 <b>تسوق سعيد!</b>"
   },
 
   // ── Language Command ──────────────────────────────────────────────────────
@@ -229,15 +233,15 @@ const dict = {
   },
   "menu.btn_my_products": {
     en: "📦 My Products",
-    masry: "📦 منتجاتي"
+    masry: "📦 My Products"
   },
   "menu.btn_how_to_add": {
     en: "➕ How to Add Products",
     masry: "➕ إزاي أضيف منتجات"
   },
   "menu.btn_admin_panel": {
-    en: "👑 Admin Panel",
-    masry: "👑 داش بورد"
+    en: "👑 Dashboard",
+    masry: "👑 Dashboard"
   },
   "menu.btn_language": {
     en: "🌐 Language / اللغة",
@@ -277,7 +281,7 @@ const dict = {
   },
   "link.region_not_supported_body": {
     en: "Currently, we only support ‏<code>amazon.eg</code>‏.",
-    masry: "شغالين على <code>amazon.eg</code> بتاع مصر بس يا باشا."
+    masry: "شغالين على <code>amazon.eg</code> بتاع مصر بس."
   },
   "link.could_not_parse": {
     en: "❌ <b>Could not parse a valid 10-digit ASIN.</b>",
@@ -301,11 +305,11 @@ const dict = {
   },
   "link.already_exists": {
     en: "⚠️ <b>You have already saved this product!</b>",
-    masry: "⚠️ <b>يا ريس المنتج ده عندك متسيف أصلاً!</b>"
+    masry: "⚠️ <b>المنتج ده عندك متسيف أصلاً!</b>"
   },
   "link.registered_head": {
     en: "✅ <b>Product Registered!</b>",
-    masry: "✅ <b>المنتج اتضاف يا باشا!</b>"
+    masry: "✅ <b>المنتج اتضاف!</b>"
   },
   "link.registered_status": {
     en: "This item is now saved. It will pull the live price during the next automated check.",
@@ -321,7 +325,7 @@ const dict = {
   },
   "link.invalid_command": {
     en: "⚠️ <b>Invalid Command or Input Structure</b>\n\nPlease use the interactive options below or drop a valid Amazon item link.",
-    masry: "⚠️ <b>إيه يا عم اللي انت كاتبه ده؟ مش فاهم حاجة!</b>\n\nاستخدم الزراير اللي تحت أو ارمي لينك أمازون شغال."
+    masry: "⚠️ <b>إيه اللي انت كاتبه ده؟ مش فاهم حاجة!</b>\n\nاستخدم الزراير اللي تحت أو ارمي لينك أمازون شغال."
   },
 
   // ── Product List ──────────────────────────────────────────────────────────
@@ -335,7 +339,7 @@ const dict = {
   },
   "list.empty_head": {
     en: "❌ <b>Your saved list is empty.</b>",
-    masry: "❌ <b>قايمتك بتصفر يا باشا، مفيش حاجة هنا.</b>"
+    masry: "❌ <b>قايمتك بتصفر، مفيش حاجة هنا.</b>"
   },
   "list.empty_hint": {
     en: "Paste an Amazon.eg link in the chat box to add it to your list.",
@@ -1110,7 +1114,7 @@ const dict = {
   },
   "crm.notify_promoted": {
     en: "👑 <b>You have been PROMOTED to Admin!</b>",
-    masry: "👑 <b>اترقيت لـ أدمن! مبروك يا باشا.</b>"
+    masry: "👑 <b>اترقيت لـ أدمن! مبروك.</b>"
   },
   "crm.notify_demoted": {
     en: "🔽 <b>You have been DEMOTED to standard user.</b>",
@@ -1118,7 +1122,7 @@ const dict = {
   },
   "crm.notify_limit_updated": {
     en: "📈 <b>Your tracking limit has been updated to {limit} items.</b>",
-    masry: "📈 <b>حدك اترفع لـ {limit} منتج. عيش يا معلم!</b>"
+    masry: "📈 <b>حدك اترفع لـ {limit} منتج.</b>"
   },
   "crm.notify_direct_message": {
     en: "💬 <b>Message from Admin:</b>\n\n{message}",
@@ -1335,8 +1339,12 @@ const dict = {
   },
   // ── WebApp Dashboard ────────────────────────────────────────────────────────
   "dashboard.my_products": {
-    en: "📦 My Products",
+    en: "📦 My products",
     masry: "📦 منتجاتي"
+  },
+  "dashboard.help_text": {
+    en: "Welcome to AzTracker! Send any Amazon link to the bot to track its price history. You will be notified instantly when the price drops.",
+    masry: "أهلاً بيك في AzTracker! ابعت أي لينك من أمازون للبوت عشان تتابع سعره، وهنبعتلك إشعار في ثواني أول ما السعر ينزل."
   },
   "dashboard.hot_deals": {
     en: "🔥 Hot Deals",
@@ -1523,7 +1531,7 @@ const dict = {
  * @param {object} [vars] - Key-value pairs for {placeholder} interpolation.
  * @returns {string} Translated string, or the key itself if not found.
  */
-export function t(key, lang = 'en', vars = {}) {
+export function t(key, lang = 'masry', vars = {}) {
   const entry = dict[key];
   if (!entry) {
     console.warn(`[i18n] Missing key: "${key}"`);
@@ -1549,7 +1557,9 @@ export function t(key, lang = 'en', vars = {}) {
  */
 export function resolveLanguageCode(languageCode) {
   if (!languageCode) return 'en';
-  return languageCode.startsWith('ar') ? 'masry' : 'en';
+  if (languageCode.startsWith('ar')) return 'masry';
+  if (languageCode.startsWith('en')) return 'en';
+  return 'masry';
 }
 
 /**

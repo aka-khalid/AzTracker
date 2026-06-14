@@ -90,6 +90,22 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Principle of Least Privilege:** Enforced a strict permission matrix for the GitHub Actions Cloudflare API Token, binding it explicitly to three explicit permissions (`D1 Edit`, `Workers KV Storage Edit`, `Worker Scripts Edit`) instead of granting overarching Global API Key access.
   </details>
 
+- [x] **Phase 6.14: Persistent Menu & Edge Navigation Resilience**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Unify the Telegram native Persistent Menu with the Web App experience, eliminate browser history traps, and ensure seamless synchronization between Telegram caching and the D1 Database.
+
+  **The Strategy:** Deployed a native `setup_bot_commands.js` script to configure the Telegram Persistent Menu (commands like `/lang` and `/help`) to replace the deprecated inline keyboard. Rewrote the Web App frontend navigation layer to bypass `window.history.back()` traps using absolute URL replacements and explicit `tg.BackButton` bindings. Implemented a seamless state-sync interceptor that forces Web Apps to reload if their URL language parameter mismatches the `X-User-Lang` database header, making D1 the absolute source of truth.
+
+  **Execution Highlights:**
+  - **Database as Source of Truth:** Stripped out `localStorage` and OS-level `tg.initDataUnsafe.language_code` fallbacks in the frontend. All Web App language state is now strictly synced to the `Users` D1 table, preventing desynchronization across devices.
+  - **Navigation Loop Resolution:** Replaced all `window.location.search` mutations with `window.location.replace()` in the API interceptors, preventing the iOS/Android Telegram WebKit from stacking duplicate history states and trapping the user in infinite back-button loops.
+  - **Graceful Blocking (HTTP 403):** Replaced the aggressive permanent-ban logic for users who block the bot. The queue worker now gracefully sets `is_paused = 1` for their subscriptions, preserving their history and allowing instant reactivation if they unblock the bot.
+  - **Secure Loading Overlay:** Injected a full-screen CSS loader overlay (`id="init-loader"`) across both the CRM and User Dashboards. This completely obscures the HTML skeleton until cryptographic API validation succeeds, preventing layout flashing for unauthorized users.
+  - **Cross-Browser Hardening:** Fixed severe iOS WebKit clipping bugs on both the Access Denied and Loading screens by replacing modern `inset: 0` rules with explicit viewport dimensions, and moved the black Access Denied background directly to the `<body>` tag to bypass Android WebApp container clipping.
+  </details>
+
 ---
 
 ## 🔮 Phase 7: Continuous Improvement & R&D
