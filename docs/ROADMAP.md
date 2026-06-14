@@ -157,7 +157,7 @@ This document tracks the technical debt, security fortifications, feature expans
 - **KV Write Quota Auditing:** Transitioned the jitter lock mechanism to use Cloudflare's in-memory standard caching API instead of KV.
 
 ### 📊 Phase 3: The User Experience
-- **Anti-Flap Hysteresis Engine:** Built a 2.5-hour static timestamp holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
+- **Anti-Flap Hysteresis Engine:** Built a 1-hour static timestamp holding buffer to protect the UI and database from Amazon PA-API payload truncation glitches.
 - **Context-Aware Dynamic UI:** Upgraded Telegram notification payloads to natively render specific Merchant checkout buttons (🛒 vs 📦) based on conditions.
 - **All-Time Low (ATL) Intelligence:** Injected high-urgency text when a price drops to its lowest recorded state.
 - **Global Price Matrix (Root Admin Dashboard):** Evaluated active ASINs applying Omnichannel Z-Score logic ($z \le -1.5$).
