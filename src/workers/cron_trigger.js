@@ -27,7 +27,13 @@ export async function scheduled(event, env, ctx) {
         const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');
         const lastRunMs = lastRunStr ? parseInt(lastRunStr, 10) : 0;
         
-        const poolSizeRes = await env.DB.prepare("SELECT COUNT(DISTINCT asin) as c FROM User_Subscriptions WHERE is_paused = 0").first();
+        const poolSizeRes = await env.DB.prepare(`
+            SELECT COUNT(*) as c FROM (
+                SELECT asin FROM Global_Products WHERE always_track = 1
+                UNION
+                SELECT asin FROM User_Subscriptions WHERE is_paused = 0
+            )
+        `).first();
         const poolSize = poolSizeRes ? poolSizeRes.c : 0;
         
         console.log(`[GOVERNOR] Pool Size: ${poolSize} | lastRunMs: ${lastRunMs} | Now: ${now}`);
