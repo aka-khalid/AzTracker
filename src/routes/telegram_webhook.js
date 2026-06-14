@@ -297,18 +297,14 @@ async function handleMessage(message, env, baseUrl, ctx) {
     const SUPPORTED_REGIONS = ['amazon.eg'];
 
     if (!productDomain || !SUPPORTED_REGIONS.includes(productDomain)) {
-      await editTelegramMessage(env, chatId, tempMessageId, t('link.region_not_supported_head', lang) + '\n\n' + t('link.region_not_supported_body', lang), {
-        inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
-      });
+      await editTelegramMessage(env, chatId, tempMessageId, t('link.region_not_supported_head', lang) + '\n\n' + t('link.region_not_supported_body', lang));
       return;
     }
 
     const pid = getAsinFromUrl(expandedUrl);
 
     if (!pid) {
-      await editTelegramMessage(env, chatId, tempMessageId, t('link.could_not_parse', lang), {
-        inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
-      });
+      await editTelegramMessage(env, chatId, tempMessageId, t('link.could_not_parse', lang));
       return;
     }
 
@@ -320,27 +316,18 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     if (!isAdmin) {
       if (isNaN(defaultLimit)) {
-        await editTelegramMessage(env, chatId, tempMessageId, t('link.system_error', lang), {
-          inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
-        });
+        await editTelegramMessage(env, chatId, tempMessageId, t('link.system_error', lang));
         return;
       }
 
       if (existingProducts && existingProducts.length >= userLimit) {
-        await editTelegramMessage(env, chatId, tempMessageId, t('link.limit_reached_head', lang) + '\n\n' + t('link.limit_reached_body', lang, { used: existingProducts.length, limit: userLimit }), {
-          inline_keyboard: [
-            [{ text: t('link.manage_products', lang), web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
-            [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
-          ]
-        });
+        await editTelegramMessage(env, chatId, tempMessageId, t('link.limit_reached_head', lang) + '\n\n' + t('link.limit_reached_body', lang, { used: existingProducts.length, limit: userLimit }));
         return;
       }
     }
 
     if (existingProducts && existingProducts.some(p => p.asin === pid)) {
-      await editTelegramMessage(env, chatId, tempMessageId, t('link.already_exists', lang), {
-        inline_keyboard: [[{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]]
-      });
+      await editTelegramMessage(env, chatId, tempMessageId, t('link.already_exists', lang));
       return;
     }
 
@@ -397,20 +384,13 @@ async function handleMessage(message, env, baseUrl, ctx) {
                     `${t('product.asin_inline', lang, { asin: pid })}\n\n` +
                     t('link.registered_status', lang) + '\n\n' +
                     `🕐 <b>${t('link.status_label', lang)}</b> ${t('link.pending_scan', lang)}\n\n${t('alert.boosted_label', lang)}`;
-    await editTelegramMessage(env, chatId, tempMessageId, successText, {
-      inline_keyboard: [
-        [{ text: "📦 View My Products", web_app: { url: `${baseUrl}/user_app?lang=${lang}` } }],
-        [{ text: t('nav.main_menu', lang), callback_data: "main_menu" }]
-      ]
-    });
+    await editTelegramMessage(env, chatId, tempMessageId, successText);
     return;
   }
 
 
   await deleteTelegramMessage(env, chatId, messageId);
-  await sendAppMessage(env, chatId, t('link.invalid_command', lang), {
-    inline_keyboard: [[{ text: t('nav.open_menu', lang), callback_data: "main_menu" }]]
-  });
+  await sendAppMessage(env, chatId, t('link.invalid_command', lang));
 }
 
 async function handleCallback(callback, env, baseUrl, ctx) {
