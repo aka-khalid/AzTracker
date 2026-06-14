@@ -603,7 +603,7 @@ function renderUserHTML(lang, partnerTag) {
     </div>
     <div style="display: flex; gap: 8px;">
       <button onclick="toggleLang()" id="btn-lang" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
-        ${isMasry ? 'EN' : 'عربي'}
+        ${isMasry ? 'EN' : 'مصري'}
       </button>
       <button onclick="tg.showAlert(ui.help_text)" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
         ℹ️
