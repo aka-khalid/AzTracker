@@ -990,8 +990,8 @@ const dict = {
     masry: "اكتب رسالتك لكل المستخدمين..."
   },
   "crm.empty_paused": {
-    en: "No paused products found.",
-    masry: "مفيش منتجات موقوفة حالياً."
+    en: "No abandoned products found.",
+    masry: "مفيش منتجات مهجورة حالياً."
   },
   "crm.chart_loading": {
     en: "Loading chart data...",
@@ -1000,8 +1000,16 @@ const dict = {
 
   // ── System Overview: New Stats ──────────────────────────────────────────────
   "crm.paused_products": {
-    en: "Paused Products",
-    masry: "منتجات موقوفة"
+    en: "Abandoned Products Hub",
+    masry: "منتجات مهجورة"
+  },
+  "crm.btn_track_global": {
+    en: "Track Globally",
+    masry: "تتبع عام"
+  },
+  "crm.btn_tracking_global": {
+    en: "Tracking Globally",
+    masry: "بيتتبع عام"
   },
   "crm.ghost_products": {
     en: "Ghost Products",

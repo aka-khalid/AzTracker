@@ -378,14 +378,15 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       const rows = await env.DB.prepare(`
-        SELECT s.chat_id, s.asin, s.added_at, s.paused_at, p.image_url,
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price,
-               u.first_name, u.username
-        FROM User_Subscriptions s
-        JOIN Global_Products p ON s.asin = p.asin
-        JOIN Users u ON s.chat_id = u.chat_id
-        WHERE s.is_paused = 1
-        ORDER BY s.paused_at DESC NULLS LAST, s.added_at DESC
+        SELECT 
+            g.asin, g.name, g.name_ar, g.image_url, g.amazon_price, g.new_price, g.used_price, g.always_track,
+            SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) as active_subs,
+            SUM(CASE WHEN s.is_paused = 1 THEN 1 ELSE 0 END) as paused_subs
+        FROM Global_Products g
+        LEFT JOIN User_Subscriptions s ON g.asin = s.asin
+        GROUP BY g.asin
+        HAVING active_subs = 0 AND (paused_subs > 0 OR s.asin IS NULL)
+        ORDER BY g.always_track DESC, paused_subs DESC
         LIMIT 100
       `).all();
 
@@ -403,7 +404,7 @@ export async function fetchAPI(request, env, ctx) {
 
       const rows = await env.DB.prepare(`
         SELECT s.chat_id, s.asin, s.added_at, s.target_price, p.image_url,
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price,
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.always_track,
                u.first_name, u.username
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
@@ -514,7 +515,7 @@ export async function fetchAPI(request, env, ctx) {
       
       const subs = await env.DB.prepare(`
         SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at, p.image_url,
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin,
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin, p.always_track,
                u.first_name, u.username
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
@@ -538,7 +539,7 @@ export async function fetchAPI(request, env, ctx) {
       
       const products = await env.DB.prepare(`
         SELECT s.asin, s.target_price, s.is_paused, p.image_url, 
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller, p.always_track
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
@@ -755,18 +756,18 @@ export async function fetchAPI(request, env, ctx) {
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, `Deleted product ${asin}`));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
-      } else if (action === "pause_product") {
+      } else if (action === "toggle_keep_alive") {
         const asin = data.asin;
-        const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1, paused_at = ? WHERE chat_id = ? AND asin = ?").bind(Date.now(), targetId, asin).run();
+        const currentTracker = await env.DB.prepare("SELECT always_track FROM Global_Products WHERE asin = ?").bind(asin).first('always_track');
+        if (!currentTracker) {
+             const limitRes = await env.DB.prepare("SELECT COUNT(*) as count FROM Global_Products WHERE always_track = 1").first();
+             if (limitRes && limitRes.count >= 500) {
+                 return new Response(JSON.stringify({ error: 'limit_reached', message: 'Maximum 500 global products allowed.' }), { status: 400 });
+             }
+        }
+        const result = await env.DB.prepare("UPDATE Global_Products SET always_track = CASE WHEN always_track = 1 THEN 0 ELSE 1 END WHERE asin = ?").bind(asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "PAUSE_PRODUCT", targetId, `Paused product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
-      } else if (action === "resume_product") {
-        const asin = data.asin;
-        const result = await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
-        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "RESUME_PRODUCT", targetId, `Resumed product ${asin}`));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
+        ctx.waitUntil(logAudit(env, adminId, "TOGGLE_KEEP_ALIVE", "global", `Toggled keep_alive for ${asin}`));
       } else if (action === "set_target") {
         const asin = data.asin;
         const target = parseFloat(data.target);
@@ -1651,6 +1652,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> ' + ${js('crm.audit_target')} + ' ' + p.target_price + '</div>'
                     : '';
 
+                const btnIcon = p.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = p.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = p.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+
                 return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
@@ -1665,7 +1672,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         targetBadge +
                     '</div>' +
                     '<div class="flex gap-2">' +
-                        '<button onclick="performAction(\\'' + actionType + '\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition border border-gray-700/50">' + pauseIcon + ' ' + pauseLabel + '</button>' +
+                        '<button onclick="performAction(\\'toggle_keep_alive\\', \\'global\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'}, this)" class="flex-1 py-1.5 rounded text-xs font-medium transition border ' + btnClass + '">' + btnIcon + ' ' + btnLabel + '</button>' +
                         '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>' +
                         '<button onclick="performAction(\\'delete_product\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ' + ${js('crm.btn_delete_drawer')} + '</button>' +
                     '</div>' +
@@ -1770,6 +1777,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
                 
+                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = item.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex gap-3 mb-2">
@@ -1790,8 +1803,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         \${targetBadge}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('pause_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50">
-                            \${isMasry ? '⏸️ ايقاف' : '⏸️ Pause'}
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                            \${btnIcon} \${btnLabel}
                         </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             \${isMasry ? '📊 الرسم' : '📊 Chart'}
@@ -1837,35 +1850,40 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
                 const name = (isMasry && item.name_ar) ? item.name_ar : (item.name || item.asin);
-                const userName = escapeHtml(item.first_name || 'User');
-                const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
-                const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
-                const pausedAgo = item.paused_at ? Math.round((Date.now() - item.paused_at)/86400000) + 'd ago' : 'Unknown';
+                const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
+                const tagColor = item.active_subs === 0 && item.paused_subs > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-400 bg-gray-400/10';
+                const tagLabel = item.active_subs === 0 && item.paused_subs > 0 ? '[Asleep]' : '[Orphaned]';
                 
+                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = item.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+
                 return \`
-                <div class="bg-gray-800/50 rounded-xl p-3 border border-amber-500/20" id="paused-item-\${item.chat_id}-\${item.asin}">
+                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" id="paused-item-\${item.asin}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                        <div class="text-xs text-gray-400">\${pausedAgo}</div>
-                    </div>
-                    <div class="flex items-center justify-between text-xs mb-3">
-                        <code class="text-gray-400">\${item.asin}</code>
-                        <span class="text-brand-400">\${displayUser}</span>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs mb-3">
+                                <code class="text-gray-400">\${item.asin}</code>
+                                <span class="text-gray-500">0 Active | \${item.paused_subs} Paused</span>
                             </div>
                         </div>
                     </div>
+                    <div class="flex justify-between items-end mb-3">
+                        <div class="text-sm font-semibold">\${price}</div>
+                    </div>
                     <div class="flex gap-2">
-                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
-                            \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                            \${btnIcon} \${btnLabel}
                         </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             \${isMasry ? '📊 الرسم' : '📊 Chart'}
-                        </button>
-                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
-                            \${isMasry ? '🗑️ مسح' : '🗑️ Delete'}
                         </button>
                     </div>
                 </div>\`;
@@ -1964,15 +1982,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
                 
-                const actionBtnHtml = item.is_paused === 1
-                    ? \`
-                        <button onclick="performAction('resume_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition border border-emerald-500/20">
-                            \${isMasry ? '▶️ تشغيل' : '▶️ Unpause'}
-                        </button>\`
-                    : \`
-                        <button onclick="performAction('pause_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-bold transition border border-gray-700/50">
-                            \${isMasry ? '⏸️ ايقاف' : '⏸️ Pause'}
-                        </button>\`;
+                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
+                const btnClass = item.always_track === 1 
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
                 return \`
                 <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
@@ -1994,7 +2008,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         \${targetBadge}
                     </div>
                     <div class="flex gap-2">
-                        \${actionBtnHtml}
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                            \${btnIcon} \${btnLabel}
+                        </button>
                         <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             \${isMasry ? '📊 الرسم' : '📊 Chart'}
                         </button>
