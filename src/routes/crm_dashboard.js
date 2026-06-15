@@ -296,7 +296,7 @@ export async function fetchAPI(request, env, ctx) {
             ORDER BY u.last_active DESC
           `).all(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
-          env.DB.prepare("SELECT MAX(last_updated) as lastRunMs FROM Global_Products").first(),
+          env.DB.prepare("SELECT value as lastRunMs FROM Bot_States WHERE key = 'last_run_time'").first(),
           env.DB.prepare("SELECT COUNT(*) as pausedCount FROM (SELECT g.asin FROM Global_Products g LEFT JOIN User_Subscriptions s ON g.asin = s.asin GROUP BY g.asin HAVING SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) = 0)").first(),
           env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
           env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value')
@@ -348,7 +348,7 @@ export async function fetchAPI(request, env, ctx) {
           systemStats: {
             totalUsers: mutableUsers.filter(u => u.role !== 'rejected').length,
             activeWatchPool: totalProductsRes ? totalProductsRes.activeWatchPool : 0,
-            lastRunMs: lastUpdatedRes ? lastUpdatedRes.lastRunMs : null,
+            lastRunMs: lastUpdatedRes && lastUpdatedRes.lastRunMs ? parseInt(lastUpdatedRes.lastRunMs, 10) : null,
             pausedProducts: pausedRes ? pausedRes.pausedCount : 0,
             ghostProducts: ghostRes ? ghostRes.ghostCount : 0,
             hardwareIntervalMs: hardwareCronRes || "300000",
