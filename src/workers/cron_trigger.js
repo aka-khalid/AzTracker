@@ -71,7 +71,10 @@ export async function scheduled(event, env, ctx) {
         }
         
         const batches = Math.ceil(poolSize / 10);
-        const maxRuns = Math.floor(3000 / batches);
+        const opsLimit = parseInt(env.DAILY_QUEUE_LIMIT || '10000', 10);
+        // Reserve 10% for telegram alerts. 1 CF Queue Message = 3 Operations.
+        const dailyMessageBudget = Math.floor((opsLimit * 0.9) / 3);
+        const maxRuns = Math.floor(dailyMessageBudget / batches);
         const intervalMs = Math.floor(86400000 / maxRuns);
 
         console.log(`[GOVERNOR] Calc -> intervalMs: ${intervalMs} | Time since last run: ${now - lastRunMs}`);
