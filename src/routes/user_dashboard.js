@@ -1017,7 +1017,7 @@ function renderUserHTML(lang, partnerTag) {
       });
     }
 
-    window.onload = loadProducts;
+    window.onload = () => { loadProducts(); loadHotDeals(); };
   </script>
 </body>
 </html>`;

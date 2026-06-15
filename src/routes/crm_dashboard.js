@@ -2415,7 +2415,18 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 } else {
                     showToast(${js('crm.toast_success')}, "success");
 
-                    if (btn && (action === 'pause_product' || action === 'resume_product' || action === 'toggle_keep_alive')) {
+                    if (action === 'toggle_mute_queue' && btn) {
+                        const isMuted = btn.classList.contains('bg-brand-500');
+                        if (isMuted) {
+                            btn.classList.add('bg-gray-600');
+                            btn.classList.remove('bg-brand-500');
+                            btn.firstElementChild.style.transform = 'translateX(0)';
+                        } else {
+                            btn.classList.add('bg-brand-500');
+                            btn.classList.remove('bg-gray-600');
+                            btn.firstElementChild.style.transform = 'translateX(1.5rem)';
+                        }
+                    } else if (btn && (action === 'pause_product' || action === 'resume_product' || action === 'toggle_keep_alive')) {
                         const isMasry = (document.documentElement.lang || 'masry') === 'masry';
                         if (action === 'toggle_keep_alive') {
                             const wasOn = btn.className.includes('bg-emerald');

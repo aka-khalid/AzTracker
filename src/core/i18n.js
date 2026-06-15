@@ -1031,10 +1031,7 @@ const dict = {
     en: "[Asleep]",
     masry: "[مركون]"
   },
-  "crm.search_placeholder": {
-    en: "Search ASIN or Name...",
-    masry: "ابحث بالاسم أو الـ ASIN..."
-  },
+
   "crm.mute_queue_title": {
     en: "Mute Join Queue Notifications",
     masry: "وقف إشعارات طلبات الدخول"
