@@ -22,6 +22,10 @@ export default {
         return await handleTelegramWebhook(request, env, ctx);
       }
 
+      if (url.pathname.startsWith('/api/crm/')) {
+        return await fetchAPI(request, env, ctx);
+      }
+
       // Try User API routing
       const userRes = await fetchUserAPI(request, env, ctx);
       if (userRes) return userRes;
