@@ -1211,6 +1211,10 @@ const dict = {
     en: "#ad",
     masry: "#إعلان"
   },
+  "broadcast.track_deal": {
+    en: "🎯 Track Deal",
+    masry: "🎯 تتبع العرض"
+  },
   // ── WebApp Dashboard ────────────────────────────────────────────────────────
   "dashboard.my_products": {
     en: "📦 My products",

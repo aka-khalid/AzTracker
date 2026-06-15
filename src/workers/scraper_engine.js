@@ -664,10 +664,10 @@ export async function executeScrapeEngine(env, offset = 0) {
               markup: {
                   inline_keyboard: [
                       [
-                          { text: t('broadcast.buy_here', 'masry'), url: broadcast_url },
-                          { text: '🎯 Track Deal', url: `https://t.me/${env.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}` }
+                          { text: t('broadcast.buy_here', 'masry'), url: broadcast_url }
                       ],
                       [
+                          { text: t('broadcast.track_deal', 'masry'), url: `https://t.me/${env.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}` },
                           { text: t('alert.btn_disclaimer', 'masry'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }
                       ]
                   ]
