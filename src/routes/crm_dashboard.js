@@ -1377,6 +1377,22 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 badge.classList.add('hidden');
                 if(dot) dot.classList.add('hidden');
             }
+
+            const me = appData.users.find(u => u.chat_id == appData.auth.adminId);
+            if (me) {
+                const btn = document.getElementById('toggle-mute-queue');
+                if (btn) {
+                    if (me.mute_join_queue === 1) {
+                        btn.classList.add('bg-brand-500');
+                        btn.classList.remove('bg-gray-600');
+                        btn.firstElementChild.style.transform = 'translateX(1.5rem)';
+                    } else {
+                        btn.classList.add('bg-gray-600');
+                        btn.classList.remove('bg-brand-500');
+                        btn.firstElementChild.style.transform = 'translateX(0)';
+                    }
+                }
+            }
         }
 
         // Engine Health: replicates cron_trigger.js governor math in-browser
