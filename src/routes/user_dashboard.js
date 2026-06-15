@@ -759,9 +759,11 @@ function renderUserHTML(lang, partnerTag) {
 
     function renderHotDeals() {
       if (hotDeals.length === 0) {
+        document.getElementById('dot-hotdeals').style.display = 'none';
         document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (ui.no_deals) + '</div>';
         return;
       }
+      document.getElementById('dot-hotdeals').style.display = 'inline-block';
       let html = '';
       hotDeals.forEach(p => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;

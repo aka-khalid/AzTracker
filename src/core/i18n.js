@@ -82,8 +82,8 @@ const dict = {
     masry: "🔔 <b>في حد جديد عايز يدخل</b>"
   },
   "access.admin_new_request_body": {
-    en: "👤 <b>Name:</b> {name}\n🆔 <b>ID:</b> <code>{id}</code>\n\n<i>This user is requesting authorization to access the server.</i>",
-    masry: "👤 <b>الاسم:</b> {name}\n🆔 <b>آي دي:</b> <code>{id}</code>\n\n<i>الشخص ده طالب يدخل السيرفر، رأيك إيه؟</i>"
+    en: "👤 <b>User:</b> {name}\n\n<i>This user is requesting authorization to access the server.</i>",
+    masry: "👤 <b>اليوزر:</b> {name}\n\n<i>الشخص ده طالب يدخل السيرفر، رأيك إيه؟</i>"
   },
   "access.admin_new_request_btn_approve": {
     en: "✅ Approve",
@@ -1030,6 +1030,18 @@ const dict = {
   "crm.tag_asleep": {
     en: "[Asleep]",
     masry: "[مركون]"
+  },
+  "crm.search_placeholder": {
+    en: "Search ASIN or Name...",
+    masry: "ابحث بالاسم أو الـ ASIN..."
+  },
+  "crm.mute_queue_title": {
+    en: "Mute Join Queue Notifications",
+    masry: "وقف إشعارات طلبات الدخول"
+  },
+  "crm.mute_queue_desc": {
+    en: "Stop receiving Telegram messages when a new user requests access",
+    masry: "مش هيجيلك رسالة على تليجرام لما حد يطلب يدخل"
   },
   "crm.tag_orphaned": {
     en: "[Orphaned]",

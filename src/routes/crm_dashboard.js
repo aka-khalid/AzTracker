@@ -356,7 +356,7 @@ export async function fetchAPI(request, env, ctx) {
           },
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
-          auth: { isRootAdmin: auth.isRootAdmin },
+          auth: { isRootAdmin: auth.isRootAdmin, adminId: auth.user.id.toString() },
           lang: auth.lang || 'masry'
         };
         const response = new Response(JSON.stringify(data), {
@@ -778,6 +778,9 @@ export async function fetchAPI(request, env, ctx) {
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, { asin, target }));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
+            } else if (action === "toggle_mute_queue") {
+        await env.DB.prepare("UPDATE Users SET mute_join_queue = CASE WHEN mute_join_queue = 1 THEN 0 ELSE 1 END WHERE chat_id = ?").bind(adminId).run();
+        ctx.waitUntil(logAudit(env, adminId, "TOGGLE_MUTE_QUEUE", adminId, {}));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_direct_message', tl, { message: data.message })); })());
@@ -1048,7 +1051,17 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
                 <!-- Queue View -->
                 <div id="view-queue" class="hidden space-y-3">
-                    <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                    
+                <div class="flex items-center justify-between bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 mb-2">
+                    <div>
+                        <span class="text-sm font-bold text-gray-200 block">${t('crm.mute_queue_title', lang) || 'Mute Join Queue Notifications'}</span>
+                        <span class="text-[10px] text-gray-500 block leading-tight mt-0.5">${t('crm.mute_queue_desc', lang) || 'Stop receiving Telegram messages when a new user requests access'}</span>
+                    </div>
+                    <button id="toggle-mute-queue" onclick="performAction('toggle_mute_queue', null, null, this)" class="w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none">
+                        <div class="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 transition-transform duration-200 shadow-md"></div>
+                    </button>
+                </div>
+                <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
                 </div>
 
                 <!-- Users View -->
@@ -1094,6 +1107,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1133,6 +1147,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-top-charts-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1153,6 +1168,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-paused-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1182,6 +1198,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ${t('crm.graveyard_purge_btn', lang)}
                 </button>
             </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1708,7 +1725,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
-                return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden">' +
+                return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" data-search="' + escapeHtml(p.asin).toLowerCase() + ' ' + escapeHtml(nameEsc).toLowerCase() + '">' +
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
                         '<div class="flex-1 min-w-0 pe-2">' +
@@ -1782,6 +1799,22 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
         }
 
+
+        function filterDrawer(query, containerId) {
+            const q = query.toLowerCase().trim();
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const items = container.querySelectorAll('[data-search]');
+            items.forEach(item => {
+                const searchStr = item.getAttribute('data-search') || '';
+                if (!q || searchStr.includes(q)) {
+                    item.style.display = 'block'; 
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
         let activeProductsData = [];
         let activeRenderIndex = 0;
 
@@ -1834,7 +1867,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
                 
                 return \`
-                <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}">
+                <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
@@ -1911,7 +1944,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
                 return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" id="paused-item-\${item.asin}">
+                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
@@ -1984,7 +2017,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 }
                 const subsText = '<bdi>' + item.active_subs + '</bdi> ' + ${js('crm.graveyard_subs')};
 
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + escapeHtml(name).toLowerCase() + '" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';

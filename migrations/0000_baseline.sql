@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS Users (
     item_limit INTEGER NOT NULL DEFAULT 5,
     approved_by TEXT,
     created_at INTEGER NOT NULL,
-    unban_rejected INTEGER DEFAULT 0 -- 1 = permanently banned (cannot re-request unban); only overridable from CRM
+    unban_rejected INTEGER DEFAULT 0, -- 1 = permanently banned (cannot re-request unban); only overridable from CRM
+    mute_join_queue INTEGER DEFAULT 0 -- 1 = admin opted out of receiving join queue notifications
 );
 
 -- ============================================================================

@@ -439,9 +439,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (allAdmins.length > 0) {
         const placeholders = allAdmins.map(() => '?').join(',');
         const { results: adminRows } = await env.DB.prepare(
-          `SELECT chat_id, lang FROM Users WHERE chat_id IN (${placeholders})`
+          `SELECT chat_id, lang, mute_join_queue FROM Users WHERE chat_id IN (${placeholders})`
         ).bind(...allAdmins).all();
         for (const row of adminRows) {
+          if (row.mute_join_queue === 1) {
+            allAdmins.splice(allAdmins.indexOf(row.chat_id), 1);
+            continue;
+          }
           adminLangMap[row.chat_id] = row.lang || 'masry';
         }
       }
@@ -503,9 +507,13 @@ async function handleCallback(callback, env, baseUrl, ctx) {
       if (allAdmins.length > 0) {
         const placeholders = allAdmins.map(() => '?').join(',');
         const { results: adminRows } = await env.DB.prepare(
-          `SELECT chat_id, lang FROM Users WHERE chat_id IN (${placeholders})`
+          `SELECT chat_id, lang, mute_join_queue FROM Users WHERE chat_id IN (${placeholders})`
         ).bind(...allAdmins).all();
         for (const row of (adminRows || [])) {
+          if (row.mute_join_queue === 1) {
+            allAdmins.splice(allAdmins.indexOf(row.chat_id), 1);
+            continue;
+          }
           adminLangMap[row.chat_id] = row.lang || 'masry';
         }
       }
