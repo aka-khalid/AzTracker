@@ -357,7 +357,8 @@ export async function fetchAPI(request, env, ctx) {
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
           auth: { isRootAdmin: auth.isRootAdmin, adminId: auth.user.id.toString() },
-          lang: auth.lang || 'masry'
+          lang: auth.lang || 'masry',
+          partnerTag: env.AMZN_ASSOCIATES_TAG || ''
         };
         const response = new Response(JSON.stringify(data), {
           status: 200,
@@ -1754,7 +1755,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
                         '<div class="flex-1 min-w-0 pe-2">' +
-                            '<a href="https://www.amazon.eg/dp/' + asinEsc + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
+                            '<a href="https://www.amazon.eg/dp/' + asinEsc + (appData.partnerTag ? '?tag=' + appData.partnerTag : '') + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
                             '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
                         '</div>' +
                         '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap shrink-0">' + statusText + '</span>' +
@@ -1806,7 +1807,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + (appData.partnerTag ? '?tag=' + appData.partnerTag : '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
                 html += '</div>';
                 html += '<div class="text-right">';
@@ -2046,7 +2047,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + (appData.partnerTag ? '?tag=' + appData.partnerTag : '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
                 html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
                 html += '</div></div>';
