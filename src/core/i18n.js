@@ -1510,6 +1510,7 @@ const dict = {
  * @returns {string} Translated string, or the key itself if not found.
  */
 export function t(key, lang = 'masry', vars = {}) {
+  if (lang && lang.startsWith('ar')) lang = 'masry';
   const entry = dict[key];
   if (!entry) {
     console.warn(`[i18n] Missing key: "${key}"`);
