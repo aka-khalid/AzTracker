@@ -781,8 +781,11 @@ export async function fetchAPI(request, env, ctx) {
       } else if (action === "toggle_mute_queue") {
         await env.DB.prepare("UPDATE Users SET mute_join_queue = CASE WHEN mute_join_queue = 1 THEN 0 ELSE 1 END WHERE chat_id = ?").bind(adminId).run();
         const newStateRes = await env.DB.prepare("SELECT mute_join_queue FROM Users WHERE chat_id = ?").bind(adminId).first();
-        const stateStr = (newStateRes && newStateRes.mute_join_queue === 1) ? 'Disabled' : 'Enabled';
-        ctx.waitUntil(logAudit(env, adminId, "TOGGLE_MUTE_QUEUE", adminId, { state: stateStr }));
+        if (newStateRes && newStateRes.mute_join_queue === 1) {
+            ctx.waitUntil(logAudit(env, adminId, "MUTE_JOIN_QUEUE", adminId, {}));
+        } else {
+            ctx.waitUntil(logAudit(env, adminId, "UNMUTE_JOIN_QUEUE", adminId, {}));
+        }
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_direct_message', tl, { message: data.message })); })());
@@ -1484,7 +1487,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 'SET_LIMIT': ${js('audit.action.set_limit')},
                 'DELETE_PRODUCT': ${js('audit.action.delete_product')},
                 'TOGGLE_KEEP_ALIVE': ${js('audit.action.toggle_keep_alive')},
-                'TOGGLE_MUTE_QUEUE': ${js('audit.action.toggle_mute_queue')},
+                'MUTE_JOIN_QUEUE': ${js('audit.action.mute_join_queue')},
+                'UNMUTE_JOIN_QUEUE': ${js('audit.action.unmute_join_queue')},
                 'ENABLE_KEEP_ALIVE': ${js('audit.action.enable_keep_alive')},
                 'DISABLE_KEEP_ALIVE': ${js('audit.action.disable_keep_alive')},
                 'DIRECT_MESSAGE': ${js('audit.action.direct_message')},

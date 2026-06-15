@@ -1443,9 +1443,13 @@ const dict = {
     en: "🔄 Toggled Global Tracking for {asin}",
     masry: "🔄 تغيير التتبع العام للمنتج {asin}"
   },
-  "audit.action.toggle_mute_queue": {
-    en: "🔕 {state} join queue notifications",
-    masry: "🔕 خلى إشعارات طلبات الدخول: {state}"
+  "audit.action.mute_join_queue": {
+    en: "Disabled 🔕 join queue notifications",
+    masry: "قفل 🔕 إشعارات طلبات الدخول"
+  },
+  "audit.action.unmute_join_queue": {
+    en: "Enabled 🔔 join queue notifications",
+    masry: "شغل 🔔 إشعارات طلبات الدخول"
   },
   "audit.action.enable_keep_alive": {
     en: "🟢 Enabled Global Tracking for {asin}",
