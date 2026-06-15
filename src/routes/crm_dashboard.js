@@ -1482,6 +1482,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 'SET_LIMIT': ${js('audit.action.set_limit')},
                 'DELETE_PRODUCT': ${js('audit.action.delete_product')},
                 'TOGGLE_KEEP_ALIVE': ${js('audit.action.toggle_keep_alive')},
+                'TOGGLE_MUTE_QUEUE': ${js('audit.action.toggle_mute_queue')},
                 'ENABLE_KEEP_ALIVE': ${js('audit.action.enable_keep_alive')},
                 'DISABLE_KEEP_ALIVE': ${js('audit.action.disable_keep_alive')},
                 'DIRECT_MESSAGE': ${js('audit.action.direct_message')},
