@@ -1900,7 +1900,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                        <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
                         <code class="text-gray-400">\${item.asin}</code>
@@ -1981,7 +1981,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
                                 <code class="text-gray-400">\${item.asin}</code>
-                                <div class="mt-2 text-[10px] bg-gray-800/50 rounded-lg py-1 px-2 border border-gray-700 inline-block font-mono tracking-wider shadow-inner">
+                                <div class="mt-2 text-[10px] bg-gray-800/50 rounded-lg py-1 px-2 border border-gray-700 inline-block shadow-inner">
                                     <span class="text-gray-500">0 ${t('crm.user_active', lang)} | \${item.paused_subs} ${t('crm.user_paused', lang)}</span>
                                 </div>
                             </div>
@@ -2106,12 +2106,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url || 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                        \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">Paused</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">Active</span>'}
-                    </div>
-                    <div class="flex items-center justify-between text-xs mb-3">
-                        <code class="text-gray-400">\${item.asin}</code>
-                        <span class="text-brand-400">\${displayUser}</span>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">${t('crm.user_paused', lang)}</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>'}
+                            </div>
+                            <div class="flex items-center justify-between text-xs mb-3">
+                                <code class="text-gray-400">\${item.asin}</code>
+                                <span class="text-brand-400">\${displayUser}</span>
                             </div>
                         </div>
                     </div>
