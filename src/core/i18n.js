@@ -799,6 +799,10 @@ const dict = {
     en: "Unban User",
     masry: "الغي الحظر"
   },
+  "crm.notify_revoked_idle": {
+    en: "⚠️ Your access has been revoked because you haven't used the bot since joining. We have a queue of users waiting for access, and we need to prioritize active users. You can request access again when you're ready to use it.",
+    masry: "⚠️ تم سحب صلاحية الدخول بتاعتك عشان مفيش أي استخدام للبوت من وقت ما انضميت. عندنا طابور من الناس مستنية تدخل، ولازم ندي الأولوية للناس اللي بتستخدمه فعلياً. تقدر تطلب الدخول تاني وقت ما تكون جاهز."
+  },
   "crm.toast_syncing": {
     en: "Syncing...",
     masry: "بنجيب آخر الداتا..."
@@ -1470,6 +1474,10 @@ const dict = {
   "audit.action.sync_env": {
     en: "🔄 Triggered Environment Sync",
     masry: "🔄 عمل Sync لنسخة المطورين"
+  },
+  "audit.action.auto_cleanup_idle": {
+    en: "🧹 System automatically revoked idle user",
+    masry: "🧹 النظام سحب صلاحية الدخول لعدم الاستخدام"
   },
   "crm.env_sync_title": {
     en: "Environment Sync",

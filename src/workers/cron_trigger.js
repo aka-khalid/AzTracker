@@ -1,3 +1,6 @@
+import { logAudit } from '../core/db.js';
+import { t } from '../core/i18n.js';
+
 export async function scheduled(event, env, ctx) {
     console.log(`[CRON START] Received event for schedule: ${event.cron}`);
     
@@ -22,6 +25,31 @@ export async function scheduled(event, env, ctx) {
         const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
         const dormantCutoff = now - thirtyDaysMs;
         await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 1 WHERE is_paused = 0 AND chat_id IN (SELECT chat_id FROM Users WHERE last_active > 0 AND last_active < ?)").bind(dormantCutoff).run();
+
+        // 1c. Idle User Cleanup (7 Days)
+        const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+        const idleCutoff = now - sevenDaysMs;
+        const idleUsersRes = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role = 'approved' AND last_active IS NULL AND created_at < ?").bind(idleCutoff).all();
+        
+        if (idleUsersRes.results && idleUsersRes.results.length > 0) {
+            for (const user of idleUsersRes.results) {
+                const targetId = user.chat_id.toString();
+                await env.DB.prepare("UPDATE Users SET role = 'rejected' WHERE chat_id = ?").bind(targetId).run();
+                
+                // Clear their auth cache so they are instantly logged out
+                ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
+                
+                // Send the polite warning message
+                const tl = user.lang || 'masry';
+                await env.MESSAGE_QUEUE.send({
+                    chatId: targetId,
+                    text: t('crm.notify_revoked_idle', tl)
+                });
+                
+                // Log it automatically in CRM
+                ctx.waitUntil(logAudit(env, 'SYSTEM', 'AUTO_CLEANUP_IDLE', targetId, {}));
+            }
+        }
 
         // 2. Dynamic Governor Logic
         const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');

@@ -705,6 +705,7 @@ export async function fetchAPI(request, env, ctx) {
         ]);
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_revoked', tl)); })());
         ctx.waitUntil(logAudit(env, adminId, "REVOKE_USER", targetId, {}));
+        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "unban") {
         // Check if there's a pending unban request in Join_Queue (from user's unban request)
         const queueRow = await env.DB.prepare("SELECT admin_messages FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
@@ -1509,7 +1510,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 'DISABLE_KEEP_ALIVE': ${js('audit.action.disable_keep_alive')},
                 'DIRECT_MESSAGE': ${js('audit.action.direct_message')},
                 'SET_TARGET': ${js('audit.action.set_target')},
-                'SYNC_ENV': ${js('audit.action.sync_env')}
+                'SYNC_ENV': ${js('audit.action.sync_env')},
+                'AUTO_CLEANUP_IDLE': ${js('audit.action.auto_cleanup_idle')}
             };
 
             container.innerHTML = logs.map(log => {
