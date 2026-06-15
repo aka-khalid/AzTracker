@@ -1436,7 +1436,6 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             document.getElementById('engine-batches').innerText = batches;
 
             // Status: color-code based on how close to daily ops limit
-            const opsLimit = parseInt(appData.systemStats.queueLimit || '10000', 10);
             const opsRatio = dailyOps / opsLimit;
             const dot = document.getElementById('engine-status-dot');
             const text = document.getElementById('engine-status-text');
