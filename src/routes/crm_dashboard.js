@@ -358,7 +358,7 @@ export async function fetchAPI(request, env, ctx) {
           users: mutableUsers,
           auth: { isRootAdmin: auth.isRootAdmin, adminId: auth.user.id.toString() },
           lang: auth.lang || 'masry',
-          partnerTag: env.AMZN_ASSOCIATES_TAG || ''
+          partnerTag: env.AMAZON_PARTNER_TAG || ''
         };
         const response = new Response(JSON.stringify(data), {
           status: 200,
@@ -1899,7 +1899,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
@@ -1976,7 +1976,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
@@ -2106,7 +2106,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url || 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">${t('crm.user_paused', lang)}</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>'}
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
