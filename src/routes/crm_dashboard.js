@@ -778,9 +778,11 @@ export async function fetchAPI(request, env, ctx) {
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         ctx.waitUntil(logAudit(env, adminId, "SET_TARGET", targetId, { asin, target }));
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
-            } else if (action === "toggle_mute_queue") {
+      } else if (action === "toggle_mute_queue") {
         await env.DB.prepare("UPDATE Users SET mute_join_queue = CASE WHEN mute_join_queue = 1 THEN 0 ELSE 1 END WHERE chat_id = ?").bind(adminId).run();
-        ctx.waitUntil(logAudit(env, adminId, "TOGGLE_MUTE_QUEUE", adminId, {}));
+        const newStateRes = await env.DB.prepare("SELECT mute_join_queue FROM Users WHERE chat_id = ?").bind(adminId).first();
+        const stateStr = (newStateRes && newStateRes.mute_join_queue === 1) ? 'Disabled' : 'Enabled';
+        ctx.waitUntil(logAudit(env, adminId, "TOGGLE_MUTE_QUEUE", adminId, { state: stateStr }));
       } else if (action === "direct_message") {
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_direct_message', tl, { message: data.message })); })());

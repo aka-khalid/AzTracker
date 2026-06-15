@@ -1443,6 +1443,10 @@ const dict = {
     en: "🔄 Toggled Global Tracking for {asin}",
     masry: "🔄 تغيير التتبع العام للمنتج {asin}"
   },
+  "audit.action.toggle_mute_queue": {
+    en: "🔕 {state} join queue notifications",
+    masry: "🔕 خلى إشعارات طلبات الدخول: {state}"
+  },
   "audit.action.enable_keep_alive": {
     en: "🟢 Enabled Global Tracking for {asin}",
     masry: "🟢 تفعيل التتبع العام للمنتج {asin}"
