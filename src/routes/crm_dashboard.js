@@ -1412,7 +1412,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             // Exact same math as cron_trigger.js
             const batches = Math.ceil(poolSize / 10);
-            const maxRuns = Math.floor(8640 / batches);
+            const maxRuns = Math.floor(3000 / batches);
             const intervalMs = Math.floor(86400000 / maxRuns);
 
             // Fetch dynamic hardware cron interval from systemStats (default 5 mins)

@@ -71,7 +71,7 @@ export async function scheduled(event, env, ctx) {
         }
         
         const batches = Math.ceil(poolSize / 10);
-        const maxRuns = Math.floor(8640 / batches);
+        const maxRuns = Math.floor(3000 / batches);
         const intervalMs = Math.floor(86400000 / maxRuns);
 
         console.log(`[GOVERNOR] Calc -> intervalMs: ${intervalMs} | Time since last run: ${now - lastRunMs}`);
