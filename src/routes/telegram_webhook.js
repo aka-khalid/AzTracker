@@ -117,6 +117,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
   if (isApproved || isAdmin) {
     ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
   }
+  if (ctx && ctx.waitUntil) ctx.waitUntil(syncUserNames(env, chatId, message.from, baseUrl));
   // Enforce masry for all new users unconditionally instead of checking OS language
   const lang = dbLang || 'masry';
 
