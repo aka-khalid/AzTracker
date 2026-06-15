@@ -419,8 +419,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         VALUES (?, ?, ?, ?, '{}', 'access', ?)
       `).bind(
         chatId,
-        callback.from ? callback.from.first_name : '',
-        callback.from ? callback.from.username : '',
+        callback.from?.first_name || '',
+        callback.from?.username || '',
         Date.now(),
         lang
       ).run();
@@ -489,8 +489,8 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         VALUES (?, ?, ?, ?, '{}', 'unban', ?)
       `).bind(
         chatId,
-        callback.from ? callback.from.first_name : '',
-        callback.from ? callback.from.username : '',
+        callback.from?.first_name || '',
+        callback.from?.username || '',
         Date.now(),
         lang
       ).run();
