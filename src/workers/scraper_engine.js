@@ -367,6 +367,8 @@ export async function executeScrapeEngine(env, offset = 0) {
        history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
        if (history.length >= 1) {
            const validHistory = history.filter(h => h.n !== null && h.t !== undefined);
+           validHistory.sort((a, b) => b.t - a.t); // Force descending (newest first)
+           
            if (validHistory.length >= 1) {
                const nowSec = Math.floor(now / 1000);
                const HALF_LIFE_SEC = 30 * 24 * 60 * 60; // 30 Days
