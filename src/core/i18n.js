@@ -630,8 +630,8 @@ const dict = {
     masry: "🔍 لعروض أجمد →"
   },
   "broadcast.price_as_of": {
-    en: "📅 Price as of {date}",
-    masry: "📅 السعر بتاريخ {date}"
+    en: "Price as of {date}",
+    masry: "السعر بتاريخ {date}"
   },
   "broadcast.btn_open": {
     en: "🛒 Open in Amazon.eg",
