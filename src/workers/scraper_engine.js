@@ -620,7 +620,11 @@ export async function executeScrapeEngine(env, offset = 0) {
              const isAtlDeal = isAtlNew && (zScore <= -0.5) && (dropPct >= reqDrop / 2.0);
              const isFlashSale = dropPct >= (reqDrop * 2.0);
              
-             if (isStandardDeal || isAtlDeal || isFlashSale) {
+             // Only broadcast deals sold by Amazon.eg (not third-party sellers)
+             const amazonEgMid = env?.AMZN_EG_MERCHANT_ID || 'A1ZVRGNO5AYLOV';
+             const isAmazonSeller = finalNewMid && finalNewMid === amazonEgMid;
+
+             if (isAmazonSeller && (isStandardDeal || isAtlDeal || isFlashSale)) {
                  bestDeal.push({
                      asin: liveItem.asin,
                      name: liveItem.name,
