@@ -1,9 +1,9 @@
 import { getUserRoles, logAudit } from '../core/db.js';
 import { t, getWelcomeMessage } from '../core/i18n.js';
 import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
-import { executeScrapeEngine } from '../workers/scraper_engine.js';
+import { executeScrapeEngine, checkCircuitBreaker, recordCircuitSuccess, recordCircuitFailure } from '../workers/scraper_engine.js';
 import { sendTelegramMessage as sendTelegram, editTelegramMessage } from '../core/telegram.js';
-import { escapeHtml } from '../core/utils.js';
+import { escapeHtml, buildBroadcastMessage, expandAmazonUrl, getAsinFromUrl } from '../core/utils.js';
 import { setChatMenuButton } from './telegram_webhook.js';
 
 async function generateSignature(secret, asin, exp) {
@@ -145,6 +145,143 @@ export async function fetchAPI(request, env, ctx) {
     }
 
 
+
+    // Live price fetch + broadcast preview for CRM (with circuit breaker)
+    if (url.pathname === "/api/crm/live-price" && request.method === "POST") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
+
+      let body;
+      try { body = await request.json(); } catch (e) { return new Response("Invalid JSON", { status: 400 }); }
+      let { asin, fetch_options = false, lang = 'masry' } = body;
+      if (!asin) return new Response("Missing ASIN", { status: 400 });
+
+      if (asin.includes('http')) {
+        if (asin.includes('amzn.to') || asin.includes('amzn.eu') || asin.includes('a.co') || /amazon\.eg\/d\//.test(asin)) {
+          asin = await expandAmazonUrl(asin);
+        }
+        const extracted = getAsinFromUrl(asin);
+        if (extracted) asin = extracted;
+      }
+      
+      if (!/^[A-Z0-9]{10}$/.test(asin)) {
+        return new Response(JSON.stringify({ error: "invalid_asin", message: "Invalid ASIN or Amazon link" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      // Circuit breaker check
+      const cbState = await checkCircuitBreaker(env);
+      if (cbState === "open") {
+        return new Response(JSON.stringify({ error: "circuit_open", message: "Amazon API paused — circuit breaker is open" }), { status: 429, headers: { "Content-Type": "application/json" } });
+      }
+
+      try {
+        let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
+        if (!accessToken) {
+          const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+          const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+          accessToken = await getAmazonAccessToken(clientId, clientSecret);
+        }
+        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        let items = [];
+        let arabicNames = new Map();
+        try {
+          items = await parser.getItems([asin]);
+          arabicNames = await parser.getItemsWithArabic([asin]);
+        } catch (authErr) {
+          if (authErr.message.includes("401") || authErr.message.includes("403") || authErr.message.includes("Token has expired")) {
+            console.warn('[CRM LivePrice] Amazon token expired, refreshing and retrying...');
+            await env.AZTRACKER_DB.delete('amazon_access_token');
+            const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+            const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+            accessToken = await getAmazonAccessToken(clientId, clientSecret);
+            parser.accessToken = accessToken;
+            items = await parser.getItems([asin]);
+            arabicNames = await parser.getItemsWithArabic([asin]);
+          } else {
+            throw authErr;
+          }
+        }
+
+        if (items.length === 0) {
+          return new Response(JSON.stringify({ error: "not_found", message: "Product not found on Amazon" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+
+        const raw = items[0];
+        raw.name_ar = arabicNames.get(asin) || raw.name_ar || null;
+
+        // Determine the seller name for display
+        const deal = {
+          asin: raw.asin,
+          name: raw.name,
+          name_ar: raw.name_ar,
+          price: raw.amazonPrice || raw.newPrice || raw.usedPrice || 0,
+          seller: raw.amazonSeller || raw.newSeller || raw.usedSeller || 'Unknown',
+          mid: raw.amazonMid || raw.newMid || raw.usedMid || ''
+        };
+
+        // Build the broadcast message preview
+        const broadcast = buildBroadcastMessage(env, deal, Date.now(), t);
+
+        // Fetch options (variations) if requested
+        let options = [];
+        if (fetch_options) {
+          try {
+            options = await parser.getVariations(asin, lang);
+          } catch (e) {
+            console.warn('[CRM LivePrice] getVariations failed:', e.message);
+          }
+        }
+
+        // Record success if half_open (closes the circuit)
+        if (cbState === "half_open") {
+          if (ctx?.waitUntil) ctx.waitUntil(recordCircuitSuccess(env));
+        }
+
+        const pTag = env?.AMAZON_PARTNER_TAG || '';
+        const shortUrl = `https://www.amazon.eg/dp/${raw.asin}${pTag ? '?tag=' + pTag : ''}`;
+        const formattedPrice = deal.price > 0 ? deal.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' EGP' : '';
+
+        return new Response(JSON.stringify({
+          success: true,
+          product: { asin: raw.asin, name: raw.name, name_ar: raw.name_ar, shortUrl, price: formattedPrice },
+          broadcast_text: broadcast.text,
+          inline_keyboard: broadcast.inline_keyboard,
+          options: options
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      } catch (e) {
+        if (e.message.includes("401") || e.message.includes("403") || e.message.includes("Token has expired")) {
+          await env.AZTRACKER_DB.delete('amazon_access_token');
+        }
+        if (ctx?.waitUntil) ctx.waitUntil(recordCircuitFailure(env));
+        return new Response(JSON.stringify({ error: "api_error", message: e.message }), { status: 502, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    if (url.pathname === "/api/crm/generate-text" && request.method === "POST") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      
+      let body;
+      try { body = await request.json(); } catch (e) { return new Response("Invalid JSON", { status: 400 }); }
+      
+      const deal = {
+        asin: body.asin,
+        name: body.name,
+        name_ar: body.name,
+        price: body.numPrice || 0,
+        seller: body.seller || 'Unknown',
+        mid: body.mid || ''
+      };
+      
+      const broadcast = buildBroadcastMessage(env, deal, Date.now(), t);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        broadcast_text: broadcast.text,
+        inline_keyboard: broadcast.inline_keyboard
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
 
     if (url.pathname === "/api/test-asin") {
       const auth = await authAdmin(request, env);
@@ -506,6 +643,42 @@ export async function fetchAPI(request, env, ctx) {
       });
     }
 
+    if (url.pathname === "/api/crm/paused/bulk-delete" && request.method === "POST") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const body = await request.json();
+      const { asins } = body;
+      if (!asins || !Array.isArray(asins) || asins.length === 0) {
+        return new Response(JSON.stringify({ success: false, error: "No ASINs provided" }), { status: 400 });
+      }
+
+      const validAsins = asins.filter(a => /^[A-Z0-9]{10}$/.test(a));
+      if (validAsins.length === 0) {
+        return new Response(JSON.stringify({ success: false, error: "No valid ASINs" }), { status: 400 });
+      }
+
+      // Delete from Global_Products, User_Subscriptions, and Price_History
+      const stmts = [];
+      for (const asin of validAsins) {
+        stmts.push(env.DB.prepare("DELETE FROM Global_Products WHERE asin = ?").bind(asin));
+        stmts.push(env.DB.prepare("DELETE FROM User_Subscriptions WHERE asin = ?").bind(asin));
+        stmts.push(env.DB.prepare("DELETE FROM Price_History WHERE asin = ?").bind(asin));
+      }
+      await env.DB.batch(stmts);
+
+      const adminId = auth.user.id.toString();
+      ctx.waitUntil(logAudit(env, adminId, "BULK_DELETE", "global", { count: validAsins.length, asins: validAsins }));
+
+      return new Response(JSON.stringify({
+        success: true,
+        deleted: validAsins.length
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     if (url.pathname.startsWith("/api/crm/product-subs/") && request.method === "GET") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
@@ -586,6 +759,9 @@ export async function fetchAPI(request, env, ctx) {
         const beforeRes = await env.DB.prepare(
           "SELECT COUNT(*) as cnt, MAX(last_updated) as max_ts FROM Global_Products"
         ).first();
+        const now = Date.now();
+        await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('last_run_time', ?, ?)").bind(now.toString(), now + 86400000).run();
+        
         await env.SCRAPER_QUEUE.send({ offset: 0 });
         ctx.waitUntil(logAudit(env, adminId, "FORCE_SCRAPE", "global", {}));
 
@@ -600,20 +776,39 @@ export async function fetchAPI(request, env, ctx) {
       if (action === "broadcast") {
         if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
-        
+
         ctx.waitUntil((async () => {
-          const users = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role = 'approved'").all();
-          const queueMsgs = users.results.map(row => ({
-            body: {
-              type: 'telegram_broadcast',
-              chatId: row.chat_id,
-              text: t('crm.broadcast_prefix', row.lang || 'masry', { message: data.message })
+          // Product deal broadcast → send to public channel with inline keyboard
+          if (data.broadcast_type === 'product_broadcast' && data.inline_keyboard) {
+            if (!env.TELEGRAM_PUBLIC_CHANNEL_ID) {
+              console.error('[Broadcast] TELEGRAM_PUBLIC_CHANNEL_ID not set');
+              return;
             }
-          }));
-          for (let i = 0; i < queueMsgs.length; i += 100) {
-            await env.MESSAGE_QUEUE.sendBatch(queueMsgs.slice(i, i + 100));
+            await env.MESSAGE_QUEUE.sendBatch([{
+              body: {
+                type: 'telegram_alert',
+                asin: data.asin || '',
+                chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
+                text: data.message,
+                markup: { inline_keyboard: data.inline_keyboard }
+              }
+            }]);
+            await logAudit(env, adminId, "PRODUCT_BROADCAST", data.asin || 'unknown', {});
+          } else {
+            // Generic user broadcast (existing behavior)
+            const users = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role = 'approved'").all();
+            const queueMsgs = users.results.map(row => ({
+              body: {
+                type: 'telegram_broadcast',
+                chatId: row.chat_id,
+                text: t('crm.broadcast_prefix', row.lang || 'masry', { message: data.message })
+              }
+            }));
+            for (let i = 0; i < queueMsgs.length; i += 100) {
+              await env.MESSAGE_QUEUE.sendBatch(queueMsgs.slice(i, i + 100));
+            }
+            await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", {});
           }
-          await logAudit(env, adminId, "GLOBAL_BROADCAST", "all", {});
         })());
         return new Response(JSON.stringify({ success: true, status: "queued" }), { status: 202 });
       }
@@ -621,6 +816,10 @@ export async function fetchAPI(request, env, ctx) {
       if (action === "approve") {
         // Read admin_messages and lang BEFORE delete
         const queueRow = await env.DB.prepare("SELECT admin_messages, first_name, username, lang FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Build human-readable label before DELETE so we can show it in admin notifications
+        const targetLabel = queueRow?.username
+          ? `${queueRow.first_name} (@${queueRow.username})`
+          : `${queueRow?.first_name || 'Unknown'} (${targetId})`;
         // Race guard: delete queue row first, check if another admin already handled it
         const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
         if (deleteResult.meta.changes === 0) {
@@ -656,12 +855,16 @@ export async function fetchAPI(request, env, ctx) {
           let adminMessages = {};
           try { adminMessages = typeof queueRow.admin_messages === 'string' ? JSON.parse(queueRow.admin_messages) : queueRow.admin_messages; } catch(e) {}
           for (const [admId, msgId] of Object.entries(adminMessages)) {
-            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
+            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetLabel, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
           }
         }
       } else if (action === "reject") {
         // Read request_type + user info BEFORE deleting (needed for UPSERT)
         const queueRow = await env.DB.prepare("SELECT request_type, admin_messages, first_name, username FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Build human-readable label before DELETE so we can show it in admin notifications
+        const targetLabel = queueRow?.username
+          ? `${queueRow.first_name} (@${queueRow.username})`
+          : `${queueRow?.first_name || 'Unknown'} (${targetId})`;
         // Get lang from Users if row exists, else default to 'en' (Join_Queue has no language_code column)
         const existingUser = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(targetId).first();
         const userLang = existingUser?.lang || 'masry';
@@ -692,7 +895,7 @@ export async function fetchAPI(request, env, ctx) {
           let adminMessages = {};
           try { adminMessages = typeof queueRow.admin_messages === 'string' ? JSON.parse(queueRow.admin_messages) : queueRow.admin_messages; } catch(e) {}
           for (const [admId, msgId] of Object.entries(adminMessages)) {
-            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_request', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
+            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_request', al, { id: targetLabel, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
           }
         }
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
@@ -709,7 +912,11 @@ export async function fetchAPI(request, env, ctx) {
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
       } else if (action === "unban") {
         // Check if there's a pending unban request in Join_Queue (from user's unban request)
-        const queueRow = await env.DB.prepare("SELECT admin_messages FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        const queueRow = await env.DB.prepare("SELECT admin_messages, first_name, username FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
+        // Build human-readable label before DELETE so we can show it in admin notifications
+        const targetLabel = queueRow?.username
+          ? `${queueRow.first_name} (@${queueRow.username})`
+          : `${queueRow?.first_name || 'Unknown'} (${targetId})`;
         if (queueRow) {
           // Race guard: delete queue row first, check if another admin already handled it
           const deleteResult = await env.DB.prepare("DELETE FROM Join_Queue WHERE chat_id = ?").bind(targetId).run();
@@ -730,7 +937,7 @@ export async function fetchAPI(request, env, ctx) {
           let adminMessages = {};
           try { adminMessages = typeof queueRow.admin_messages === 'string' ? JSON.parse(queueRow.admin_messages) : queueRow.admin_messages; } catch(e) {}
           for (const [admId, msgId] of Object.entries(adminMessages)) {
-            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetId, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
+            try { const al = await adminLangPref(admId); await editTelegramMessage(env, admId, msgId, t('access.handled_approved', al, { id: targetLabel, admin: 'CRM admin' }), { inline_keyboard: [] }); } catch(e) {}
           }
         }
         ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
@@ -754,11 +961,8 @@ export async function fetchAPI(request, env, ctx) {
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_limit_updated', tl, { limit: newLimit })); })());
         ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, { limit: newLimit }));
       } else if (action === "delete_product") {
-        const asin = data.asin;
-        const result = await env.DB.prepare("DELETE FROM User_Subscriptions WHERE chat_id = ? AND asin = ?").bind(targetId, asin).run();
-        if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
-        ctx.waitUntil(logAudit(env, adminId, "DELETE_PRODUCT", targetId, { asin }));
-        ctx.waitUntil(caches.default.delete(new Request(`https://auth.internal/roles/${targetId}`)));
+        // DEPRECATED: Delete product action removed from UI. Kept for API compatibility.
+        return new Response(JSON.stringify({ error: 'deprecated', message: 'This action is no longer available.' }), { status: 410 });
       } else if (action === "toggle_keep_alive") {
         const asin = data.asin;
         const currentTracker = await env.DB.prepare("SELECT always_track FROM Global_Products WHERE asin = ?").bind(asin).first('always_track');
@@ -962,6 +1166,56 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     </div>
                 </div>
 
+                <!-- Broadcast Deals Section -->
+                <section class="mt-3">
+                    <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.broadcast_deals', lang)}</h2>
+                    <div class="glass rounded-xl p-4 border border-gray-800/50">
+                        <p class="text-xs text-gray-500 mb-3">${t('crm.broadcast_deals_desc', lang)}</p>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" id="broadcast-deals-input"
+                                placeholder="${t('crm.broadcast_enter_asin', lang)}"
+                                class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/50">
+                            <button onclick="fetchBroadcastDealsPreview()" id="broadcast-deals-fetch-btn"
+                                class="px-4 py-2 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20 whitespace-nowrap">
+                                ${t('crm.broadcast_fetch', lang)}
+                            </button>
+                        </div>
+                        <div id="broadcast-deals-loading" class="hidden text-center py-4">
+                            <div class="inline-block animate-spin w-5 h-5 border-2 border-brand-400 border-t-transparent rounded-full mb-2"></div>
+                            <p class="text-xs text-gray-400">${t('crm.broadcast_loading', lang)}</p>
+                        </div>
+                        <div id="broadcast-deals-options" class="hidden mb-3">
+                            <p class="text-xs text-brand-400 font-medium mb-2">${t('crm.broadcast_options_found', lang)}</p>
+                            <div id="broadcast-deals-options-list" class="space-y-1 max-h-48 overflow-y-auto pr-1"></div>
+                        </div>
+                        <div id="broadcast-deals-composer" class="hidden">
+                            <div class="bg-gray-800/30 rounded-lg p-3 mb-3">
+                                <div class="flex justify-between items-center mb-2">
+                                    <label class="text-[10px] text-gray-500 uppercase tracking-wider mb-0">${t('crm.broadcast_editor_label', lang)}</label>
+                                    <div class="flex gap-2">
+                                        <button onclick="goBackToBroadcastDealsOptions()" id="broadcast-deals-back-btn" class="p-1.5 bg-gray-800 rounded-full text-brand-400 hover:text-brand-300 transition hidden">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                        </button>
+                                        <button onclick="closeBroadcastDealsComposer()" id="broadcast-deals-close-btn" class="p-1.5 bg-gray-800 rounded-full text-gray-400 hover:text-white transition">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <input type="text" id="broadcast-deals-title" class="w-full bg-transparent border-b border-gray-700 text-sm font-bold text-white py-1 mb-2 focus:outline-none focus:border-brand-500/50">
+                                <label class="text-[10px] text-gray-500 uppercase tracking-wider">${t('crm.broadcast_desc_label', lang)}</label>
+                                <textarea id="broadcast-deals-body" rows="6" class="w-full bg-transparent text-sm text-gray-300 py-1 focus:outline-none resize-none leading-relaxed"></textarea>
+                            </div>
+                            <button onclick="confirmBroadcastDeals()" id="broadcast-deals-confirm-btn"
+                                class="w-full justify-center bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-sm px-4 py-2.5 rounded-lg font-medium transition border border-brand-500/20 flex items-center gap-2">
+                                ${t('crm.broadcast_confirm_send', lang)}
+                            </button>
+                        </div>
+                        <div id="broadcast-deals-error" class="hidden text-center py-3">
+                            <p class="text-xs text-red-400" id="broadcast-deals-error-text"></p>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Engine Health Widget -->
                 <div class="mt-3 glass rounded-xl p-4" id="engine-health-widget">
                     <div class="flex items-center justify-between mb-2">
@@ -1114,7 +1368,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-users" oninput="filterDrawer(this.value, 'drawer-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1135,6 +1389,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-active" oninput="filterDrawer(this.value, 'drawer-active-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-active-items" onscroll="handleActiveScroll()">
             </div>
         </div>
@@ -1154,7 +1409,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-top-charts" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-top-charts-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1175,7 +1430,16 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-paused" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-red-900/10 flex items-center justify-between" id="drawer-paused-toolbar" style="display: none;">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="paused-select-all" onchange="togglePausedSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
+                    <span class="text-xs text-gray-400">${t('crm.select_all', lang)}</span>
+                </label>
+                <button onclick="deleteSelectedPaused()" id="paused-delete-selected-btn" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
+                    🗑️ ${t('crm.bulk_delete', lang)}
+                </button>
+            </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-paused-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1196,6 +1460,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-graveyard" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10">
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" id="graveyard-select-all" onchange="toggleGraveyardSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
@@ -1205,7 +1470,6 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ${t('crm.graveyard_purge_btn', lang)}
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1272,6 +1536,47 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         </div>
     </div>
 
+    <!-- Broadcast Modal -->
+    <div id="broadcast-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBroadcastModal()"></div>
+        <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-lg">${t('crm.broadcast_composer', lang)}</h3>
+                <div class="flex gap-2">
+                    <button onclick="goBackToBroadcastModalOptions()" id="broadcast-modal-back-btn" class="p-2 bg-gray-800 rounded-full text-brand-400 hover:text-brand-300 hidden transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    </button>
+                    <button onclick="closeBroadcastModal()" id="broadcast-modal-close-btn" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div id="broadcast-modal-loading" class="text-center py-8">
+                <div class="inline-block animate-spin w-6 h-6 border-2 border-brand-400 border-t-transparent rounded-full mb-2"></div>
+                <p class="text-xs text-gray-400">${t('crm.broadcast_loading', lang)}</p>
+            </div>
+            <div id="broadcast-modal-options" class="hidden mb-4">
+                <p class="text-xs text-brand-400 font-medium mb-2">${t('crm.broadcast_options_found', lang)}</p>
+                <div id="broadcast-modal-options-list" class="space-y-1 max-h-40 overflow-y-auto pr-1"></div>
+            </div>
+            <div id="broadcast-modal-composer" class="hidden">
+                <div class="bg-gray-800/30 rounded-lg p-3 mb-3">
+                    <label class="text-[10px] text-gray-500 uppercase tracking-wider">${t('crm.broadcast_editor_label', lang)}</label>
+                    <input type="text" id="broadcast-modal-title" class="w-full bg-transparent border-b border-gray-700 text-sm font-bold text-white py-1 mb-2 focus:outline-none focus:border-brand-500/50">
+                    <label class="text-[10px] text-gray-500 uppercase tracking-wider">${t('crm.broadcast_desc_label', lang)}</label>
+                    <textarea id="broadcast-modal-body" rows="6" class="w-full bg-transparent text-sm text-gray-300 py-1 focus:outline-none resize-none leading-relaxed"></textarea>
+                </div>
+                <button onclick="confirmBroadcastModal()" id="broadcast-modal-confirm-btn"
+                    class="w-full justify-center bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-sm px-4 py-2.5 rounded-lg font-medium transition border border-brand-500/20 flex items-center gap-2">
+                    ${t('crm.broadcast_confirm_send', lang)}
+                </button>
+            </div>
+            <div id="broadcast-modal-error" class="hidden text-center py-3">
+                <p class="text-xs text-red-400" id="broadcast-modal-error-text"></p>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toast-container" class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
@@ -1303,6 +1608,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 .replace(/'/g, "&#039;");
         }
 
+
         async function fetchAPI(path, method = 'GET', body = null) {
             if(!initData) return showToast(${js('crm.local_mode_toast')}, "error");
             try {
@@ -1317,7 +1623,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     let errMsg = 'HTTP ' + res.status;
                     try {
                         const errJson = await res.json();
-                        if (errJson.error) errMsg = errJson.error;
+                        if (errJson.message) errMsg = errJson.message;
+                        else if (errJson.error) errMsg = errJson.error;
                     } catch (e) {}
                     throw new Error(errMsg);
                 }
@@ -1497,6 +1804,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 'PURGE_GHOSTS': ${js('audit.action.purge_ghosts')},
                 'FORCE_SCRAPE': ${js('audit.action.force_scrape')},
                 'GLOBAL_BROADCAST': ${js('audit.action.global_broadcast')},
+                'PRODUCT_BROADCAST': ${js('audit.action.product_broadcast')},
+                'BULK_DELETE': ${js('audit.action.bulk_delete')},
                 'APPROVE_USER': ${js('audit.action.approve_user')},
                 'REJECT_USER': ${js('audit.action.reject_user')},
                 'REVOKE_USER': ${js('audit.action.revoke_user')},
@@ -1765,10 +2074,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         '<div class="text-sm font-semibold">' + price + '</div>' +
                         targetBadge +
                     '</div>' +
-                    '<div class="flex gap-2">' +
-                        '<button onclick="performAction(\\'toggle_keep_alive\\', \\'global\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'}, this)" class="flex-1 py-1.5 rounded text-xs font-medium transition border ' + btnClass + '">' + btnIcon + ' ' + btnLabel + '</button>' +
-                        '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>' +
-                        '<button onclick="performAction(\\'delete_product\\', \\'' + userIdEsc.replace(/'/g, "\\'") + '\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'})" class="flex-1 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20">🗑️ ' + ${js('crm.btn_delete_drawer')} + '</button>' +
+                    '<div class="grid grid-cols-3 gap-2">' +
+                        '<button onclick="performAction(\\'toggle_keep_alive\\', \\'global\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'}, this)" class="py-1.5 rounded text-xs font-medium transition border ' + btnClass + '">' + btnIcon + ' ' + btnLabel + '</button>' +
+                        '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>' +
+                        '<button onclick="openBroadcastModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">' + ${js('crm.per_product_broadcast')} + '</button>' +
                     '</div>' +
                 '</div>';
             }).join('');
@@ -1777,9 +2086,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function closeDrawer() {
             const content = document.getElementById('drawer-content');
             content.style.transform = 'translateY(100%)';
-            setTimeout(() => {
-                document.getElementById('drawer').classList.add('hidden');
-            }, 300);
+            setTimeout(() => { document.getElementById('drawer').classList.add('hidden'); }, 300);
+            const searchInput = document.getElementById('search-drawer-users');
+            if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-items'); }
         }
 
         async function openTopChartsDrawer() {
@@ -1804,7 +2113,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
                 const price = item.amazon_price || item.new_price;
                 const priceStr = price ? ${js('chrome.currency_egp')} + ' ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + escapeHtml(name).toLowerCase() + '" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
@@ -1824,6 +2133,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-top-charts-content');
             content.style.transform = 'translateY(100%)';
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
+            const searchInput = document.getElementById('search-drawer-top-charts');
+            if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-top-charts-items'); }
         }
 
 
@@ -1912,17 +2223,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <div class="text-sm font-semibold">\${price}</div>
                         \${targetBadge}
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
                             \${btnIcon} \${btnLabel}
                         </button>
-                        <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
+                        <button onclick="openChartModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             📊 ${t('crm.btn_chart', lang)}
+                        </button>
+                        <button onclick="openBroadcastModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">
+                            ${t('crm.per_product_broadcast', lang)}
                         </button>
                     </div>
                 </div>\`;
             }).join('');
-            
+
             itemsCont.insertAdjacentHTML('beforeend', html);
         }
 
@@ -1938,6 +2252,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-active-content');
             content.style.transform = 'translateY(100%)';
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
+            const searchInput = document.getElementById('search-drawer-active');
+            if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-active-items'); }
         }
 
         async function openPausedDrawer() {
@@ -1951,11 +2267,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
 
             const data = await fetchAPI('/paused-products');
+            const toolbar = document.getElementById('drawer-paused-toolbar');
             if (!data || !data.items || data.items.length === 0) {
                 itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.empty_paused')} + '</div>';
+                if (toolbar) toolbar.style.display = 'none';
                 return;
             }
 
+            if (toolbar) toolbar.style.display = 'flex';
             const lang = document.documentElement.lang || 'masry';
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
@@ -1971,7 +2290,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
                 return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
+                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden paused-card" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
+                    <div class="absolute top-3 right-3 z-10">
+                        <input type="checkbox" class="paused-checkbox w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer" data-asin="\${item.asin}" onchange="updatePausedToolbar()">
+                    </div>
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
                         <div class="flex-1 min-w-0">
@@ -1990,12 +2312,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <div class="flex justify-between items-end mb-3">
                         <div class="text-sm font-semibold">\${price}</div>
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
                             \${btnIcon} \${btnLabel}
                         </button>
-                        <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
+                        <button onclick="openChartModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             📊 ${t('crm.btn_chart', lang)}
+                        </button>
+                        <button onclick="openBroadcastModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">
+                            ${t('crm.per_product_broadcast', lang)}
                         </button>
                     </div>
                 </div>\`;
@@ -2007,6 +2332,70 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-paused-content');
             content.style.transform = 'translateY(100%)';
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
+            const searchInput = document.getElementById('search-drawer-paused');
+            if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-paused-items'); }
+        }
+
+        // ── Paused Products: Bulk Select & Delete ──────────────────────────────────
+
+        function togglePausedSelectAll() {
+            const selectAll = document.getElementById('paused-select-all');
+            const checkboxes = document.querySelectorAll('.paused-checkbox');
+            checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+        }
+
+        function updatePausedToolbar() {
+            const checkboxes = document.querySelectorAll('.paused-checkbox');
+            const selectAll = document.getElementById('paused-select-all');
+            if (selectAll && checkboxes.length > 0) {
+                selectAll.checked = Array.from(checkboxes).every(cb => cb.checked);
+            }
+        }
+
+        async function deleteSelectedPaused() {
+            const checkboxes = document.querySelectorAll('.paused-checkbox:checked');
+            const asins = Array.from(checkboxes).map(cb => cb.dataset.asin);
+            if (asins.length === 0) return;
+
+            const confirmed = await showConfirmDialog(
+                ${js('crm.confirm_purge_selected')},
+                ${js('crm.confirm_btn_confirm')},
+                ${js('crm.confirm_btn_cancel')}
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch('/api/crm/paused/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asins })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Bulk delete failed');
+                }
+
+                // Remove deleted cards from DOM
+                for (const asin of asins) {
+                    const card = document.getElementById('paused-item-' + asin);
+                    if (card) card.remove();
+                }
+
+                // Hide toolbar if no cards left
+                const remaining = document.querySelectorAll('.paused-card');
+                if (remaining.length === 0) {
+                    document.getElementById('drawer-paused-toolbar').style.display = 'none';
+                }
+                document.getElementById('paused-select-all').checked = false;
+
+                if (typeof showToast === 'function') {
+                    showToast(asins.length + ' ' + (lang === 'masry' ? 'منتج اتمسح' : 'product(s) deleted'));
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') {
+                    showToast(e.message, 'error');
+                }
+            }
         }
 
         // ── Graveyard Drawer ─────────────────────────────────────────────────────
@@ -2060,6 +2449,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-graveyard-content');
             content.style.transform = 'translateY(100%)';
             setTimeout(() => { document.getElementById('drawer-graveyard').classList.add('hidden'); }, 300);
+            const searchInput = document.getElementById('search-drawer-graveyard');
+            if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-graveyard-items'); }
         }
 
         async function openProductSubsDrawer(asin) {
@@ -2119,15 +2510,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <div class="text-sm font-semibold">\${price}</div>
                         \${targetBadge}
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
                             \${btnIcon} \${btnLabel}
                         </button>
-                        <button onclick="openChartModal('\${item.asin}')" class="flex-1 py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
+                        <button onclick="openChartModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
                             📊 ${t('crm.btn_chart', lang)}
                         </button>
-                        <button onclick="performAction('delete_product', '\${item.chat_id}', { asin: '\${item.asin}' }, this)" class="flex-1 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-bold hover:bg-red-500/20 transition border border-red-500/20">
-                            🗑️ ${t('crm.btn_delete_drawer', lang)}
+                        <button onclick="openBroadcastModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">
+                            ${t('crm.per_product_broadcast', lang)}
                         </button>
                     </div>
                 </div>\`;
@@ -2151,7 +2542,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             const asins = Array.from(checkboxes).map(cb => cb.dataset.asin);
 
-            if (!confirm(${js('crm.graveyard_purge_confirm')})) return;
+            if (!await showConfirmDialog(${js('crm.graveyard_purge_confirm')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) return;
 
             showLoader();
             const res = await fetchAPI('/graveyard/purge', 'POST', { asins });
@@ -2411,8 +2802,28 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             if (!targetId) targetId = "global";
 
             if (action === 'delete_product') {
-                const confirmed = confirm("Are you sure you want to delete this tracked product? This cannot be undone.");
-                if (!confirmed) return;
+                // DEPRECATED: Delete product buttons removed from all card UIs
+                showToast('This action is no longer available.', 'error');
+                return;
+            }
+
+            // Sensitive actions: require custom confirmation dialog
+            const sensitiveActions = ['ban', 'unban', 'revoke', 'approve', 'reject'];
+            if (sensitiveActions.includes(action)) {
+                const confirmTranslations = {
+                    'ban': ${js('crm.confirm_ban')},
+                    'unban': ${js('crm.confirm_unban')},
+                    'revoke': ${js('crm.confirm_revoke_access')},
+                    'generic': ${js('crm.confirm_generic')}
+                };
+                let confirmText = confirmTranslations.generic;
+                if (action === 'ban') confirmText = confirmTranslations.ban;
+                else if (action === 'unban') confirmText = confirmTranslations.unban;
+                else if (action === 'revoke') confirmText = confirmTranslations.revoke;
+
+                if (!await showConfirmDialog(confirmText, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) {
+                    return;
+                }
             }
 
             if (btn) {
@@ -2469,8 +2880,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     }
 
                     if (action === 'delete_product' && btn) {
-                        const itemCard = document.getElementById(\`paused-item-\${targetId}-\${data.asin}\`) || document.getElementById(\`active-item-\${targetId}-\${data.asin}\`) || document.getElementById(\`item-\${data.asin}\`);
-                        if (itemCard) itemCard.remove();
+                        // DEPRECATED: No-op — delete buttons removed from UI
                     }
 
                     refreshData();
@@ -2569,6 +2979,347 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 el.classList.add('toast-leave-active');
                 setTimeout(() => el.remove(), 300);
             }, 3000);
+        }
+
+        // ===== CUSTOM CONFIRM DIALOG =============================================
+        // Returns a Promise that resolves to true (confirmed) or false (cancelled).
+        // Replaces native confirm() with a styled modal matching the CRM theme.
+        function showConfirmDialog(message, confirmText = '✅ Confirm', cancelText = '❌ Cancel') {
+            return new Promise((resolve) => {
+                // Remove any existing dialog
+                const existing = document.getElementById('custom-confirm-dialog');
+                if (existing) existing.remove();
+
+                const overlay = document.createElement('div');
+                overlay.id = 'custom-confirm-dialog';
+                overlay.className = 'fixed inset-0 z-[100] flex items-center justify-center';
+                overlay.innerHTML = \`
+                    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="custom-confirm-backdrop"></div>
+                    <div class="relative bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 transform transition-all">
+                        <p class="text-sm text-gray-200 mb-5 leading-relaxed" id="custom-confirm-message"></p>
+                        <div class="flex gap-3 justify-end">
+                            <button id="custom-confirm-cancel" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition border border-gray-700"></button>
+                            <button id="custom-confirm-ok" class="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-medium transition border border-red-500/20"></button>
+                        </div>
+                    </div>
+                \`;
+                document.body.appendChild(overlay);
+
+                document.getElementById('custom-confirm-message').textContent = message;
+                document.getElementById('custom-confirm-cancel').textContent = cancelText;
+                document.getElementById('custom-confirm-ok').textContent = confirmText;
+
+                function cleanup() { overlay.remove(); }
+
+                document.getElementById('custom-confirm-cancel').onclick = () => { cleanup(); resolve(false); };
+                document.getElementById('custom-confirm-backdrop').onclick = () => { cleanup(); resolve(false); };
+                document.getElementById('custom-confirm-ok').onclick = () => { cleanup(); resolve(true); };
+            });
+        }
+
+        // ===== BROADCAST DEALS SECTION =====
+        let broadcastDealsData = null;
+
+        async function fetchBroadcastDealsPreview() {
+            const input = document.getElementById('broadcast-deals-input').value.trim();
+            if (!input) return;
+            const asin = input;
+            const lang = document.documentElement.lang || 'masry';
+            document.getElementById('broadcast-deals-loading').classList.remove('hidden');
+            document.getElementById('broadcast-deals-options').classList.add('hidden');
+            document.getElementById('broadcast-deals-composer').classList.add('hidden');
+            document.getElementById('broadcast-deals-error').classList.add('hidden');
+            try {
+                const data = await fetchAPI('/live-price', 'POST', { asin, fetch_options: true, lang });
+                if (!data) throw new Error('Failed to load data');
+                broadcastDealsData = data;
+                document.getElementById('broadcast-deals-loading').classList.add('hidden');
+                if (data.options && data.options.length > 0) {
+                    renderBroadcastDealsOptionPicker(data.options, data.product);
+                } else {
+                    loadBroadcastDealsComposer(data.broadcast_text);
+                }
+            } catch (e) {
+                document.getElementById('broadcast-deals-loading').classList.add('hidden');
+                showBroadcastDealsError(e.message);
+            }
+        }
+
+        function renderBroadcastDealsOptionPicker(options, product) {
+            const container = document.getElementById('broadcast-deals-options-list');
+            container.innerHTML = '';
+            const lang = document.documentElement.lang || 'masry';
+            const isRtl = lang === 'masry';
+            const dirVal = isRtl ? 'rtl' : 'ltr';
+            
+            const parentBtn = document.createElement('button');
+            parentBtn.type = 'button';
+            parentBtn.dir = dirVal;
+            parentBtn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
+            const parentPriceText = product.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(product.price) + '</span>' : '';
+            parentBtn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(product.name_ar || product.name || product.asin) + parentPriceText + '</span><span class="text-gray-500 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_original')} + '</span>';
+            parentBtn.onclick = () => selectBroadcastDealsOption(null);
+            container.appendChild(parentBtn);
+            
+            for (const opt of options) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.dir = dirVal;
+                btn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
+                const priceText = opt.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(opt.price) + '</span>' : '';
+                btn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(opt.name || opt.asin) + priceText + '</span><span class="text-brand-400 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_option')} + '</span>';
+                btn.onclick = () => selectBroadcastDealsOption(opt);
+                container.appendChild(btn);
+            }
+            document.getElementById('broadcast-deals-options').classList.remove('hidden');
+        }
+
+        function selectBroadcastDealsOption(option) {
+            broadcastDealsData.selectedOption = option;
+            document.getElementById('broadcast-deals-options').classList.add('hidden');
+            if (option && option.asin) {
+                document.getElementById('broadcast-deals-loading').classList.remove('hidden');
+                fetchBroadcastOptionText(option);
+            } else {
+                loadBroadcastDealsComposer(broadcastDealsData.broadcast_text);
+            }
+        }
+
+        async function fetchBroadcastOptionText(option) {
+            try {
+                const data = await fetchAPI('/generate-text', 'POST', option);
+                if (!data || data.error) throw new Error('Failed');
+                broadcastDealsData.inline_keyboard = data.inline_keyboard;
+                loadBroadcastDealsComposer(data.broadcast_text);
+            } catch (e) {
+                showBroadcastDealsError('Failed to load variation data.');
+            }
+        }
+
+        function loadBroadcastDealsComposer(broadcastText) {
+            document.getElementById('broadcast-deals-loading').classList.add('hidden');
+            const lines = broadcastText.split('\\n');
+            document.getElementById('broadcast-deals-title').value = lines[0] || '';
+            document.getElementById('broadcast-deals-body').value = lines.slice(1).join('\\n');
+            document.getElementById('broadcast-deals-composer').classList.remove('hidden');
+            
+            const backBtn = document.getElementById('broadcast-deals-back-btn');
+            const closeBtn = document.getElementById('broadcast-deals-close-btn');
+            if (broadcastDealsData && broadcastDealsData.options && broadcastDealsData.options.length > 0) {
+                backBtn.classList.remove('hidden');
+                closeBtn.classList.add('hidden');
+            } else {
+                backBtn.classList.add('hidden');
+                closeBtn.classList.remove('hidden');
+            }
+        }
+
+        function goBackToBroadcastDealsOptions() {
+            document.getElementById('broadcast-deals-composer').classList.add('hidden');
+            document.getElementById('broadcast-deals-options').classList.remove('hidden');
+            document.getElementById('broadcast-deals-back-btn').classList.add('hidden');
+            document.getElementById('broadcast-deals-close-btn').classList.remove('hidden');
+        }
+
+        function closeBroadcastDealsComposer() {
+            document.getElementById('broadcast-deals-composer').classList.add('hidden');
+            document.getElementById('broadcast-deals-options').classList.add('hidden');
+            document.getElementById('broadcast-deals-input').value = '';
+        }
+
+        function showBroadcastDealsError(msg) {
+            document.getElementById('broadcast-deals-error-text').textContent = msg;
+            document.getElementById('broadcast-deals-error').classList.remove('hidden');
+        }
+
+        async function confirmBroadcastDeals() {
+            const title = document.getElementById('broadcast-deals-title').value.trim();
+            const body = document.getElementById('broadcast-deals-body').value.trim();
+            if (!title || !body) return;
+            const fullText = title + '\\n\\n' + body;
+            const asin = broadcastDealsData?.selectedOption?.asin || broadcastDealsData?.product?.asin || '';
+            const inlineKeyboard = broadcastDealsData?.inline_keyboard;
+            const lang = document.documentElement.lang || 'masry';
+            if (!await showConfirmDialog(${js('crm.confirm_broadcast_send')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) return;
+            const btn = document.getElementById('broadcast-deals-confirm-btn');
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                await fetchAPI('/action', 'POST', {
+                    action: 'broadcast',
+                    data: {
+                        message: fullText,
+                        broadcast_type: 'product_broadcast',
+                        asin: asin,
+                        inline_keyboard: inlineKeyboard
+                    }
+                });
+                document.getElementById('broadcast-deals-composer').classList.add('hidden');
+                document.getElementById('broadcast-deals-input').value = '';
+                broadcastDealsData = null;
+                if (typeof showToast === 'function') {
+                    showToast(${js('crm.broadcast_sent')});
+                }
+            } catch (e) {
+                showBroadcastDealsError(e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = ${js('crm.broadcast_confirm_send')};
+            }
+        }
+
+        // ===== PER-PRODUCT BROADCAST MODAL =====
+        let broadcastModalData = null;
+        let broadcastModalAsin = null;
+
+        function openBroadcastModal(asin) {
+            if (!asin) return;
+            broadcastModalAsin = asin;
+            broadcastModalData = null;
+            document.getElementById('broadcast-modal-loading').classList.remove('hidden');
+            document.getElementById('broadcast-modal-options').classList.add('hidden');
+            document.getElementById('broadcast-modal-composer').classList.add('hidden');
+            document.getElementById('broadcast-modal-error').classList.add('hidden');
+            document.getElementById('broadcast-modal').classList.remove('hidden');
+            fetchBroadcastModalData(asin);
+        }
+
+        function closeBroadcastModal() {
+            document.getElementById('broadcast-modal').classList.add('hidden');
+            broadcastModalData = null;
+            broadcastModalAsin = null;
+        }
+
+        async function fetchBroadcastModalData(asin) {
+            try {
+                const lang = document.documentElement.lang || 'masry';
+                const data = await fetchAPI('/live-price', 'POST', { asin, fetch_options: true, lang });
+                if (!data) throw new Error('Failed to load data');
+                broadcastModalData = data;
+                document.getElementById('broadcast-modal-loading').classList.add('hidden');
+                if (data.options && data.options.length > 0) {
+                    renderBroadcastModalOptions(data.options, data.product);
+                } else {
+                    loadBroadcastModalComposer(data.broadcast_text);
+                }
+            } catch (e) {
+                document.getElementById('broadcast-modal-loading').classList.add('hidden');
+                showBroadcastModalError(e.message);
+            }
+        }
+
+        function renderBroadcastModalOptions(options, product) {
+            const container = document.getElementById('broadcast-modal-options-list');
+            container.innerHTML = '';
+            const lang = document.documentElement.lang || 'masry';
+            const isRtl = lang === 'masry';
+            const dirVal = isRtl ? 'rtl' : 'ltr';
+            
+            const parentBtn = document.createElement('button');
+            parentBtn.type = 'button';
+            parentBtn.dir = dirVal;
+            parentBtn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
+            const parentPriceText = product.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(product.price) + '</span>' : '';
+            parentBtn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(product.name_ar || product.name || product.asin) + parentPriceText + '</span><span class="text-gray-500 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_original')} + '</span>';
+            parentBtn.onclick = () => selectBroadcastModalOption(null);
+            container.appendChild(parentBtn);
+            
+            for (const opt of options) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.dir = dirVal;
+                btn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
+                const priceText = opt.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(opt.price) + '</span>' : '';
+                btn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(opt.name || opt.asin) + priceText + '</span><span class="text-brand-400 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_option')} + '</span>';
+                btn.onclick = () => selectBroadcastModalOption(opt);
+                container.appendChild(btn);
+            }
+            document.getElementById('broadcast-modal-options').classList.remove('hidden');
+        }
+
+        function selectBroadcastModalOption(option) {
+            broadcastModalData.selectedOption = option;
+            document.getElementById('broadcast-modal-options').classList.add('hidden');
+            if (option && option.asin) {
+                fetchBroadcastModalOptionText(option);
+            } else {
+                loadBroadcastModalComposer(broadcastModalData.broadcast_text);
+            }
+        }
+
+        async function fetchBroadcastModalOptionText(option) {
+            try {
+                const data = await fetchAPI('/generate-text', 'POST', option);
+                if (!data || data.error) throw new Error('Failed');
+                broadcastModalData.inline_keyboard = data.inline_keyboard;
+                loadBroadcastModalComposer(data.broadcast_text);
+            } catch (e) {
+                loadBroadcastModalComposer(broadcastModalData.broadcast_text);
+            }
+        }
+
+        function loadBroadcastModalComposer(broadcastText) {
+            document.getElementById('broadcast-modal-loading').classList.add('hidden');
+            const lines = broadcastText.split('\\n');
+            document.getElementById('broadcast-modal-title').value = lines[0] || '';
+            document.getElementById('broadcast-modal-body').value = lines.slice(1).join('\\n');
+            document.getElementById('broadcast-modal-composer').classList.remove('hidden');
+            
+            const backBtn = document.getElementById('broadcast-modal-back-btn');
+            const closeBtn = document.getElementById('broadcast-modal-close-btn');
+            if (broadcastModalData && broadcastModalData.options && broadcastModalData.options.length > 0) {
+                backBtn.classList.remove('hidden');
+                closeBtn.classList.add('hidden');
+            } else {
+                backBtn.classList.add('hidden');
+                closeBtn.classList.remove('hidden');
+            }
+        }
+
+        function goBackToBroadcastModalOptions() {
+            document.getElementById('broadcast-modal-composer').classList.add('hidden');
+            document.getElementById('broadcast-modal-options').classList.remove('hidden');
+            document.getElementById('broadcast-modal-back-btn').classList.add('hidden');
+            document.getElementById('broadcast-modal-close-btn').classList.remove('hidden');
+        }
+
+        function showBroadcastModalError(msg) {
+            document.getElementById('broadcast-modal-error-text').textContent = msg;
+            document.getElementById('broadcast-modal-error').classList.remove('hidden');
+        }
+
+        async function confirmBroadcastModal() {
+            const title = document.getElementById('broadcast-modal-title').value.trim();
+            const body = document.getElementById('broadcast-modal-body').value.trim();
+            if (!title || !body) return;
+            const fullText = title + '\\n\\n' + body;
+            const asin = broadcastModalData?.selectedOption?.asin || broadcastModalData?.product?.asin || broadcastModalAsin || '';
+            const inlineKeyboard = broadcastModalData?.inline_keyboard;
+            const lang = document.documentElement.lang || 'masry';
+            if (!await showConfirmDialog(${js('crm.confirm_broadcast_send')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) return;
+            const btn = document.getElementById('broadcast-modal-confirm-btn');
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                await fetchAPI('/action', 'POST', {
+                    action: 'broadcast',
+                    data: {
+                        message: fullText,
+                        broadcast_type: 'product_broadcast',
+                        asin: asin,
+                        inline_keyboard: inlineKeyboard
+                    }
+                });
+                closeBroadcastModal();
+                if (typeof showToast === 'function') {
+                    showToast(${js('crm.broadcast_sent')});
+                }
+            } catch (e) {
+                showBroadcastModalError(e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = ${js('crm.broadcast_confirm_send')};
+            }
         }
 
         // Init

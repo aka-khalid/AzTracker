@@ -1,6 +1,6 @@
 import { AmazonEdgeParser, getAmazonAccessToken } from '../core/amazon.js';
 import { t } from '../core/i18n.js';
-import { escapeHtml, formatEGP, getCairoTime, resolveProductName, truncateName } from '../core/utils.js';
+import { escapeHtml, formatEGP, getCairoTime, resolveProductName, truncateName, buildBroadcastMessage } from '../core/utils.js';
 
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
 const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
@@ -12,7 +12,7 @@ const CB_KEY = "amazon_api_circuit_breaker";
 const CB_FAILURE_THRESHOLD = 5;   // consecutive failures before opening
 const CB_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown before half-open
 
-async function checkCircuitBreaker(env) {
+export async function checkCircuitBreaker(env) {
   try {
     const state = JSON.parse(await env.AZTRACKER_DB.get(CB_KEY) || '{"state":"closed","failures":0}');
     if (state.state === "open") {
@@ -29,13 +29,13 @@ async function checkCircuitBreaker(env) {
   }
 }
 
-async function recordCircuitSuccess(env) {
+export async function recordCircuitSuccess(env) {
   try {
     await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify({ state: "closed", failures: 0 }));
   } catch (e) { /* non-blocking */ }
 }
 
-async function recordCircuitFailure(env) {
+export async function recordCircuitFailure(env) {
   try {
     const state = JSON.parse(await env.AZTRACKER_DB.get(CB_KEY) || '{"state":"closed","failures":0}');
     state.failures = (state.failures || 0) + 1;
@@ -638,40 +638,14 @@ export async function executeScrapeEngine(env, offset = 0) {
       const topDeals = bestDeal.slice(0, 3);
 
       for (const deal of topDeals) {
-          const safe_name = escapeHtml(truncateName(deal.name_ar || deal.name || deal.asin) || t('product.unknown_product', 'masry'));
-          const base_url = `https://www.amazon.eg/dp/${deal.asin}`;
-          const qParams = new URLSearchParams();
-          const pTag = env.AMAZON_PARTNER_TAG;
-          if (pTag) qParams.append("tag", pTag);
-          const broadcast_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
-
-          const safe_broadcast_seller = escapeHtml(deal.seller || t('fallback.unknown_seller', 'masry'));
-
-          const broadcast_msg = `${t('broadcast.snapshot', 'masry')}\n\n` +
-              `<b>${safe_name}</b>\n\n` +
-              `💵 <b>${formatEGP(deal.price)} ج.م</b>\n` +
-              `🏬 ${safe_broadcast_seller}\n\n` +
-              `👉 <a href="${broadcast_url}">${t('broadcast.catch_deal', 'masry')}</a>\n\n` +
-              `🤖 @AzTrackerr_bot\n\n` +
-              `<a href="https://t.me/AzTrackerr_bot?start=ref_broadcast">${t('broadcast.follow_more', 'masry')}</a>\n\n` +
-              `${t('broadcast.ad_disclosure', 'masry')}`;
+          const { text: broadcastText, inline_keyboard } = buildBroadcastMessage(env, deal, now, t);
 
           queueBatch.push({
               type: 'telegram_alert',
               asin: deal.asin,
               chatId: env.TELEGRAM_PUBLIC_CHANNEL_ID,
-              text: truncateMessage(broadcast_msg),
-              markup: {
-                  inline_keyboard: [
-                      [
-                          { text: t('broadcast.buy_here', 'masry'), url: broadcast_url }
-                      ],
-                      [
-                          { text: t('broadcast.track_deal', 'masry'), url: `https://t.me/${env.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}` },
-                          { text: t('alert.btn_disclaimer', 'masry'), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }
-                      ]
-                  ]
-              }
+              text: truncateMessage(broadcastText),
+              markup: { inline_keyboard }
           });
           d1Batch.push(env.DB.prepare("UPDATE Global_Products SET last_broadcast_time_ms = ?, last_broadcast_price = ? WHERE asin = ?").bind(now, deal.price, deal.asin));
       }

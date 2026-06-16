@@ -529,6 +529,48 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         } catch(e) { console.error("Failed to notify admin", adminId); }
       }
     }
+    else if (data.startsWith("show_variations_")) {
+      const parentAsin = data.replace("show_variations_", "");
+      if (!parentAsin) return;
+
+      // Fetch variations from Amazon API
+      let variations = [];
+      try {
+        let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
+        if (!accessToken) {
+          const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+          const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+          accessToken = await getAmazonAccessToken(clientId, clientSecret);
+        }
+        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        variations = await parser.getVariations(parentAsin);
+      } catch (e) {
+        console.warn('[ShowVariations] Failed:', e.message);
+      }
+
+      if (variations.length === 0) {
+        await sendTelegram(env, chatId, t('alert.no_variations', lang) || 'No options found for this product.');
+        return;
+      }
+
+      // Check which variations the user already tracks
+      const userSubs = await env.DB.prepare(
+        "SELECT asin FROM User_Subscriptions WHERE chat_id = ? AND asin IN (" + variations.map(() => '?').join(',') + ")"
+      ).bind(chatId, ...variations.map(v => v.asin)).all();
+      const trackedAsins = new Set((userSubs.results || []).map(r => r.asin));
+
+      // Build inline keyboard with variation buttons
+      const keyboard = variations.map(v => {
+        const isTracked = trackedAsins.has(v.asin);
+        const label = escapeHtml(v.name || v.asin);
+        return [{
+          text: isTracked ? `✅ ${label}` : `📦 ${label}`,
+          callback_data: isTracked ? `tracked_${v.asin}` : `track_variation_${parentAsin}_${v.asin}_${encodeURIComponent(v.name || '')}`
+        }];
+      });
+
+      await sendTelegram(env, chatId, t('alert.variations_title', lang) || '📦 Available Options:', { inline_keyboard: keyboard });
+    }
     else if (data.startsWith("queueReject_") && isAdmin) {
       const targetId = data.replace("queueReject_", "");
       let queueObj = await env.DB.prepare("SELECT * FROM Join_Queue WHERE chat_id = ?").bind(targetId).first();
@@ -568,15 +610,19 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         return;
       }
 
+      // Build human-readable label from queue row for admin notifications
+      const targetLabel = queueObj?.username
+        ? `${queueObj.first_name} (@${queueObj.username})`
+        : `${queueObj?.first_name || 'Unknown'} (${targetId})`;
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
-      await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected', lang, { id: targetId, admin: escapeHtml(adminName) }));
+      await editTelegramMessage(env, chatId, messageId, t('access.admin_rejected', lang, { id: targetLabel, admin: escapeHtml(adminName) }));
 
       // Update ALL other admins' messages in their own language preference
       for (const [admId, msgId] of Object.entries(otherAdminMessages)) {
         try {
           const aLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(admId).first();
           const aLang = aLangRow?.lang || 'masry';
-          await editTelegramMessage(env, admId, msgId, t('access.handled_request', aLang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
+          await editTelegramMessage(env, admId, msgId, t('access.handled_request', aLang, { id: targetLabel, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
         } catch(e) { console.error(`Failed to update admin ${admId} message:`, e); }
       }
 
@@ -688,15 +734,19 @@ async function handleCallback(callback, env, baseUrl, ctx) {
         await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0, paused_at = NULL WHERE chat_id = ?").bind(targetId).run();
       }
 
+      // Build human-readable label from queue row for admin notifications
+      const targetLabel = queueObj?.username
+        ? `${queueObj.first_name} (@${queueObj.username})`
+        : `${queueObj?.first_name || 'Unknown'} (${targetId})`;
       const { label: adminName } = await resolveUserProfile(env, chatId, ctx);
-      await editTelegramMessage(env, chatId, messageId, t('admin.approved_result', lang, { id: targetId, admin: escapeHtml(adminName) }));
+      await editTelegramMessage(env, chatId, messageId, t('admin.approved_result', lang, { id: targetLabel, admin: escapeHtml(adminName) }));
 
       // Update ALL other admins' messages in their own language preference
       for (const [admId, msgId] of Object.entries(otherAdminMessages)) {
         try {
           const aLangRow = await env.DB.prepare("SELECT lang FROM Users WHERE chat_id = ?").bind(admId).first();
           const aLang = aLangRow?.lang || 'masry';
-          await editTelegramMessage(env, admId, msgId, t('access.handled_approved', aLang, { id: targetId, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
+          await editTelegramMessage(env, admId, msgId, t('access.handled_approved', aLang, { id: targetLabel, admin: escapeHtml(adminName) }), { inline_keyboard: [] });
         } catch(e) { console.error(`Failed to update admin ${admId} message:`, e); }
       }
 
@@ -747,6 +797,47 @@ async function handleCallback(callback, env, baseUrl, ctx) {
             [{ text: t('target.remove_cancelled', lang), callback_data: `view_${pid}` }]
           ]
         });
+      }
+      else if (data.startsWith("track_variation_")) {
+        // Format: track_variation_{parentAsin}_{childAsin}_{encodedName}
+        const parts = data.replace("track_variation_", "").split("_");
+        if (parts.length < 3) return;
+        const childAsin = parts[parts.length - 2];
+        const parentAsin = parts.slice(0, -2).join("_");
+        const variationName = decodeURIComponent(parts[parts.length - 1]) || childAsin;
+
+        // Upsert into Global_Products (stores variation name by child ASIN)
+        await env.DB.prepare(`
+          INSERT INTO Global_Products (asin, name, image_url, first_seen, last_checked)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(asin) DO UPDATE SET name = excluded.name, last_checked = excluded.last_checked
+        `).bind(childAsin, variationName, null, Date.now(), Date.now()).run();
+
+        // Insert subscription
+        await env.DB.prepare(`
+          INSERT INTO User_Subscriptions (chat_id, asin, added_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT(chat_id, asin) DO NOTHING
+        `).bind(chatId, childAsin, Date.now()).run();
+
+        // Update button to show tracked state
+        try {
+          const currentMarkup = message.reply_markup;
+          if (currentMarkup?.inline_keyboard) {
+            const newKeyboard = currentMarkup.inline_keyboard.map(row =>
+              row.map(btn => {
+                if (btn.callback_data === data) {
+                  return { text: `✅ ${t('alert.tracked', lang)}: ${variationName}`, callback_data: `tracked_${childAsin}` };
+                }
+                return btn;
+              })
+            );
+            await editTelegramMessage(env, chatId, messageId, message.text || message.caption || '', { inline_keyboard: newKeyboard });
+          }
+        } catch (e) { console.warn('[VariationTrack] Failed to update button:', e.message); }
+
+        // Notify user
+        await sendTelegram(env, chatId, t('alert.now_tracking', lang, { name: variationName }));
       }
       else if (data.startsWith("manage_user_") && isAdmin) {
         await renderMainMenu(env, chatId, messageId, isAdmin, baseUrl, lang);

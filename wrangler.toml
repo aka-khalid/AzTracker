@@ -41,6 +41,8 @@ GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
 DAILY_QUEUE_LIMIT = "10000"
 ENVIRONMENT = "dev"
+TELEGRAM_PUBLIC_CHANNEL_ID = "@AzTrackerr"
+BOT_USERNAME = "AzTrackerr_bot"
 
 
 [triggers]
@@ -56,6 +58,8 @@ GITHUB_REPO = "AzTracker"
 DEFAULT_USER_PRODUCT_LIMIT = "3"
 DAILY_QUEUE_LIMIT = "10000"
 ENVIRONMENT = "production"
+TELEGRAM_PUBLIC_CHANNEL_ID = "@AzTrackerr"
+BOT_USERNAME = "AzTrackerr_bot"
 
 
 [[env.production.kv_namespaces]]

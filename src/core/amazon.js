@@ -38,7 +38,7 @@ export class AmazonEdgeParser {
     this.env = env;
   }
 
-  async getItems(asins) {
+  async getItems(asins, lang = 'en_AE') {
     if (asins.length === 0) return [];
     if (asins.length > 10) throw new Error("Batch size exceeds 10 ASINs limit.");
     
@@ -57,7 +57,7 @@ export class AmazonEdgeParser {
       ],
       partnerTag: this.partnerTag,
       condition: 'Any',
-      languagesOfPreference: ['en_AE']
+      languagesOfPreference: [lang]
     };
 
     const response = await fetch(this.endpoint, {
@@ -75,6 +75,7 @@ export class AmazonEdgeParser {
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`[AmazonEdgeParser] Creators API HTTP Error: ${response.status}`, errorBody);
+      if (response.status === 400 || response.status === 404) return [];
       throw new Error(`Creators API Error: ${response.status} - Body: ${errorBody}`);
     }
 
@@ -149,6 +150,99 @@ export class AmazonEdgeParser {
     }
 
     return arabicNames;
+  }
+
+  /**
+   * Fetch child variations for a parent ASIN using the Creators API.
+   * Returns an array of { asin, name, imageUrl } for each child variation.
+   */
+  async getVariations(parentAsin, lang = 'ar_AE') {
+    const prefLang = 'ar_AE'; // Always use Arabic for broadcast
+    const variationsEndpoint = `https://creatorsapi.amazon/catalog/v1/getVariations`;
+    const payload = {
+      asin: parentAsin,
+      resources: [
+        'itemInfo.title',
+        'images.primary.large',
+        'offersV2.listings.price',
+        'variationSummary.price.lowestPrice'
+      ],
+      partnerTag: this.partnerTag,
+      languagesOfPreference: [prefLang]
+    };
+
+    try {
+      const response = await fetch(variationsEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json, text/javascript',
+          'Authorization': `Bearer ${this.accessToken}`,
+          'X-Marketplace': this.endpointHost
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.warn(`[AmazonEdgeParser] getVariations HTTP Error: ${response.status}`, errorBody);
+        return [];
+      }
+
+      const data = await response.json();
+      const variationsResult = data.VariationsResult || data.variationsResult;
+      const items = variationsResult?.Items || variationsResult?.items || [];
+
+      // Extract basic info for all variations
+      const rawVariations = items.map(item => {
+        const asin = item.ASIN || item.asin;
+        const itemInfo = item.ItemInfo || item.itemInfo;
+        const titleObj = itemInfo?.Title || itemInfo?.title;
+        const name = titleObj?.DisplayValue || titleObj?.displayValue || '';
+        const images = item.Images || item.images;
+        const primaryImage = images?.Primary || images?.primary;
+        const largeImage = primaryImage?.Large || primaryImage?.large;
+        const imageUrl = largeImage?.URL || largeImage?.url || null;
+        return { asin, name, imageUrl };
+      });
+
+      // Batch query getItems to fetch accurate pricing for these variations
+      const finalVariations = [];
+      for (let i = 0; i < rawVariations.length; i += 10) {
+        const chunk = rawVariations.slice(i, i + 10);
+        const chunkAsins = chunk.map(v => v.asin);
+        try {
+          const detailedItems = await this.getItems(chunkAsins, prefLang);
+          for (const raw of chunk) {
+            const detailed = detailedItems.find(d => d.asin === raw.asin);
+            if (!detailed) continue;
+            
+            const numPrice = detailed.amazonPrice || detailed.newPrice || detailed.usedPrice || 0;
+            // Only keep the variation if getItems returned a valid non-zero price
+            if (numPrice > 0) {
+              const formattedPrice = numPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' EGP';
+              finalVariations.push({
+                asin: raw.asin,
+                name: raw.name || detailed.name,
+                imageUrl: detailed.imageUrl || raw.imageUrl,
+                price: formattedPrice,
+                numPrice: numPrice,
+                seller: detailed.amazonSeller || detailed.newSeller || detailed.usedSeller || 'Unknown',
+                mid: detailed.amazonMid || detailed.newMid || detailed.usedMid || ''
+              });
+            }
+          }
+        } catch (e) {
+          console.warn(`[AmazonEdgeParser] getItems batch failed for variations chunk:`, e.message);
+        }
+      }
+
+      return finalVariations;
+    } catch (e) {
+      console.warn(`[AmazonEdgeParser] getVariations failed for ${parentAsin}:`, e.message);
+      return [];
+    }
   }
 
   /**

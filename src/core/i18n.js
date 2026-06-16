@@ -145,6 +145,18 @@ const dict = {
     en: "📋 Handle this request in the admin dashboard.",
     masry: "📋 تعامل مع الطلب ده من لوحة تحكم الأدمن."
   },
+  "crm.back_btn": {
+    en: "Back",
+    masry: "رجوع"
+  },
+  "crm.confirm_ban": {
+    en: "Ban User",
+    masry: "حظر المستخدم"
+  },
+  "crm.confirm_unban": {
+    en: "Unban User",
+    masry: "إلغاء الحظر"
+  },
   "crm.btn_deny": {
     en: "Deny",
     masry: "فكك منه"
@@ -577,6 +589,22 @@ const dict = {
     en: "Amazon Resale:",
     masry: "أمازون ريسيل:"
   },
+  "alert.now_tracking": {
+    en: "✅ Now tracking: {name}",
+    masry: "✅ بقى يتتبع: {name}"
+  },
+  "alert.tracked": {
+    en: "Tracked",
+    masry: "متتبع"
+  },
+  "alert.variations_title": {
+    en: "📦 Available Options:",
+    masry: "📦 الأوبشنز المتاحة:"
+  },
+  "alert.no_variations": {
+    en: "No options found for this product.",
+    masry: "مفيش أوبشنز للمنتج ده."
+  },
 
   // ── Scraper: Analytical Stale Target (shared between variants) ────────────
   "alert.stale_days": {
@@ -676,8 +704,8 @@ const dict = {
     masry: "الادمنز"
   },
   "crm.search_placeholder": {
-    en: "Search Name, @username or ID...",
-    masry: "دور بالاسم، @يوزر نيم أو رقم..."
+    en: "Search by name or ASIN...",
+    masry: "دور بالاسم أو ASIN..."
   },
   "crm.no_pending": {
     en: "No pending requests",
@@ -1196,16 +1224,20 @@ const dict = {
     masry: "🚨 لقطة 🚨"
   },
   "broadcast.buy_here": {
-    en: "🛒 Buy from here ←",
-    masry: "🛒 اشتري من هنا ←"
+    en: "🛒 Buy from here",
+    masry: "🛒 اشتري من هنا"
   },
   "broadcast.catch_deal": {
-    en: "👉 Catch the deal from here ←",
-    masry: "👉 الحق العرض من هنا ←"
+    en: "Catch the deal from here",
+    masry: "الحق العرض من هنا"
   },
   "broadcast.follow_more": {
-    en: "🔗 Follow more deals",
-    masry: "🔗 تابع عروض أكتر"
+    en: "Follow more deals",
+    masry: "تابع عروض أكتر"
+  },
+  "broadcast.seller": {
+    en: "Seller",
+    masry: "البائع"
   },
   "broadcast.ad_disclosure": {
     en: "#ad",
@@ -1214,6 +1246,120 @@ const dict = {
   "broadcast.track_deal": {
     en: "🎯 Track Deal",
     masry: "🎯 تتبع العرض"
+  },
+  "broadcast.view_variations": {
+    en: "📦 View Options",
+    masry: "📦 شوف الأوبشنز"
+  },
+  // ── CRM Broadcast Features ───────────────────────────────────────────────────
+  "crm.broadcast_deals": {
+    en: "📢 Broadcast Deals",
+    masry: "📢 برودكاست العروض"
+  },
+  "crm.broadcast_deals_desc": {
+    en: "Pick any ASIN, preview, and broadcast to the public channel.",
+    masry: "اختار أي منتج، شوف المعاينة، وابعته للقناة العامة."
+  },
+  "crm.broadcast_enter_asin": {
+    en: "Enter ASIN or Amazon link...",
+    masry: "اكتب لينك أمازون أو ASIN..."
+  },
+  "crm.broadcast_fetch": {
+    en: "Fetch",
+    masry: "جيب البيانات"
+  },
+  "crm.broadcast_loading": {
+    en: "Fetching...",
+    masry: "بيجيب البيانات..."
+  },
+  "crm.broadcast_composer": {
+    en: "✏️ Broadcast Composer",
+    masry: "✏️ محرر البرودكاست"
+  },
+  "crm.broadcast_editor_label": {
+    en: "Title (editable)",
+    masry: "العنوان (قابل للتعديل)"
+  },
+  "crm.broadcast_desc_label": {
+    en: "Description (editable)",
+    masry: "الوصف (قابل للتعديل)"
+  },
+  "crm.broadcast_confirm_send": {
+    en: "📢 Confirm & Send",
+    masry: "📢 أكّد وأرسل"
+  },
+  "crm.broadcast_sent": {
+    en: "Broadcast sent successfully!",
+    masry: "البرودكاست اتبعت بنجاح!"
+  },
+  "crm.broadcast_options_found": {
+    en: "📦 This product has options — broadcast a specific one?",
+    masry: "📦 المنتج ده له أوبشنز تانية — عايز تبعت واحد معين؟"
+  },
+  "crm.broadcast_original": {
+    en: "Original (Parent)",
+    masry: "الأصلي (الرئيسي)"
+  },
+  "crm.broadcast_option": {
+    en: "Option",
+    masry: "أوبشن"
+  },
+  "crm.per_product_broadcast": {
+    en: "📢 Broadcast",
+    masry: "📢 برودكاست"
+  },
+  "crm.options_loading": {
+    en: "Loading options...",
+    masry: "بيجيب الأوبشنز..."
+  },
+  "crm.no_options_found": {
+    en: "No options found for this product.",
+    masry: "مفيش أوبشنز للمنتج ده."
+  },
+  // ── Custom Confirmation Popup ──────────────────────────────────────────────
+  "crm.confirm_title": {
+    en: "⚠️ Confirm Action",
+    masry: "⚠️ تأكيد الإجراء"
+  },
+  "crm.confirm_delete_product": {
+    en: "Are you sure you want to delete this tracked product? This cannot be undone.",
+    masry: "متأكد إنك عايز تمسح المنتج ده؟ مش هتقدر ترجعه."
+  },
+  "crm.confirm_purge_selected": {
+    en: "Are you sure? This will permanently delete the selected products from the database. This cannot be undone.",
+    masry: "متأكد؟ المنتجات المختارة هتتمسح من قاعدة البيانات نهائياً. مش هتقدر ترجعها."
+  },
+  "crm.bulk_delete": {
+    en: "Delete Selected",
+    masry: "امسح المختار"
+  },
+  "crm.confirm_btn_confirm": {
+    en: "✅ Confirm",
+    masry: "✅ تأكيد"
+  },
+  "crm.confirm_btn_cancel": {
+    en: "❌ Cancel",
+    masry: "❌ إلغاء"
+  },
+  "crm.confirm_broadcast_send": {
+    en: "Send this broadcast to the public channel?",
+    masry: "ابعت البرودكاست ده للقناة العامة؟"
+  },
+  "crm.confirm_ban_user": {
+    en: "Are you sure you want to ban this user? They will lose access to the bot.",
+    masry: "متأكد إنك عايز تحظر اليوزر ده؟ هيفقد الوصول للبوت."
+  },
+  "crm.confirm_unban_user": {
+    en: "Are you sure you want to unban this user? They will regain access to the bot.",
+    masry: "متأكد إنك عايز تشيل الحظر عن اليوزر ده؟ هيقدر يستخدم البوت تاني."
+  },
+  "crm.confirm_revoke_access": {
+    en: "Are you sure you want to revoke this user's access? This cannot be undone.",
+    masry: "متأكد إنك عايز تسحب وصول اليوزر ده؟ مش هتقدر ترجعه."
+  },
+  "crm.confirm_generic": {
+    en: "Are you sure you want to proceed?",
+    masry: "متأكد إنك عايز تكمل؟"
   },
   // ── WebApp Dashboard ────────────────────────────────────────────────────────
   "dashboard.my_products": {
@@ -1482,6 +1628,14 @@ const dict = {
   "audit.action.auto_cleanup_idle": {
     en: "🧹 System automatically revoked idle user",
     masry: "🧹 النظام سحب صلاحية الدخول لعدم الاستخدام"
+  },
+  "audit.action.product_broadcast": {
+    en: "📢 Sent product broadcast to channel",
+    masry: "📢 بعت برودكاست منتج للقناة"
+  },
+  "audit.action.bulk_delete": {
+    en: "🗑️ Bulk deleted selected products",
+    masry: "🗑️ مسح منتجات مختارة جماعياً"
   },
   "crm.env_sync_title": {
     en: "Environment Sync",

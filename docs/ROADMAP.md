@@ -132,6 +132,21 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Cross-Browser Hardening:** Fixed severe iOS WebKit clipping bugs on both the Access Denied and Loading screens by replacing modern `inset: 0` rules with explicit viewport dimensions, and moved the black Access Denied background directly to the `<body>` tag to bypass Android WebApp container clipping.
   </details>
 
+- [x] **Phase 6.15: Product Variations CRM Broadcasting**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Enable admins to broadcast any specific child variation of a product directly from the CRM without incurring additional Amazon API calls, ensuring high accuracy for targeted affiliate marketing.
+
+  **The Strategy:** Upgraded the `scrapeProduct` core to securely fetch and cache child variations (`isVariation`) with their exact prices, names, ASINs, and images. Refactored the CRM UI to present a lazy-loaded list of these variations before generating the broadcast template.
+
+  **Execution Highlights:**
+  - **Variations Data Caching:** The `live-price` endpoint now parses all child variations natively (excluding OOS items) and returns them to the frontend, avoiding secondary, costly Amazon API fetch calls.
+  - **Interactive Broadcast Options:** Replaced the immediate template generation with an interactive UI picker in both the "Deals" and "Per-Product Modal" broadcast flows. Admins can selectively broadcast the parent product or any in-stock child variation.
+  - **Zero-Cost Template Generation:** Created a local `/api/crm/generate-text` backend endpoint that constructs the organic broadcast template (with exact variation affiliate links and inline buttons) purely from the frontend-cached variation payload.
+  - **RTL Layout Hardening:** Overhauled the broadcast template formatting with strict Unicode RLE (Right-to-Left Embedding) and PDF markers. This tricks Telegram's internal text-direction engine into rendering English-heavy lines natively in Arabic right-to-left layout without visual glitches.
+  </details>
+
 ---
 
 ## 🔮 Phase 7: Continuous Improvement & R&D
