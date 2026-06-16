@@ -774,7 +774,6 @@ export async function fetchAPI(request, env, ctx) {
       }
       
       if (action === "broadcast") {
-        if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
         if (!data || !data.message) return new Response("Missing message", { status: 400 });
 
         ctx.waitUntil((async () => {
@@ -1661,10 +1660,6 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         function renderTelemetry() {
-            if (appData.auth && !appData.auth.isRootAdmin) {
-                const broadcastEl = document.getElementById('broadcast-section');
-                if (broadcastEl) broadcastEl.style.display = 'none';
-            }
             const activeLength = appData.systemStats.activeWatchPool || 0;
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = activeLength;
