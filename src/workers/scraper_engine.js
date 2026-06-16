@@ -518,7 +518,7 @@ export async function executeScrapeEngine(env, offset = 0) {
 
     let dbNeedsUpdate = false;
 
-    if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass || timersChanged) {
+    if (priceDelta || newTargetBypass || usedTargetBypass || amznTargetBypass || timersChanged || histMean !== (oldItem.hist_mean || 0) || histStdev !== (oldItem.hist_stdev || 0)) {
       dbNeedsUpdate = true;
     }
 
