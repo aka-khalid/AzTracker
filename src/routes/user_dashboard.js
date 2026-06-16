@@ -214,6 +214,11 @@ export async function fetchUserAPI(request, env, ctx) {
       });
     }
 
+    if (url.pathname === "/api/user/debug_kv") {
+      const history = await env.AZTRACKER_DB.get("history:B08JTBR9MN", "json");
+      return new Response(JSON.stringify(history), { status: 200 });
+    }
+
     if (url.pathname === "/api/user/track" && request.method === "POST") {
       try {
         const body = await request.json();
