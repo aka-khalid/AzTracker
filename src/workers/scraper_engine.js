@@ -363,11 +363,11 @@ export async function executeScrapeEngine(env, offset = 0) {
     // Stat math calculated BEFORE pushing new price to history (Parity with Python)
     const historyKey = `history:${liveItem.asin}`;
     let history = [];
-    if (newChanged || usedChanged) {
+    if (newChanged || usedChanged || histMean === 0) {
        history = await env.AZTRACKER_DB.get(historyKey, "json") || [];
-       if (history.length >= 2) {
+       if (history.length >= 1) {
            const validHistory = history.filter(h => h.n !== null && h.t !== undefined);
-           if (validHistory.length >= 2) {
+           if (validHistory.length >= 1) {
                const nowSec = Math.floor(now / 1000);
                const HALF_LIFE_SEC = 30 * 24 * 60 * 60; // 30 Days
                const DECAY_CONSTANT = Math.LN2 / HALF_LIFE_SEC;
@@ -376,7 +376,8 @@ export async function executeScrapeEngine(env, offset = 0) {
                let timeWeightedSum = 0;
                
                validHistory.forEach((h, index) => {
-                   const nextTime = index < validHistory.length - 1 ? validHistory[index + 1].t : nowSec;
+                   // history is DESCENDING (unshifted). So validHistory[0] is newest.
+                   const nextTime = index === 0 ? nowSec : validHistory[index - 1].t;
                    const durationSec = nextTime - h.t;
                    const age = Math.max(0, nowSec - h.t);
                    const decayWeight = Math.exp(-DECAY_CONSTANT * age);
@@ -390,7 +391,7 @@ export async function executeScrapeEngine(env, offset = 0) {
                
                let timeWeightedVarSum = 0;
                validHistory.forEach((h, index) => {
-                   const nextTime = index < validHistory.length - 1 ? validHistory[index + 1].t : nowSec;
+                   const nextTime = index === 0 ? nowSec : validHistory[index - 1].t;
                    const durationSec = nextTime - h.t;
                    const age = Math.max(0, nowSec - h.t);
                    const decayWeight = Math.exp(-DECAY_CONSTANT * age);
@@ -399,15 +400,19 @@ export async function executeScrapeEngine(env, offset = 0) {
                    timeWeightedVarSum += finalWeight * Math.pow(h.n - mean, 2);
                });
                
-               const variance = totalInStockTime > 0 ? (timeWeightedVarSum / totalInStockTime) : 0;
+               // Sample variance with Time-Weighted Bessel's Correction
+               const effectiveSampleSize = validHistory.length;
+               const variance = effectiveSampleSize > 1 
+                   ? (timeWeightedVarSum / totalInStockTime) * (effectiveSampleSize / (effectiveSampleSize - 1))
+                   : 0;
                const stdev = Math.sqrt(variance);
                
                liveItem.totalInStockTime = totalInStockTime;
                
                const atl = Math.min(...validHistory.map(h => h.n));
                
-               histMean = mean;
-               histStdev = stdev;
+               histMean = Math.round(mean);
+               histStdev = Math.round(stdev);
                // Fix: ATL must be strictly < to count as a NEW All-Time Low
                isAtlNew = (finalNewPrice && finalNewPrice < atl) ? 1 : 0;
            }
