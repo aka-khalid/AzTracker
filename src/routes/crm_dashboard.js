@@ -150,7 +150,6 @@ export async function fetchAPI(request, env, ctx) {
     if (url.pathname === "/api/crm/live-price" && request.method === "POST") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
-      if (!auth.isRootAdmin) return new Response("Forbidden", { status: 403 });
 
       let body;
       try { body = await request.json(); } catch (e) { return new Response("Invalid JSON", { status: 400 }); }
