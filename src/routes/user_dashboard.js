@@ -828,7 +828,7 @@ function renderUserHTML(lang, partnerTag) {
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
         
-        const amzUrl = p.detail_page_url || (pTag ? 'https://www.amazon.eg/dp/' + p.asin + '?tag=' + pTag : 'https://www.amazon.eg/dp/' + p.asin);
+        const amzUrl = p.detail_page_url;
 
         let dropPct = Math.round(((p.hist_mean - p.new_price) / p.hist_mean) * 100);
 
@@ -942,14 +942,9 @@ function renderUserHTML(lang, partnerTag) {
 
         let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString(isMasry ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'numeric', year: 'numeric' }) : (ui.never);
 
-        const baseAmzUrl = p.detail_page_url || ('https://www.amazon.eg/dp/' + p.asin);
-        const amzUrl = pTag && !p.detail_page_url ? (baseAmzUrl + '?tag=' + pTag) : baseAmzUrl;
-        const resaleUrl = p.detail_page_url
-          ? (p.detail_page_url + '&m=A2N2MP47XAP1MK')
-          : ('https://www.amazon.eg/dp/' + p.asin + '?m=A2N2MP47XAP1MK' + (pTag ? '&tag=' + pTag : ''));
-        const amazonEgUrl = p.detail_page_url
-          ? (p.detail_page_url + '&m=A1ZVRGNO5AYLOV')
-          : ('https://www.amazon.eg/dp/' + p.asin + '?m=A1ZVRGNO5AYLOV' + (pTag ? '&tag=' + pTag : ''));
+        const amzUrl = p.detail_page_url;
+        const resaleUrl = p.detail_page_url ? (p.detail_page_url + '&m=A2N2MP47XAP1MK') : null;
+        const amazonEgUrl = p.detail_page_url ? (p.detail_page_url + '&m=A1ZVRGNO5AYLOV') : null;
 
         let classPaused = p.paused ? 'paused' : '';
         let btnPauseTxt = p.paused ? (ui.resume) : (ui.pause);
