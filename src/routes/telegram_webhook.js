@@ -312,7 +312,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
       if (clientId && clientSecret) {
         const token = await getAmazonAccessToken(clientId, clientSecret);
-        const parser = new AmazonEdgeParser(token, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        const parser = new AmazonEdgeParser(token, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         const arabicMap = await parser.getItemsWithArabic([pid]);
         if (arabicMap.has(pid)) {
           arabicName = arabicMap.get(pid);
@@ -542,7 +542,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
           accessToken = await getAmazonAccessToken(clientId, clientSecret);
         }
-        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         variations = await parser.getVariations(parentAsin);
       } catch (e) {
         console.warn('[ShowVariations] Failed:', e.message);
