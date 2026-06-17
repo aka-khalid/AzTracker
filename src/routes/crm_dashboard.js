@@ -1078,7 +1078,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         darkMode: 'class',
         theme: {
           extend: {
-            fontFamily: { sans: ['Inter', 'sans-serif'], arabic: ['Cairo', 'sans-serif'] },
+            fontFamily: { sans: ['Inter', 'Cairo', 'sans-serif'], arabic: ['Cairo', 'sans-serif'] },
             colors: {
               gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' },
               brand: { 400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7' }
@@ -1326,7 +1326,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 <!-- Users View -->
                 <div id="view-users" class="space-y-3">
                     <div class="relative">
-                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-900 border border-gray-800 rounded-lg ps-10 pe-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
+                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${escapeHtml(t('crm.search_users_placeholder', lang))}" class="w-full bg-gray-900 border border-gray-800 rounded-lg ps-10 pe-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
                         <svg class="w-4 h-4 text-gray-500 absolute start-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
                     <div id="users-list" class="space-y-3">
@@ -2201,7 +2201,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
                     <div class="flex gap-3 mb-2">
-                        <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
+                        <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                         <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
@@ -2285,11 +2285,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
                 return \`
                 <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden paused-card" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
-                    <div class="absolute top-3 right-3 z-10">
-                        <input type="checkbox" class="paused-checkbox w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer" data-asin="\${item.asin}" onchange="updatePausedToolbar()">
-                    </div>
-                    <div class="flex gap-3 mb-2">
-                        <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.style.display='none'};">
+                    <div class="flex items-start gap-3 mb-2">
+                        <input type="checkbox" class="paused-checkbox mt-1 w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer shrink-0" data-asin="\${item.asin}" onchange="updatePausedToolbar()">
+                        <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                                 <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
@@ -2770,26 +2768,25 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         async function triggerSync(btn) {
-            tg.showConfirm(${js('crm.env_sync_confirm')}, async (ok) => {
-                if (!ok) return;
-                const originalContent = btn.innerHTML;
-                btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
-                btn.disabled = true;
-                try {
-                    const json = await fetchAPI('/sync-env', 'POST');
-                    if (!json) return;
-                    if (json.error) {
-                        showToast(json.error, 'error');
-                    } else {
-                        showToast(json.message || 'Sync started successfully', 'success');
-                    }
-                } catch (err) {
-                    showToast('Failed to trigger sync: ' + err.message, 'error');
-                } finally {
-                    btn.innerHTML = originalContent;
-                    btn.disabled = false;
+            const ok = await showConfirmDialog(${js('crm.env_sync_confirm')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
+            if (!ok) return;
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+            btn.disabled = true;
+            try {
+                const json = await fetchAPI('/sync-env', 'POST');
+                if (!json) return;
+                if (json.error) {
+                    showToast(json.error, 'error');
+                } else {
+                    showToast(json.message || 'Sync started successfully', 'success');
                 }
-            });
+            } catch (err) {
+                showToast('Failed to trigger sync: ' + err.message, 'error');
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }
         }
 
         async function performAction(action, targetId, data = null, btn = null) {
@@ -2882,21 +2879,19 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
         }
 
-        function triggerGlobalScrape() {
-            tg.showConfirm(${js('crm.force_check')} + "${lang === 'masry' ? '؟' : '?'}", (ok) => {
-                if(ok) performAction("force_scrape", null);
-            });
+        async function triggerGlobalScrape() {
+            const ok = await showConfirmDialog(${js('crm.force_check')} + "${lang === 'masry' ? '؟' : '?'}", ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
+            if(ok) performAction("force_scrape", null);
         }
 
-        function sendBroadcast() {
+        async function sendBroadcast() {
             const msg = document.getElementById('broadcast-msg').value.trim();
             if(!msg) return showToast(${js('crm.toast_msg_empty')}, "error");
-            tg.showConfirm(${js('crm.send_broadcast')} + "?", (ok) => {
-                if(ok) {
-                    performAction("broadcast", null, { message: msg });
-                    document.getElementById('broadcast-msg').value = '';
-                }
-            });
+            const ok = await showConfirmDialog(${js('crm.send_broadcast')} + "?", ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
+            if(ok) {
+                performAction("broadcast", null, { message: msg });
+                document.getElementById('broadcast-msg').value = '';
+            }
         }
 
         function changeLimit(userId, currentLimit, firstName, username) {
@@ -2923,10 +2918,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
         }
 
-        function confirmRevoke(userId) {
-            tg.showConfirm(${js('crm.btn_demote_drawer')} + " — " + userId + "?", (ok) => {
-                if(ok) performAction('revoke', userId);
-            });
+        async function confirmRevoke(userId) {
+            const ok = await showConfirmDialog(${js('crm.btn_demote_drawer')} + " — " + userId + "?", ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
+            if(ok) performAction('revoke', userId);
         }
 
         // --- Helpers ---
@@ -2951,7 +2945,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function showToast(message, type = "info") {
             const container = document.getElementById('toast-container');
             const el = document.createElement('div');
-            const bg = type === 'error' ? 'bg-red-500/90 border-red-500' : 'bg-gray-800 border-gray-700';
+            const bg = type === 'error' ? 'bg-red-500/90 border-red-500'
+                : type === 'success' ? 'bg-green-500/90 border-green-500'
+                : 'bg-gray-800 border-gray-700';
             const icon = type === 'error' ? '❌' : '✅';
             
             el.className = 'glass rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter ' + bg;
@@ -2979,11 +2975,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         // Returns a Promise that resolves to true (confirmed) or false (cancelled).
         // Replaces native confirm() with a styled modal matching the CRM theme.
         function showConfirmDialog(message, confirmText = '✅ Confirm', cancelText = '❌ Cancel') {
+            if (document.getElementById('custom-confirm-dialog')) return Promise.resolve(false);
             return new Promise((resolve) => {
-                // Remove any existing dialog
-                const existing = document.getElementById('custom-confirm-dialog');
-                if (existing) existing.remove();
-
                 const overlay = document.createElement('div');
                 overlay.id = 'custom-confirm-dialog';
                 overlay.className = 'fixed inset-0 z-[100] flex items-center justify-center';
@@ -2991,7 +2984,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="custom-confirm-backdrop"></div>
                     <div class="relative bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 transform transition-all">
                         <p class="text-sm text-gray-200 mb-5 leading-relaxed" id="custom-confirm-message"></p>
-                        <div class="flex gap-3 justify-end">
+                        <div class="flex gap-3 justify-between" id="custom-confirm-buttons">
                             <button id="custom-confirm-cancel" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition border border-gray-700"></button>
                             <button id="custom-confirm-ok" class="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-medium transition border border-red-500/20"></button>
                         </div>
@@ -3003,7 +2996,19 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 document.getElementById('custom-confirm-cancel').textContent = cancelText;
                 document.getElementById('custom-confirm-ok').textContent = confirmText;
 
-                function cleanup() { overlay.remove(); }
+                // LTR/RTL button placement: cancel on start side, confirm on end side
+                const isRTL = document.documentElement.dir === 'rtl';
+                const btnContainer = document.getElementById('custom-confirm-buttons');
+                btnContainer.style.flexDirection = isRTL ? 'row-reverse' : 'row';
+
+                // Keyboard support: Enter = confirm, Escape = cancel
+                const keyHandler = (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); cleanup(); resolve(true); }
+                    if (e.key === 'Escape') { e.preventDefault(); cleanup(); resolve(false); }
+                };
+                document.addEventListener('keydown', keyHandler);
+
+                function cleanup() { document.removeEventListener('keydown', keyHandler); overlay.remove(); }
 
                 document.getElementById('custom-confirm-cancel').onclick = () => { cleanup(); resolve(false); };
                 document.getElementById('custom-confirm-backdrop').onclick = () => { cleanup(); resolve(false); };
@@ -3322,4 +3327,3 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 </body>
 </html>`;
 }
-
