@@ -707,6 +707,10 @@ const dict = {
     en: "Search by name or ASIN...",
     masry: "دور بالاسم أو ASIN..."
   },
+  "crm.search_users_placeholder": {
+    en: "Search by name, @username or ID...",
+    masry: "دور بالاسم، @يوزرنيم أو آي دي..."
+  },
   "crm.no_pending": {
     en: "No pending requests",
     masry: "مفيش طلبات معلقة"
@@ -1525,6 +1529,14 @@ const dict = {
   "dashboard.confirm_stop": {
     en: "Are you sure you want to stop tracking this product?",
     masry: "متأكد إنك عايز توقف تتبع المنتج ده؟"
+  },
+  "dashboard.confirm_btn_confirm": {
+    en: "✅ Confirm",
+    masry: "✅ تأكيد"
+  },
+  "dashboard.confirm_btn_cancel": {
+    en: "❌ Cancel",
+    masry: "❌ إلغاء"
   },
   "crm.items_label": {
     en: "items",
