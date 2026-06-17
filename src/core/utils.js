@@ -93,11 +93,10 @@ export function getCairoTime(now) {
 export function buildBroadcastMessage(env, deal, now, t) {
   const lang = 'masry';
   const safeName = escapeHtml(truncateName(deal.name_ar || deal.name || deal.asin) || t('product.unknown_product', lang));
-  const baseUrl = `https://www.amazon.eg/dp/${deal.asin}`;
-  const qParams = new URLSearchParams();
+  // Use the canonical affiliate URL from the Creators API (includes tag, marketplace, language)
   const pTag = env?.AMAZON_PARTNER_TAG;
-  if (pTag) qParams.append('tag', pTag);
-  const broadcastUrl = qParams.toString() ? `${baseUrl}?${qParams.toString()}` : baseUrl;
+  const broadcastUrl = deal.detailPageURL
+    || (pTag ? `https://www.amazon.eg/dp/${deal.asin}?tag=${pTag}` : `https://www.amazon.eg/dp/${deal.asin}`);
   const safeSeller = escapeHtml(deal.seller || t('fallback.unknown_seller', lang));
   const deepLink = `https://t.me/${env?.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}`;
   const disclaimerUrl = 'https://telegra.ph/Pricing-Disclaimer-06-05';
