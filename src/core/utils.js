@@ -94,9 +94,7 @@ export function buildBroadcastMessage(env, deal, now, t) {
   const lang = 'masry';
   const safeName = escapeHtml(truncateName(deal.name_ar || deal.name || deal.asin) || t('product.unknown_product', lang));
   // Use the canonical affiliate URL from the Creators API (includes tag, marketplace, language)
-  const pTag = env?.AMAZON_PARTNER_TAG;
-  const broadcastUrl = deal.detailPageURL
-    || (pTag ? `https://www.amazon.eg/dp/${deal.asin}?tag=${pTag}` : `https://www.amazon.eg/dp/${deal.asin}`);
+  const broadcastUrl = deal.detailPageURL;
   const safeSeller = escapeHtml(deal.seller || t('fallback.unknown_seller', lang));
   const deepLink = `https://t.me/${env?.BOT_USERNAME || 'AzTrackerr_bot'}?start=track_${deal.asin}`;
   const disclaimerUrl = 'https://telegra.ph/Pricing-Disclaimer-06-05';
