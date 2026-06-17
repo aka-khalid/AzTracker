@@ -1540,18 +1540,19 @@ const dict = {
   },
   "crm.items_label": {
     en: "items",
-    ar: "منتج",
     masry: "منتج"
   },
   "crm.no_active_products": {
     en: "No active products found.",
-    ar: "لا يوجد منتجات نشطة.",
     masry: "مفيش منتجات شغالة دلوقتي."
   },
   "crm.no_subscribers": {
     en: "No subscribers found.",
-    ar: "لا يوجد مشتركون.",
     masry: "مفيش حد مشترك في المنتج ده."
+  },
+  "crm.subscribers_for": {
+    en: "Subscribers for {asin}",
+    masry: "اللي مشتركين في {asin}"
   },
   "crm.role_root": {
     en: "ROOT",
