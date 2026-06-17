@@ -69,10 +69,10 @@ export async function fetchUserAPI(request, env, ctx) {
 
     if (url.pathname === "/api/user/products" && request.method === "GET") {
       const { results } = await env.DB.prepare(`
-        SELECT s.asin, s.is_paused as paused, s.target_price, p.name, p.name_ar, 
+        SELECT s.asin, s.is_paused as paused, s.target_price, p.name, p.name_ar,
                p.new_price, p.used_price, p.amazon_price, p.hist_mean, p.is_atl_new,
                p.image_url, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller,
-               p.seen_amazon_eg_at, p.seen_resale_at
+               p.seen_amazon_eg_at, p.seen_resale_at, p.detail_page_url
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
@@ -204,7 +204,7 @@ export async function fetchUserAPI(request, env, ctx) {
     if (url.pathname === "/api/user/hot_deals" && request.method === "GET") {
       const { results } = await env.DB.prepare(`
         SELECT g.asin, g.name, g.name_ar, g.new_price, g.hist_mean, g.image_url,
-               (s.asin IS NOT NULL) AS is_tracked
+               g.detail_page_url, (s.asin IS NOT NULL) AS is_tracked
         FROM Global_Products g
         LEFT JOIN User_Subscriptions s ON g.asin = s.asin AND s.chat_id = ?
         WHERE g.hist_mean > 0 AND g.new_price > 0 AND (
@@ -828,8 +828,7 @@ function renderUserHTML(lang, partnerTag) {
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
         
-        let amzUrl = 'https://www.amazon.eg/dp/' + p.asin;
-        if(pTag) amzUrl += '?tag=' + pTag;
+        const amzUrl = p.detail_page_url || (pTag ? `https://www.amazon.eg/dp/${p.asin}?tag=${pTag}` : `https://www.amazon.eg/dp/${p.asin}`);
 
         let dropPct = Math.round(((p.hist_mean - p.new_price) / p.hist_mean) * 100);
 
@@ -943,15 +942,14 @@ function renderUserHTML(lang, partnerTag) {
 
         let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString(isMasry ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'numeric', year: 'numeric' }) : (ui.never);
 
-        let amzUrl = 'https://www.amazon.eg/dp/' + p.asin;
-        let resaleUrl = 'https://www.amazon.eg/dp/' + p.asin + '?m=A2N2MP47XAP1MK';
-        let amazonEgUrl = 'https://www.amazon.eg/dp/' + p.asin + '?m=A1ZVRGNO5AYLOV';
-
-        if(pTag) {
-           amzUrl += '?tag=' + pTag;
-           resaleUrl += '&tag=' + pTag;
-           amazonEgUrl += '&tag=' + pTag;
-        }
+        const baseAmzUrl = p.detail_page_url || `https://www.amazon.eg/dp/${p.asin}`;
+        const amzUrl = pTag && !p.detail_page_url ? `${baseAmzUrl}?tag=${pTag}` : baseAmzUrl;
+        const resaleUrl = p.detail_page_url
+          ? `${p.detail_page_url}&m=A2N2MP47XAP1MK`
+          : `https://www.amazon.eg/dp/${p.asin}?m=A2N2MP47XAP1MK${pTag ? `&tag=${pTag}` : ''}`;
+        const amazonEgUrl = p.detail_page_url
+          ? `${p.detail_page_url}&m=A1ZVRGNO5AYLOV`
+          : `https://www.amazon.eg/dp/${p.asin}?m=A1ZVRGNO5AYLOV${pTag ? `&tag=${pTag}` : ''}`;
 
         let classPaused = p.paused ? 'paused' : '';
         let btnPauseTxt = p.paused ? (ui.resume) : (ui.pause);
