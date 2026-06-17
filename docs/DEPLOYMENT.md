@@ -83,7 +83,7 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN --env production
 
 **Required Cloudflare Secrets:**
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ROOT_ADMIN_IDS`
-- `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`, `AMZN_ASSOCIATES_TAG`
+- `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`
 
 ### 3.3 GitHub Actions CI/CD Secrets
 To enable automated deployments and dual-environment database syncs via GitHub Actions, configure the following **Repository Secrets** in GitHub:
