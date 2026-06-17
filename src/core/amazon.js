@@ -226,6 +226,7 @@ export class AmazonEdgeParser {
                 asin: raw.asin,
                 name: raw.name || detailed.name,
                 imageUrl: detailed.imageUrl || raw.imageUrl,
+                detailPageURL: detailed.detailPageURL || null,
                 price: formattedPrice,
                 numPrice: numPrice,
                 seller: detailed.amazonSeller || detailed.newSeller || detailed.usedSeller || 'Unknown',
@@ -301,7 +302,12 @@ export class AmazonEdgeParser {
 
   parseItem(rawItem) {
     const parsed = { asin: rawItem.ASIN || rawItem.asin };
-    
+
+    // Use the canonical affiliate URL from the Creators API (includes tag, marketplace, language)
+    if (rawItem.DetailPageURL || rawItem.detailPageURL) {
+      parsed.detailPageURL = rawItem.DetailPageURL || rawItem.detailPageURL;
+    }
+
     const itemInfo = rawItem.ItemInfo || rawItem.itemInfo;
     if (itemInfo?.Title?.DisplayValue) {
       parsed.name = itemInfo.Title.DisplayValue;
