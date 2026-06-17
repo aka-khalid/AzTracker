@@ -157,16 +157,11 @@ export async function executeScrapeEngine(env, offset = 0) {
   let globalMatrix = {};
   
   function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice, isUsed) {
-      // Use the canonical affiliate URL from the Creators API when available
-      const baseUrl = liveItem.detailPageURL || `https://www.amazon.eg/dp/${liveItem.asin}`;
+      // Only send alerts when we have the canonical affiliate URL from the Creators API
+      if (!liveItem.detailPageURL) return;
       const primary_mid = isUsed ? AMAZON_RESALE_MERCHANT_ID : mid;
-
-      const qParams = new URLSearchParams();
-      if (primary_mid) qParams.append("m", primary_mid);
-      const pTag = env.AMAZON_PARTNER_TAG;
-      if (pTag) qParams.append("tag", pTag);
-
-      const alert_url = qParams.toString() ? `${baseUrl}?${qParams.toString()}` : baseUrl;
+      const sep = liveItem.detailPageURL.includes('?') ? '&' : '?';
+      const alert_url = liveItem.detailPageURL + (primary_mid ? sep + 'm=' + primary_mid : '');
       const btn_text = isUsed ? t('alert.btn_open_resale', lang) : t('alert.btn_open_new', lang);
 
       const btn_markup = {
@@ -188,34 +183,26 @@ export async function executeScrapeEngine(env, offset = 0) {
       const resale_seen_recently = seenResaleAt && (now - seenResaleAt) < (14 * 24 * 60 * 60 * 1000);
 
       if (!isAmznSeller) {
-          let amzUrl;
           if (liveItem.detailPageURL) {
             const sep = liveItem.detailPageURL.includes('?') ? '&' : '?';
-            amzUrl = `${liveItem.detailPageURL}${sep}m=${AMAZON_EG_MERCHANT_ID}`;
-          } else {
-            amzUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_EG_MERCHANT_ID}`;
-            if (pTag) amzUrl += `&tag=${pTag}`;
-          }
-          if (amznPrice !== null) {
-              historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', lang)}</b>`);
-          } else if (amazon_seen_recently) {
-              historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+            const amzUrl = liveItem.detailPageURL + sep + 'm=' + AMAZON_EG_MERCHANT_ID;
+            if (amznPrice !== null) {
+                historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', lang)}</b>`);
+            } else if (amazon_seen_recently) {
+                historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+            }
           }
       }
 
       if (!isResaleSeller) {
-          let resUrl;
           if (liveItem.detailPageURL) {
             const sep = liveItem.detailPageURL.includes('?') ? '&' : '?';
-            resUrl = `${liveItem.detailPageURL}${sep}m=${AMAZON_RESALE_MERCHANT_ID}`;
-          } else {
-            resUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_RESALE_MERCHANT_ID}`;
-            if (pTag) resUrl += `&tag=${pTag}`;
-          }
-          if (usedPrice !== null) {
-              historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
-          } else if (resale_seen_recently) {
-              historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+            const resUrl = liveItem.detailPageURL + sep + 'm=' + AMAZON_RESALE_MERCHANT_ID;
+            if (usedPrice !== null) {
+                historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
+            } else if (resale_seen_recently) {
+                historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+            }
           }
       }
 
