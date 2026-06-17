@@ -89,7 +89,7 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
   }
 
-  const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+  const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
   const asins = staleProducts.map(p => p.asin);
 
   let liveItems;
