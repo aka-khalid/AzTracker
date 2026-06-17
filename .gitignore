@@ -34,6 +34,7 @@ pnpm-debug.log*
 .vscode/
 .idea/
 .claude/
+CLAUDE.md
 
 # TypeScript leftovers (V2 is JS only)
 src/api/

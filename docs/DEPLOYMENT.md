@@ -1,6 +1,6 @@
 # AzTracker Deployment Guide
 
-> **Architecture:** Phase 6.11 Modular ES6 + Localization
+> **Architecture:** Phase 6.16 Modular ES6 + Native Dialogs & Toasts
 > **Workflow:** Dual-Environment (Development & Production)
 
 AzTracker runs on Cloudflare Workers using a hybrid D1 (relational) + KV (time-series) database architecture. Background work is fully decoupled, driven by Cloudflare Queues (`scraper-queue`, `telegram-outbox`), and dynamically governed by a CRON trigger. It is fully localized and ready for V2 production deployment.
