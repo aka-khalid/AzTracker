@@ -1118,60 +1118,6 @@ function toPrice(value) {
   return Number.isFinite(price) ? price : null;
 }
 
-function buildProductUrl(pid, env, merchantId = null) {
-  const cleanPid = pid.includes(":") ? pid.split(":")[0] : pid;
-  let productUrl = `https://www.amazon.eg/dp/${cleanPid}`;
-  const queryParams = new URLSearchParams();
-  if (merchantId) queryParams.set("m", merchantId);
-  const partnerTag = env.AMAZON_PARTNER_TAG;
-  if (partnerTag) queryParams.set("tag", partnerTag);
-  const queryString = queryParams.toString();
-  if (queryString) productUrl += `?${queryString}`;
-  return productUrl;
-}
-
-function buildSmartAlternatives(pData, pid, env, lang = 'en') {
-  const now = Date.now();
-  const amazonSeenRecently = pData.seen_amazon_eg_at && (now - pData.seen_amazon_eg_at) < ALT_SELLER_TTL_MS;
-  const resaleSeenRecently = pData.seen_resale_at && (now - pData.seen_resale_at) < ALT_SELLER_TTL_MS;
-
-  const newMid = pData.new_mid || pData.merchant_id || null;
-  const currentSellerIsAmazon = newMid === AMAZON_EG_MERCHANT_ID;
-  const currentSellerIsResale = newMid === AMAZON_RESALE_MERCHANT_ID;
-
-  const amazonPrice = toPrice(pData.amazon_price);
-  const usedPrice = toPrice(pData.used_price);
-
-  const historicalLinks = [];
-
-  // Amazon.eg Link
-  if (!currentSellerIsAmazon) {
-    const amazonEgUrl = buildProductUrl(pid, env, AMAZON_EG_MERCHANT_ID);
-    if (amazonPrice !== null) {
-      historicalLinks.push(`┘ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a>: <b>${amazonPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b>`);
-    } else if (amazonSeenRecently) {
-      historicalLinks.push(`┘ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
-    }
-  }
-
-  // Amazon Resale Link
-  if (!currentSellerIsResale) {
-    const resaleUrl = buildProductUrl(pid, env, AMAZON_RESALE_MERCHANT_ID);
-    if (usedPrice !== null) {
-      historicalLinks.push(`┘ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a>: <b>${usedPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
-    } else if (resaleSeenRecently) {
-      historicalLinks.push(`┘ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
-    }
-  }
-
-  // Render the clean block
-  if (historicalLinks.length > 0) {
-    return `\n\n${t('product.other_options_head', lang)}\n${historicalLinks.join("\n")}`;
-  }
-
-  return "";
-}
-
 async function syncUserNames(env, chatId, from, baseUrl) {
   if (!from) return;
   const first = from.first_name || null;
