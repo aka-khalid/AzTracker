@@ -1,7 +1,7 @@
 # AzTracker Test Suite & Diagnostic Vectors
 
-> **Architecture:** Phase 6.11 Modular ES6 + Localization
-> **Focus:** Asynchronous Queue Architecture & Rate Limiting
+> **Architecture:** Phase 6.16 Modular ES6 + Native Dialogs & Toasts
+> **Focus:** Asynchronous Queue Architecture, Rate Limiting & UI Components
 
 This document serves as the living test specification for the current asynchronous architectural phases. 
 
@@ -49,6 +49,26 @@ Tests for the bilingual localization engine and ES6 route structures.
 | **TC-301** | Bilingual Alert Payload | Trigger a price drop for a user with `lang = 'masry'` | Alert payload pushed to `telegram-outbox` is completely rendered in Arabic, including currency symbols (ج.م) and button text. |
 | **TC-302** | Dashboard Routing | Send `GET /crm?lang=masry` to worker | Worker routes request to `crm_dashboard.js` and renders full HTML with `dir="rtl"` and `lang="masry"`. |
 | **TC-303** | CRM Action Endpoint | Send `POST /api/crm/action` with action `force_scrape` | Validates HMAC signature, sends `{ offset: 0 }` to `SCRAPER_QUEUE`, starts recursive async chain, and returns 202 queued. |
+
+---
+
+## 4. Native Confirm Dialogs & Toast Notifications (Phase 6.16)
+
+Tests for the custom in-UI confirm dialogs and toast notifications that replace native Telegram popups.
+
+| Test ID | Feature Target | Diagnostic Vector / Execution Method | Expected Success Criterion |
+| :--- | :--- | :--- | :--- |
+| **TC-401** | Confirm Dialog Rendering | Trigger `triggerSync()` from CRM via `POST /api/crm/action` with `action: 'sync'` | Custom `showConfirmDialog()` modal appears with localized confirm/cancel buttons. No `tg.showConfirm()` call is made. |
+| **TC-402** | Confirm Dialog Stacking Guard | Trigger two rapid confirm-dialog actions (e.g. sync then scrape) | Second dialog is blocked; only one modal exists in the DOM at a time. |
+| **TC-403** | Confirm Dialog Keyboard — Enter | Open confirm dialog and press Enter key | Dialog confirms the action (equivalent to clicking the confirm button). |
+| **TC-404** | Confirm Dialog Keyboard — Escape | Open confirm dialog and press Escape key | Dialog dismisses without triggering the action. |
+| **TC-405** | Confirm Dialog RTL Button Order | Open confirm dialog in Masry (`lang=masry`) mode | Cancel button appears on the left, confirm on the right (mirrored from LTR). |
+| **TC-406** | Green Success Toast | Trigger a successful target price update via `POST /api/user/update-target` | Green toast (`bg-green-500/90`) appears and auto-dismisses. No `tg.showPopup()` call is made. |
+| **TC-407** | User Dashboard Confirm Dialog | Trigger `deleteProduct()` from User Dashboard | Custom `showConfirmDialog()` modal appears with `dashboard.confirm_btn_confirm` and `dashboard.cancel` labels. |
+| **TC-408** | Image Fallback Placeholder | Load a CRM/product drawer view with a broken image URL | Broken image is replaced with transparent 1x1 GIF placeholder; no `display:none` or broken-image icon appears. |
+| **TC-409** | i18n Search Placeholder | Load CRM dashboard and inspect search input | Search input uses `crm.search_users_placeholder` key (not generic `crm.search_placeholder`). |
+| **TC-410** | i18n Subscribers Drawer Title | Open Product Subscribers Drawer for any ASIN | Drawer title reads "Subscribers for {ASIN}" in English or "اللي مشتركين في {ASIN}" in Masry, using the `crm.subscribers_for` template key. |
+| **TC-411** | Locale Dictionary Integrity | Inspect `src/core/i18n.js` dictionary | No `ar` (Fusha) keys exist; only `en` and `masry` locales are defined. |
 
 ---
 
