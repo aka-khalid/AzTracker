@@ -132,6 +132,24 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Cross-Browser Hardening:** Fixed severe iOS WebKit clipping bugs on both the Access Denied and Loading screens by replacing modern `inset: 0` rules with explicit viewport dimensions, and moved the black Access Denied background directly to the `<body>` tag to bypass Android WebApp container clipping.
   </details>
 
+- [x] **Phase 6.16: Native Confirm Dialogs, Toast Notifications & i18n Hardening**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Replace the native Telegram `tg.showConfirm()` and `tg.showPopup()` calls with custom in-UI modal dialogs and toast notifications for a consistent cross-platform experience, while hardening i18n coverage and image fallback resilience.
+
+  **The Strategy:** Implemented a custom `showConfirmDialog()` modal with stacking guard, RTL-aware button placement, and keyboard support (Enter/Escape) in both the CRM and User Dashboards. Added a green success toast style (`bg-green-500/90`). Replaced brittle `this.style.display='none'` image error handling with a transparent 1x1 GIF placeholder to prevent layout shift. Added missing i18n keys for search placeholders and confirm/cancel buttons. Removed all `ar` (Fusha) dictionary entries, keeping only `en` and `masry` locales.
+
+  **Execution Highlights:**
+  - **Custom Confirm Dialog (`showConfirmDialog`):** Replaced `tg.showConfirm()` across 4 CRM actions (`triggerSync`, `triggerGlobalScrape`, `sendBroadcast`, `confirmRevoke`) and 2 User Dashboard actions (`updateTarget`, `deleteProduct`). The modal features a stacking guard (prevents duplicate dialogs), RTL-aware button placement (cancel on the right in LTR, on the left in RTL), and keyboard support (Enter to confirm, Escape to dismiss).
+  - **Toast Notifications (`showToast`):** Added green success toast style (`bg-green-500/90`) to both CRM and User Dashboards, replacing `tg.showPopup()` for target price updates and clears.
+  - **Image Fallback Hardening:** Replaced `this.style.display='none'` on image error with a transparent 1x1 GIF data URI placeholder (`data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7`), preventing broken-image icons and layout shift.
+  - **i18n Key Additions:** Added `crm.search_users_placeholder` (distinct from generic search placeholder), `dashboard.confirm_btn_confirm`, `dashboard.confirm_btn_cancel`, and `crm.subscribers_for` (with `{asin}` template variable) for the localized "Subscribers for" drawer title.
+  - **Locale Cleanup:** Removed all `ar` (Modern Standard Arabic) dictionary entries from `i18n.js` — the project now strictly supports `en` (English) and `masry` (Egyptian Arabic), eliminating ~3 redundant Fusha entries.
+  - **Search Placeholder:** Updated CRM search input to use the more specific `crm.search_users_placeholder` key instead of the generic `crm.search_placeholder`.
+  - **Auth Bypass (Debug):** Commented out HMAC auth check on `/api/test-asin` endpoint for development testing.
+  </details>
+
 - [x] **Phase 6.15: Product Variations CRM Broadcasting**
   <details>
   <summary><b>View Execution Brief</b></summary>
