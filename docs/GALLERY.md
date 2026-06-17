@@ -139,25 +139,18 @@ Here is a side-by-side comparison of the entire CRM interface in both languages.
       <td width="50%" align="center"><img src="assets/20_help_modal_ar.png" width="100%"></td>
     </tr>
     <tr>
-      <td colspan="2"><b>19. Product Target Price</b><br>Set a custom target price on a tracked product to get notified when the price drops below it.</td>
+      <td colspan="2"><b>19. Hot Deals</b><br>User tab to discover massive global price drops dynamically detected by the engine.</td>
     </tr>
     <tr>
-      <td width="50%" align="center"><img src="assets/21_product_target_price_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/21_product_target_price_ar.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/21_hot_deals_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/21_hot_deals_ar.png" width="100%"></td>
     </tr>
     <tr>
-      <td colspan="2"><b>20. Hot Deals</b><br>User tab to discover massive global price drops dynamically detected by the engine.</td>
+      <td colspan="2"><b>20. Access Denied</b><br>Graceful blocking UI shown to unauthorized or banned users.</td>
     </tr>
     <tr>
-      <td width="50%" align="center"><img src="assets/22_hot_deals_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/22_hot_deals_ar.png" width="100%"></td>
-    </tr>
-    <tr>
-      <td colspan="2"><b>21. Access Denied</b><br>Graceful blocking UI shown to unauthorized or banned users.</td>
-    </tr>
-    <tr>
-      <td width="50%" align="center"><img src="assets/23_access_denied_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/23_access_denied_ar.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/22_access_denied_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/22_access_denied_ar.png" width="100%"></td>
     </tr>
   </tbody>
 </table>

@@ -39,7 +39,7 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 </table>
 
 👉 **[View Full Screenshot Gallery](docs/GALLERY.md)**  
-*(Contains side-by-side LTR/RTL comparisons of all 21 interactive views, drawers, and charts!)*
+*(Contains side-by-side LTR/RTL comparisons of all 20 interactive views, drawers, and charts!)*
 
 ---
 
