@@ -106,9 +106,18 @@ export async function fetchUserAPI(request, env, ctx) {
         } else if (action === "resume") {
            await env.DB.prepare("UPDATE User_Subscriptions SET is_paused = 0 WHERE chat_id = ? AND asin = ?").bind(chatId, asin).run();
         } else {
-           await env.DB.prepare(
-             "UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?"
-           ).bind(target_price === null ? null : Number(target_price), chatId, asin).run();
+           const tp = target_price === null || target_price === "" ? null : Number(target_price);
+           if (tp === null) {
+             // Clearing target — keep alert_sent flags to prevent stale queued alerts from re-triggering
+             await env.DB.prepare(
+               "UPDATE User_Subscriptions SET target_price = NULL WHERE chat_id = ? AND asin = ?"
+             ).bind(chatId, asin).run();
+           } else {
+             // Setting a new target — reset alert flags so the new target can fire
+             await env.DB.prepare(
+               "UPDATE User_Subscriptions SET target_price = ?, alert_sent_new = 0, alert_sent_used = 0 WHERE chat_id = ? AND asin = ?"
+             ).bind(tp, chatId, asin).run();
+           }
         }
 
         ctx.waitUntil((async () => {
@@ -333,7 +342,9 @@ function renderUserHTML(lang, partnerTag) {
     target_updated: t('dashboard.target_updated', lang),
     cleared: t('dashboard.cleared', lang),
     target_cleared: t('dashboard.target_cleared', lang),
-    confirm_stop: t('dashboard.confirm_stop', lang)
+    confirm_stop: t('dashboard.confirm_stop', lang),
+    confirm_btn_confirm: t('dashboard.confirm_btn_confirm', lang),
+    confirm_btn_cancel: t('dashboard.confirm_btn_cancel', lang)
   };
 
   return `<!DOCTYPE html>
@@ -653,6 +664,52 @@ function renderUserHTML(lang, partnerTag) {
         }
         document.getElementById('custom-alert-text').innerText = msg;
         modal.style.display = 'flex';
+    }
+
+    function showConfirmDialog(message, confirmText = '✅ Confirm', cancelText = '❌ Cancel') {
+        if (document.getElementById('custom-confirm-dialog')) return Promise.resolve(false);
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.id = 'custom-confirm-dialog';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML = '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);" id="custom-confirm-backdrop"></div><div style="position:relative;background:var(--secondary-bg-color);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;box-shadow:0 10px 25px rgba(0,0,0,0.5);max-width:320px;width:calc(100% - 32px);"><p style="font-size:14px;line-height:1.6;color:var(--text-color);margin-bottom:20px;" id="custom-confirm-message"></p><div id="custom-confirm-buttons" style="display:flex;gap:12px;justify-content:space-between;"><button id="custom-confirm-cancel" style="padding:8px 16px;background:rgba(255,255,255,0.05);color:var(--hint-color);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;"></button><button id="custom-confirm-ok" style="padding:8px 16px;background:rgba(239,68,68,0.1);color:var(--destructive-color);border:1px solid rgba(239,68,68,0.2);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;"></button></div></div>';
+            document.body.appendChild(overlay);
+            document.getElementById('custom-confirm-message').textContent = message;
+            document.getElementById('custom-confirm-cancel').textContent = cancelText;
+            document.getElementById('custom-confirm-ok').textContent = confirmText;
+            // LTR/RTL button placement: cancel on start side, confirm on end side
+            const isRTL = document.documentElement.dir === 'rtl';
+            document.getElementById('custom-confirm-buttons').style.flexDirection = isRTL ? 'row-reverse' : 'row';
+            // Keyboard support: Enter = confirm, Escape = cancel
+            const keyHandler = (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); cleanup(); resolve(true); }
+                if (e.key === 'Escape') { e.preventDefault(); cleanup(); resolve(false); }
+            };
+            document.addEventListener('keydown', keyHandler);
+            function cleanup() { document.removeEventListener('keydown', keyHandler); overlay.remove(); }
+            document.getElementById('custom-confirm-cancel').onclick = () => { cleanup(); resolve(false); };
+            document.getElementById('custom-confirm-backdrop').onclick = () => { cleanup(); resolve(false); };
+            document.getElementById('custom-confirm-ok').onclick = () => { cleanup(); resolve(true); };
+        });
+    }
+
+    function showToast(message, type = 'info') {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.style.cssText = 'position:fixed;bottom:24px;left:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;';
+            document.body.appendChild(container);
+        }
+        const el = document.createElement('div');
+        const bg = type === 'error' ? 'background:rgba(239,68,68,0.9);border-color:rgba(239,68,68,1);'
+            : type === 'success' ? 'background:rgba(34,197,94,0.9);border-color:rgba(34,197,94,1);'
+            : 'background:rgba(31,41,55,0.9);border-color:rgba(75,85,99,0.5);';
+        const icon = type === 'error' ? '❌' : '✅';
+        el.style.cssText = 'border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:500;box-shadow:0 10px 25px rgba(0,0,0,0.5);border:1px solid;backdrop-filter:blur(12px);' + bg;
+        el.innerHTML = '<span>' + icon + '</span> <span>' + escapeHtml(message) + '</span>';
+        container.appendChild(el);
+        setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
     }
 
     const originalFetch = window.fetch;
@@ -982,22 +1039,21 @@ function renderUserHTML(lang, partnerTag) {
     async function updateTarget(asin, val) {
       if(val !== null && isNaN(val)) return;
       let msg = ui.confirm_target_prefix + val + ui.confirm_target_suffix;
-      tg.showConfirm(msg, async function(ok) {
-        if(ok) {
-          tg.HapticFeedback.impactOccurred('light');
-          await apiCall('/api/user/products/update', { asin, target_price: val });
-          tg.showPopup({ title: ui.saved, message: (ui.target_updated) + asin });
-          loadProducts();
-        } else {
-          loadProducts();
-        }
-      });
+      const ok = await showConfirmDialog(msg, ui.confirm_btn_confirm, ui.confirm_btn_cancel);
+      if(ok) {
+        tg.HapticFeedback.impactOccurred('light');
+        await apiCall('/api/user/products/update', { asin, target_price: val });
+        showToast(ui.saved + ': ' + ui.target_updated + asin, 'success');
+        loadProducts();
+      } else {
+        loadProducts();
+      }
     }
 
     async function clearTarget(asin) {
       tg.HapticFeedback.impactOccurred('light');
       await apiCall('/api/user/products/update', { asin, target_price: null });
-      tg.showPopup({ title: ui.cleared, message: (ui.target_cleared) + asin });
+      showToast(ui.cleared + ': ' + ui.target_cleared + asin, 'success');
       loadProducts();
     }
 
@@ -1009,12 +1065,11 @@ function renderUserHTML(lang, partnerTag) {
 
     async function deleteProduct(asin) {
       tg.HapticFeedback.impactOccurred('heavy');
-      tg.showConfirm(ui.confirm_stop, async function(confirm) {
-         if(confirm) {
-            await apiCall('/api/user/products/delete', { asin });
-            loadProducts();
-         }
-      });
+      const ok = await showConfirmDialog(ui.confirm_stop, ui.confirm_btn_confirm, ui.confirm_btn_cancel);
+      if(ok) {
+        await apiCall('/api/user/products/delete', { asin });
+        loadProducts();
+      }
     }
 
     window.onload = () => { loadProducts(); loadHotDeals(); };
