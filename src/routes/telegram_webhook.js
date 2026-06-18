@@ -312,7 +312,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
       const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
       if (clientId && clientSecret) {
         const token = await getAmazonAccessToken(clientId, clientSecret);
-        const parser = new AmazonEdgeParser(token, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        const parser = new AmazonEdgeParser(token, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         const arabicMap = await parser.getItemsWithArabic([pid]);
         if (arabicMap.has(pid)) {
           arabicName = arabicMap.get(pid);
@@ -332,12 +332,12 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     // Insert into Global_Products to track price globally
     await env.DB.prepare(`
-      INSERT INTO Global_Products (asin, name, name_ar, last_updated)
-      VALUES (?, ?, ?, 0)
-      ON CONFLICT(asin) DO UPDATE SET 
-        name = COALESCE(NULLIF(excluded.name, excluded.asin), name), 
+      INSERT INTO Global_Products (asin, name, name_ar, last_updated, detail_page_url)
+      VALUES (?, ?, ?, 0, ?)
+      ON CONFLICT(asin) DO UPDATE SET
+        name = COALESCE(NULLIF(excluded.name, excluded.asin), name),
         name_ar = COALESCE(excluded.name_ar, name_ar)
-    `).bind(pid, extractedName || pid, arabicName).run();
+    `).bind(pid, extractedName || pid, arabicName, `https://www.amazon.eg/dp/${pid}`).run();
 
     await env.DB.prepare(`
       INSERT INTO User_Subscriptions (chat_id, asin, added_at)
@@ -542,7 +542,7 @@ async function handleCallback(callback, env, baseUrl, ctx) {
           const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
           accessToken = await getAmazonAccessToken(clientId, clientSecret);
         }
-        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         variations = await parser.getVariations(parentAsin);
       } catch (e) {
         console.warn('[ShowVariations] Failed:', e.message);
@@ -808,10 +808,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
         // Upsert into Global_Products (stores variation name by child ASIN)
         await env.DB.prepare(`
-          INSERT INTO Global_Products (asin, name, image_url, first_seen, last_checked)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO Global_Products (asin, name, image_url, first_seen, last_checked, detail_page_url)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(asin) DO UPDATE SET name = excluded.name, last_checked = excluded.last_checked
-        `).bind(childAsin, variationName, null, Date.now(), Date.now()).run();
+        `).bind(childAsin, variationName, null, Date.now(), Date.now(), `https://www.amazon.eg/dp/${childAsin}`).run();
 
         // Insert subscription
         await env.DB.prepare(`
@@ -1116,60 +1116,6 @@ function toPrice(value) {
   if (value === undefined || value === null || value === "") return null;
   const price = Number(value);
   return Number.isFinite(price) ? price : null;
-}
-
-function buildProductUrl(pid, env, merchantId = null) {
-  const cleanPid = pid.includes(":") ? pid.split(":")[0] : pid;
-  let productUrl = `https://www.amazon.eg/dp/${cleanPid}`;
-  const queryParams = new URLSearchParams();
-  if (merchantId) queryParams.set("m", merchantId);
-  const partnerTag = env.AMAZON_PARTNER_TAG;
-  if (partnerTag) queryParams.set("tag", partnerTag);
-  const queryString = queryParams.toString();
-  if (queryString) productUrl += `?${queryString}`;
-  return productUrl;
-}
-
-function buildSmartAlternatives(pData, pid, env, lang = 'en') {
-  const now = Date.now();
-  const amazonSeenRecently = pData.seen_amazon_eg_at && (now - pData.seen_amazon_eg_at) < ALT_SELLER_TTL_MS;
-  const resaleSeenRecently = pData.seen_resale_at && (now - pData.seen_resale_at) < ALT_SELLER_TTL_MS;
-
-  const newMid = pData.new_mid || pData.merchant_id || null;
-  const currentSellerIsAmazon = newMid === AMAZON_EG_MERCHANT_ID;
-  const currentSellerIsResale = newMid === AMAZON_RESALE_MERCHANT_ID;
-
-  const amazonPrice = toPrice(pData.amazon_price);
-  const usedPrice = toPrice(pData.used_price);
-
-  const historicalLinks = [];
-
-  // Amazon.eg Link
-  if (!currentSellerIsAmazon) {
-    const amazonEgUrl = buildProductUrl(pid, env, AMAZON_EG_MERCHANT_ID);
-    if (amazonPrice !== null) {
-      historicalLinks.push(`┘ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a>: <b>${amazonPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b>`);
-    } else if (amazonSeenRecently) {
-      historicalLinks.push(`┘ 🛡️ <a href="${escapeHtml(amazonEgUrl)}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
-    }
-  }
-
-  // Amazon Resale Link
-  if (!currentSellerIsResale) {
-    const resaleUrl = buildProductUrl(pid, env, AMAZON_RESALE_MERCHANT_ID);
-    if (usedPrice !== null) {
-      historicalLinks.push(`┘ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a>: <b>${usedPrice.toLocaleString()} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
-    } else if (resaleSeenRecently) {
-      historicalLinks.push(`┘ 📦 <a href="${escapeHtml(resaleUrl)}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
-    }
-  }
-
-  // Render the clean block
-  if (historicalLinks.length > 0) {
-    return `\n\n${t('product.other_options_head', lang)}\n${historicalLinks.join("\n")}`;
-  }
-
-  return "";
 }
 
 async function syncUserNames(env, chatId, from, baseUrl) {

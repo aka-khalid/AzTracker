@@ -39,7 +39,7 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 </table>
 
 👉 **[View Full Screenshot Gallery](docs/GALLERY.md)**  
-*(Contains side-by-side LTR/RTL comparisons of all 21 interactive views, drawers, and charts!)*
+*(Contains side-by-side LTR/RTL comparisons of all 20 interactive views, drawers, and charts!)*
 
 ---
 
@@ -174,8 +174,7 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `TELEGRAM_ROOT_ADMIN_IDS` | Comma-separated list of root-level Telegram user IDs. |
 | `AMAZON_CLIENT_ID` | Amazon Creators API Credential ID. |
 | `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret. |
-| `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs. |
-| `AMZN_ASSOCIATES_TAG` | Amazon Associates Tracking ID for the Creators API payload. |
+| `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs and the Creators API payload. |
 | `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting. |
 
 ### 🔄 Automated CI/CD Database Synchronization

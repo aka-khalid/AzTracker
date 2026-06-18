@@ -181,7 +181,7 @@ export async function fetchAPI(request, env, ctx) {
           const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
           accessToken = await getAmazonAccessToken(clientId, clientSecret);
         }
-        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         let items = [];
         let arabicNames = new Map();
         try {
@@ -214,6 +214,7 @@ export async function fetchAPI(request, env, ctx) {
           asin: raw.asin,
           name: raw.name,
           name_ar: raw.name_ar,
+          detailPageURL: raw.detailPageURL || null,
           price: raw.amazonPrice || raw.newPrice || raw.usedPrice || 0,
           seller: raw.amazonSeller || raw.newSeller || raw.usedSeller || 'Unknown',
           mid: raw.amazonMid || raw.newMid || raw.usedMid || ''
@@ -237,8 +238,7 @@ export async function fetchAPI(request, env, ctx) {
           if (ctx?.waitUntil) ctx.waitUntil(recordCircuitSuccess(env));
         }
 
-        const pTag = env?.AMAZON_PARTNER_TAG || '';
-        const shortUrl = `https://www.amazon.eg/dp/${raw.asin}${pTag ? '?tag=' + pTag : ''}`;
+        const shortUrl = raw.detailPageURL;
         const formattedPrice = deal.price > 0 ? deal.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' EGP' : '';
 
         return new Response(JSON.stringify({
@@ -267,8 +267,9 @@ export async function fetchAPI(request, env, ctx) {
       const deal = {
         asin: body.asin,
         name: body.name,
-        name_ar: body.name,
-        price: body.numPrice || 0,
+        name_ar: body.name_ar ?? body.name,
+        detailPageURL: body.detailPageURL || null,
+        price: body.numPrice || (body.price ? parseFloat(String(body.price).replace(/[^0-9.]/g, '')) : 0),
         seller: body.seller || 'Unknown',
         mid: body.mid || ''
       };
@@ -293,7 +294,7 @@ export async function fetchAPI(request, env, ctx) {
           const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
           accessToken = await getAmazonAccessToken(clientId, clientSecret);
         }
-        const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+        const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         const items = await parser.getItems([asin]);
         const arabicNames = await parser.getItemsWithArabic([asin]);
         const response2 = await fetch(parser.endpoint, {
@@ -493,8 +494,7 @@ export async function fetchAPI(request, env, ctx) {
           joinQueue: joinQueueRes || [],
           users: mutableUsers,
           auth: { isRootAdmin: auth.isRootAdmin, adminId: auth.user.id.toString() },
-          lang: auth.lang || 'masry',
-          partnerTag: env.AMAZON_PARTNER_TAG || ''
+          lang: auth.lang || 'masry'
         };
         const response = new Response(JSON.stringify(data), {
           status: 200,
@@ -515,8 +515,9 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       const rows = await env.DB.prepare(`
-        SELECT 
-            g.asin, g.name, g.name_ar, g.image_url, g.amazon_price, g.new_price, g.used_price, g.always_track,
+        SELECT
+            g.asin, g.name, g.name_ar, g.image_url, g.amazon_price, g.new_price, g.used_price,
+            g.always_track, g.detail_page_url,
             SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) as active_subs,
             SUM(CASE WHEN s.is_paused = 1 THEN 1 ELSE 0 END) as paused_subs
         FROM Global_Products g
@@ -542,7 +543,7 @@ export async function fetchAPI(request, env, ctx) {
       const rows = await env.DB.prepare(`
         SELECT s.chat_id, s.asin, s.added_at, s.target_price, p.image_url,
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.always_track,
-               u.first_name, u.username
+               p.detail_page_url, u.first_name, u.username
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         JOIN Users u ON s.chat_id = u.chat_id
@@ -568,7 +569,7 @@ export async function fetchAPI(request, env, ctx) {
 
       const rows = await env.DB.prepare(`
         SELECT gp.asin, gp.name, gp.name_ar, gp.new_price, gp.amazon_price, gp.image_url,
-               COUNT(s.chat_id) as tracker_count
+               gp.detail_page_url, COUNT(s.chat_id) as tracker_count
         FROM Global_Products gp
         JOIN User_Subscriptions s ON gp.asin = s.asin AND s.is_paused = 0
         GROUP BY gp.asin
@@ -590,8 +591,8 @@ export async function fetchAPI(request, env, ctx) {
 
       const rows = await env.DB.prepare(`
         SELECT gp.asin, gp.name, gp.name_ar, gp.delisted, gp.image_url,
-               gp.new_missing_since, gp.used_missing_since, gp.amazon_missing_since,
-               gp.last_updated,
+               gp.detail_page_url, gp.new_missing_since, gp.used_missing_since,
+               gp.amazon_missing_since, gp.last_updated,
                COUNT(CASE WHEN s.is_paused = 0 THEN 1 END) as active_subs
         FROM Global_Products gp
         LEFT JOIN User_Subscriptions s ON gp.asin = s.asin
@@ -711,8 +712,9 @@ export async function fetchAPI(request, env, ctx) {
       if (!targetId || targetId === "products") return new Response("Invalid ID", { status: 400 });
       
       const products = await env.DB.prepare(`
-        SELECT s.asin, s.target_price, s.is_paused, p.image_url, 
-               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller, p.always_track
+        SELECT s.asin, s.target_price, s.is_paused, p.image_url,
+               p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller, p.always_track,
+               p.detail_page_url
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
@@ -2059,7 +2061,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
                         '<div class="flex-1 min-w-0 pe-2">' +
-                            '<a href="https://www.amazon.eg/dp/' + asinEsc + (appData.partnerTag ? '?tag=' + appData.partnerTag : '') + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
+                            '<a href="' + escapeHtml(p.detail_page_url || '') + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
                             '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
                         '</div>' +
                         '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap shrink-0">' + statusText + '</span>' +
@@ -2111,7 +2113,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + (appData.partnerTag ? '?tag=' + appData.partnerTag : '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
                 html += '</div>';
                 html += '<div class="text-right">';
@@ -2136,11 +2138,41 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const q = query.toLowerCase().trim();
             const container = document.getElementById(containerId);
             if (!container) return;
+
+            // Active Products drawer: search against the full data array so that
+            // lazy-loaded (not-yet-rendered) items are still findable.
+            if (containerId === 'drawer-active-items' && activeProductsData.length > 0) {
+                if (!q) {
+                    // Query cleared — reset to initial lazy-loaded state
+                    activeRenderIndex = 0;
+                    container.innerHTML = '';
+                    renderMoreActiveProducts();
+                    return;
+                }
+                const lang = document.documentElement.lang || 'masry';
+                const isMasry = lang === 'masry';
+                const matched = activeProductsData.filter(item => {
+                    const name = (isMasry && item.name_ar) ? item.name_ar : (item.name || item.asin);
+                    const searchStr = (item.asin + ' ' + name).toLowerCase();
+                    return searchStr.includes(q);
+                });
+                if (matched.length === 0) {
+                    container.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No matching products found</div>';
+                    activeRenderIndex = activeProductsData.length;
+                    return;
+                }
+                container.innerHTML = '';
+                activeRenderIndex = activeProductsData.length;
+                renderActiveProductCards(matched, lang, isMasry);
+                return;
+            }
+
+            // Default: DOM-based filtering for other drawers (paused, graveyard, users)
             const items = container.querySelectorAll('[data-search]');
             items.forEach(item => {
                 const searchStr = item.getAttribute('data-search') || '';
                 if (!q || searchStr.includes(q)) {
-                    item.style.display = 'block'; 
+                    item.style.display = 'block';
                 } else {
                     item.style.display = 'none';
                 }
@@ -2175,15 +2207,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             renderMoreActiveProducts();
         }
 
-        function renderMoreActiveProducts() {
-            if (activeRenderIndex >= activeProductsData.length) return;
+        function renderActiveProductCards(items, lang, isMasry) {
             const itemsCont = document.getElementById('drawer-active-items');
-            const chunk = activeProductsData.slice(activeRenderIndex, activeRenderIndex + 50);
-            activeRenderIndex += 50;
-            const lang = document.documentElement.lang || 'masry';
-            const isMasry = lang === 'masry';
-
-            const html = chunk.map((item) => {
+            const html = items.map((item) => {
                 const name = (isMasry && item.name_ar) ? item.name_ar : (item.name || item.asin);
                 const userName = escapeHtml(item.first_name || 'User');
                 const userDetails = item.username ? \`(@\${item.username})\` : \`(\${item.chat_id})\`;
@@ -2191,20 +2217,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const hasTarget = !!item.target_price;
                 const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
-                
+
                 const btnIcon = item.always_track === 1 ? '🟢' : '📡';
                 const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
-                const btnClass = item.always_track === 1 
-                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
+                const btnClass = item.always_track === 1
+                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent'
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
-                
+
                 return \`
                 <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
@@ -2232,6 +2258,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }).join('');
 
             itemsCont.insertAdjacentHTML('beforeend', html);
+        }
+
+        function renderMoreActiveProducts() {
+            if (activeRenderIndex >= activeProductsData.length) return;
+            const chunk = activeProductsData.slice(activeRenderIndex, activeRenderIndex + 50);
+            activeRenderIndex += 50;
+            const lang = document.documentElement.lang || 'masry';
+            const isMasry = lang === 'masry';
+            renderActiveProductCards(chunk, lang, isMasry);
         }
 
         function handleActiveScroll() {
@@ -2290,7 +2325,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
@@ -2429,7 +2464,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="https://www.amazon.eg/dp/' + item.asin + (appData.partnerTag ? '?tag=' + appData.partnerTag : '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
                 html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
                 html += '</div></div>';
@@ -2490,7 +2525,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url || 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="https://www.amazon.eg/dp/\${item.asin}\${appData.partnerTag ? '?tag=' + appData.partnerTag : ''}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">${t('crm.user_paused', lang)}</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>'}
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">

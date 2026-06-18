@@ -89,7 +89,7 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
   }
 
-  const parser = new AmazonEdgeParser(accessToken, env.AMZN_ASSOCIATES_TAG, 'www.amazon.eg', env);
+  const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
   const asins = staleProducts.map(p => p.asin);
 
   let liveItems;
@@ -157,15 +157,11 @@ export async function executeScrapeEngine(env, offset = 0) {
   let globalMatrix = {};
   
   function queueAlert(chatId, lang, condLabel, price, lastPrice, seller, mid, isTarget, targetPrice, liveItem, isAtl, seenAmazonAt, seenResaleAt, amznPrice, usedPrice, newPrice, isUsed) {
-      const base_url = `https://www.amazon.eg/dp/${liveItem.asin}`;
+      // Only send alerts when we have the canonical affiliate URL from the Creators API
+      if (!liveItem.detailPageURL) return;
       const primary_mid = isUsed ? AMAZON_RESALE_MERCHANT_ID : mid;
-
-      const qParams = new URLSearchParams();
-      if (primary_mid) qParams.append("m", primary_mid);
-      const pTag = env.AMAZON_PARTNER_TAG;
-      if (pTag) qParams.append("tag", pTag);
-
-      const alert_url = qParams.toString() ? `${base_url}?${qParams.toString()}` : base_url;
+      const sep = liveItem.detailPageURL.includes('?') ? '&' : '?';
+      const alert_url = liveItem.detailPageURL + (primary_mid ? sep + 'm=' + primary_mid : '');
       const btn_text = isUsed ? t('alert.btn_open_resale', lang) : t('alert.btn_open_new', lang);
 
       const btn_markup = {
@@ -187,22 +183,26 @@ export async function executeScrapeEngine(env, offset = 0) {
       const resale_seen_recently = seenResaleAt && (now - seenResaleAt) < (14 * 24 * 60 * 60 * 1000);
 
       if (!isAmznSeller) {
-          let amzUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_EG_MERCHANT_ID}`;
-          if (pTag) amzUrl += `&tag=${pTag}`;
-          if (amznPrice !== null) {
-              historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', lang)}</b>`);
-          } else if (amazon_seen_recently) {
-              historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+          if (liveItem.detailPageURL) {
+            const sep = liveItem.detailPageURL.includes('?') ? '&' : '?';
+            const amzUrl = liveItem.detailPageURL + sep + 'm=' + AMAZON_EG_MERCHANT_ID;
+            if (amznPrice !== null) {
+                historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a>: <b>${formatEGP(amznPrice)} ${t('chrome.currency_egp', lang)}</b>`);
+            } else if (amazon_seen_recently) {
+                historical_links.push(`┘ 🛡️ <a href="${amzUrl}">${t('product.amazon_eg_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+            }
           }
       }
 
       if (!isResaleSeller) {
-          let resUrl = `https://www.amazon.eg/dp/${liveItem.asin}?m=${AMAZON_RESALE_MERCHANT_ID}`;
-          if (pTag) resUrl += `&tag=${pTag}`;
-          if (usedPrice !== null) {
-              historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
-          } else if (resale_seen_recently) {
-              historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+          if (liveItem.detailPageURL) {
+            const sep = liveItem.detailPageURL.includes('?') ? '&' : '?';
+            const resUrl = liveItem.detailPageURL + sep + 'm=' + AMAZON_RESALE_MERCHANT_ID;
+            if (usedPrice !== null) {
+                historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a>: <b>${formatEGP(usedPrice)} ${t('chrome.currency_egp', lang)}</b> <i>${t('product.used_tag', lang)}</i>`);
+            } else if (resale_seen_recently) {
+                historical_links.push(`┘ 📦 <a href="${resUrl}">${t('product.resale_label', lang)}</a> <i>${t('product.check_stock', lang)}</i>`);
+            }
           }
       }
 
@@ -545,7 +545,8 @@ export async function executeScrapeEngine(env, offset = 0) {
               hist_mean = ?, hist_stdev = ?, is_atl_new = ?,
               name_ar = COALESCE(?, name_ar),
               name = COALESCE(?, name),
-              image_url = COALESCE(?, image_url)
+              image_url = COALESCE(?, image_url),
+              detail_page_url = COALESCE(?, detail_page_url)
           WHERE asin = ?
         `).bind(
           finalAmazonPrice, finalUsedPrice, finalNewPrice, now,
@@ -557,6 +558,7 @@ export async function executeScrapeEngine(env, offset = 0) {
           liveItem.name_ar || null,
           liveItem.name || null,
           liveItem.imageUrl || null,
+          liveItem.detailPageURL || null,
           liveItem.asin
         )
       );
@@ -568,9 +570,10 @@ export async function executeScrapeEngine(env, offset = 0) {
           UPDATE Global_Products SET last_updated = ?,
               name_ar = COALESCE(?, name_ar),
               name = COALESCE(?, name),
-              image_url = COALESCE(?, image_url)
+              image_url = COALESCE(?, image_url),
+              detail_page_url = COALESCE(?, detail_page_url)
           WHERE asin = ?
-        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.imageUrl || null, liveItem.asin)
+        `).bind(now, liveItem.name_ar || null, liveItem.name || null, liveItem.imageUrl || null, liveItem.detailPageURL || null, liveItem.asin)
       );
     }
     
@@ -629,6 +632,7 @@ export async function executeScrapeEngine(env, offset = 0) {
                      asin: liveItem.asin,
                      name: liveItem.name,
                      name_ar: liveItem.name_ar || null,
+                     detailPageURL: liveItem.detailPageURL || null,
                      price: broadcastPrice,
                      last_price: displayLastPrice,
                      drop_pct: dropPct,
