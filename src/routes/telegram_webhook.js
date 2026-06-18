@@ -332,12 +332,12 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
     // Insert into Global_Products to track price globally
     await env.DB.prepare(`
-      INSERT INTO Global_Products (asin, name, name_ar, last_updated)
-      VALUES (?, ?, ?, 0)
-      ON CONFLICT(asin) DO UPDATE SET 
-        name = COALESCE(NULLIF(excluded.name, excluded.asin), name), 
+      INSERT INTO Global_Products (asin, name, name_ar, last_updated, detail_page_url)
+      VALUES (?, ?, ?, 0, ?)
+      ON CONFLICT(asin) DO UPDATE SET
+        name = COALESCE(NULLIF(excluded.name, excluded.asin), name),
         name_ar = COALESCE(excluded.name_ar, name_ar)
-    `).bind(pid, extractedName || pid, arabicName).run();
+    `).bind(pid, extractedName || pid, arabicName, `https://www.amazon.eg/dp/${pid}`).run();
 
     await env.DB.prepare(`
       INSERT INTO User_Subscriptions (chat_id, asin, added_at)
@@ -808,10 +808,10 @@ async function handleCallback(callback, env, baseUrl, ctx) {
 
         // Upsert into Global_Products (stores variation name by child ASIN)
         await env.DB.prepare(`
-          INSERT INTO Global_Products (asin, name, image_url, first_seen, last_checked)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO Global_Products (asin, name, image_url, first_seen, last_checked, detail_page_url)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(asin) DO UPDATE SET name = excluded.name, last_checked = excluded.last_checked
-        `).bind(childAsin, variationName, null, Date.now(), Date.now()).run();
+        `).bind(childAsin, variationName, null, Date.now(), Date.now(), `https://www.amazon.eg/dp/${childAsin}`).run();
 
         // Insert subscription
         await env.DB.prepare(`
