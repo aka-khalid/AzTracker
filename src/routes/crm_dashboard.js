@@ -70,10 +70,6 @@ async function verifyInitData(telegramInitData, botToken) {
 }
 
 async function authAdmin(req, environment) {
-  if (environment.MOCK_PUPPETEER_AUTH === "true" && req.headers.get("Authorization") === "Bearer puppeteer_mock") {
-    const rootAdminId = environment.TELEGRAM_ROOT_ADMIN_IDS ? parseInt(environment.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0], 10) : 123456789;
-    return { user: { id: rootAdminId, first_name: "Admin" }, isRootAdmin: true };
-  }
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return null;
   const initData = authHeader.replace("Bearer ", "");
@@ -690,6 +686,7 @@ export async function fetchAPI(request, env, ctx) {
       const subs = await env.DB.prepare(`
         SELECT s.chat_id, s.target_price, s.is_paused, s.paused_at, p.image_url,
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.asin, p.always_track,
+               p.detail_page_url,
                u.first_name, u.username
         FROM User_Subscriptions s
         JOIN Global_Products p ON s.asin = p.asin
@@ -1632,7 +1629,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 if (res.status === 202) return { status: 'queued' };
                 const json = await res.json();
                 const dbLang = res.headers.get("X-User-Lang") || json.lang;
-                if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry') && initData !== 'puppeteer_mock') {
+                if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry')) {
                     window.location.replace(window.location.pathname + '?lang=' + dbLang + window.location.hash);
                     return null;
                 }

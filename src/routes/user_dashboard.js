@@ -13,40 +13,35 @@ export async function fetchUserAPI(request, env, ctx) {
     }
     const initData = authHeader.substring("Bearer ".length);
     let chatId;
-    if (env.MOCK_PUPPETEER_AUTH === "true" && initData === "puppeteer_mock") {
-      chatId = env.TELEGRAM_ROOT_ADMIN_IDS ? env.TELEGRAM_ROOT_ADMIN_IDS.split(',')[0] : "123456789";
-    } else {
-      const parsed = new URLSearchParams(initData);
-      const hash = parsed.get("hash");
-      parsed.delete("hash");
+    const parsed = new URLSearchParams(initData);
+    const hash = parsed.get("hash");
+    parsed.delete("hash");
 
-      const keys = Array.from(parsed.keys()).sort();
-      const dataCheckString = keys.map(k => `${k}=${parsed.get(k)}`).join("\n");
+    const keys = Array.from(parsed.keys()).sort();
+    const dataCheckString = keys.map(k => `${k}=${parsed.get(k)}`).join("\n");
 
-      const encoder = new TextEncoder();
-      const secretKey = await crypto.subtle.importKey(
-        "raw",
-        await crypto.subtle.sign("HMAC", await crypto.subtle.importKey("raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), encoder.encode(env.TELEGRAM_BOT_TOKEN)),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"]
-      );
+    const encoder = new TextEncoder();
+    const secretKey = await crypto.subtle.importKey(
+      "raw",
+      await crypto.subtle.sign("HMAC", await crypto.subtle.importKey("raw", encoder.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), encoder.encode(env.TELEGRAM_BOT_TOKEN)),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
 
-      const calcHashBuffer = await crypto.subtle.sign("HMAC", secretKey, encoder.encode(dataCheckString));
-      const calcHash = Array.from(new Uint8Array(calcHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const calcHashBuffer = await crypto.subtle.sign("HMAC", secretKey, encoder.encode(dataCheckString));
+    const calcHash = Array.from(new Uint8Array(calcHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-      if (calcHash !== hash) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-
-      const userObj = JSON.parse(parsed.get("user") || "{}");
-      const authDate = parseInt(parsed.get("auth_date") || "0", 10);
-      if (Math.floor(Date.now() / 1000) - authDate > 86400) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      chatId = userObj.id ? String(userObj.id) : null;
+    if (calcHash !== hash) {
+      return new Response("Unauthorized", { status: 401 });
     }
 
+    const userObj = JSON.parse(parsed.get("user") || "{}");
+    const authDate = parseInt(parsed.get("auth_date") || "0", 10);
+    if (Math.floor(Date.now() / 1000) - authDate > 86400) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+    chatId = userObj.id ? String(userObj.id) : null;
     if (!chatId) return new Response("Unauthorized", { status: 401 });
 
     const roles = await getUserRoles(chatId, env, ctx);
@@ -895,7 +890,7 @@ function renderUserHTML(lang, partnerTag) {
           headers: { 'Authorization': 'Bearer ' + initData }
         });
         const dbLang = res.headers.get("X-User-Lang");
-        if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry') && initData !== 'puppeteer_mock') {
+        if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry')) {
             window.location.replace(window.location.pathname + '?lang=' + dbLang + window.location.hash);
             return;
         }

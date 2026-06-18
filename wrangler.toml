@@ -47,7 +47,7 @@ BOT_USERNAME = "AzTrackerr_bot"
 
 [triggers]
 crons = []
-# crons = ["* * * * *", "0 0 * * *"]
+# crons = ["* * * * *"]
 
 [env.production]
 name = "aztracker-prod-worker"
