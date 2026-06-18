@@ -253,9 +253,9 @@ export async function fetchUserAPI(request, env, ctx) {
         `).bind(chatId, asin, Date.now()).run();
 
         await env.DB.prepare(`
-          INSERT OR IGNORE INTO Global_Products (asin, name, name_ar, last_updated)
-          VALUES (?, ?, ?, 0)
-        `).bind(asin, asin, null).run();
+          INSERT OR IGNORE INTO Global_Products (asin, name, name_ar, last_updated, detail_page_url)
+          VALUES (?, ?, ?, 0, ?)
+        `).bind(asin, asin, null, `https://www.amazon.eg/dp/${asin}`).run();
 
         ctx.waitUntil((async () => {
              const state = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(`ui:${chatId}`).first();
@@ -772,7 +772,6 @@ function renderUserHTML(lang, partnerTag) {
 
     const ui = ${JSON.stringify(ui)};
     const isMasry = ${isMasry};
-    const pTag = '${pTagStr}';
 
     
     let allProducts = [];
@@ -828,7 +827,7 @@ function renderUserHTML(lang, partnerTag) {
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
         
-        const amzUrl = p.detail_page_url;
+        const amzUrl = p.detail_page_url || 'https://www.amazon.eg/dp/' + p.asin;
 
         let dropPct = Math.round(((p.hist_mean - p.new_price) / p.hist_mean) * 100);
 
@@ -942,9 +941,10 @@ function renderUserHTML(lang, partnerTag) {
 
         let lastUpd = p.last_updated ? new Date(p.last_updated).toLocaleString(isMasry ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: 'numeric', day: 'numeric', month: 'numeric', year: 'numeric' }) : (ui.never);
 
-        const amzUrl = p.detail_page_url;
-        const resaleUrl = p.detail_page_url ? (p.detail_page_url + '&m=A2N2MP47XAP1MK') : null;
-        const amazonEgUrl = p.detail_page_url ? (p.detail_page_url + '&m=A1ZVRGNO5AYLOV') : null;
+        const amzUrl = p.detail_page_url || 'https://www.amazon.eg/dp/' + p.asin;
+        const _urlSep = amzUrl.includes('?') ? '&' : '?';
+        const resaleUrl = amzUrl + _urlSep + 'm=A2N2MP47XAP1MK';
+        const amazonEgUrl = amzUrl + _urlSep + 'm=A1ZVRGNO5AYLOV';
 
         let classPaused = p.paused ? 'paused' : '';
         let btnPauseTxt = p.paused ? (ui.resume) : (ui.pause);
