@@ -1,8 +1,8 @@
-# AzTracker CRM Visual Gallery
+# AzTracker Visual Gallery
 
-AzTracker features a fully localized, responsive, and dynamic CRM Dashboard built without heavy frontend frameworks. It natively supports both **LTR (English)** and **RTL (Masry/Arabic)** layouts with fluid transitions.
+AzTracker features a fully localized, responsive, and dynamic dashboard built without heavy frontend frameworks. It natively supports both **LTR (English)** and **RTL (Masry/Arabic)** layouts with fluid transitions.
 
-Here is a side-by-side comparison of the entire CRM interface in both languages.
+Here is a side-by-side comparison of the entire interface in both languages.
 
 <table>
   <thead>
@@ -13,7 +13,7 @@ Here is a side-by-side comparison of the entire CRM interface in both languages.
   </thead>
   <tbody>
     <tr>
-      <td colspan="2"><b>01. Main Dashboard</b><br>Overview of system metrics, active watch pool, and quick actions.</td>
+      <td colspan="2"><b>01. CRM Dashboard</b><br>Overview of system metrics, active watch pool, and quick actions.</td>
     </tr>
     <tr>
       <td width="50%" align="center"><img src="assets/01_crm_dashboard_en.png" width="100%"></td>
@@ -128,29 +128,22 @@ Here is a side-by-side comparison of the entire CRM interface in both languages.
       <td colspan="2"><b>17. User Products</b><br>Standard user interface to manage personal active subscriptions.</td>
     </tr>
     <tr>
-      <td width="50%" align="center"><img src="assets/19_user_products_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/19_user_products_ar.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/17_user_products_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/17_user_products_ar.png" width="100%"></td>
     </tr>
     <tr>
       <td colspan="2"><b>18. Help Modal</b><br>User guidance overlay explaining how to track products and get price alerts.</td>
     </tr>
     <tr>
-      <td width="50%" align="center"><img src="assets/20_help_modal_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/20_help_modal_ar.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/18_help_modal_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/18_help_modal_ar.png" width="100%"></td>
     </tr>
     <tr>
       <td colspan="2"><b>19. Hot Deals</b><br>User tab to discover massive global price drops dynamically detected by the engine.</td>
     </tr>
     <tr>
-      <td width="50%" align="center"><img src="assets/21_hot_deals_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/21_hot_deals_ar.png" width="100%"></td>
-    </tr>
-    <tr>
-      <td colspan="2"><b>20. Access Denied</b><br>Graceful blocking UI shown to unauthorized or banned users.</td>
-    </tr>
-    <tr>
-      <td width="50%" align="center"><img src="assets/22_access_denied_en.png" width="100%"></td>
-      <td width="50%" align="center"><img src="assets/22_access_denied_ar.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/19_hot_deals_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/19_hot_deals_ar.png" width="100%"></td>
     </tr>
   </tbody>
 </table>
