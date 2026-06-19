@@ -277,7 +277,7 @@ export async function fetchUserAPI(request, env, ctx) {
     const html = renderUserHTML(lang, env.AMAZON_PARTNER_TAG);
     return new Response(html, {
       status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8" }
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }
     });
   }
 
