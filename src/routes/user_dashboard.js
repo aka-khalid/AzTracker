@@ -2,8 +2,34 @@ import { renderMainMenu, setChatMenuButton } from './telegram_webhook.js';
 import { t } from '../core/i18n.js';
 import { getUserRoles } from '../core/db.js';
 
+// ── Rate Limiting (shared pattern with index.js) ───────────────────────────
+const USER_RATE_WINDOW_MS = 60_000; // 1-minute window
+const USER_RATE_MAX = 60;           // 60 req/min per IP
+const userRateMap = new Map();
+
+function checkUserRateLimit(ip) {
+  const now = Date.now();
+  let entry = userRateMap.get(ip);
+  if (!entry || (now - entry.windowStart) >= USER_RATE_WINDOW_MS) {
+    entry = { count: 1, windowStart: now };
+    userRateMap.set(ip, entry);
+    return true;
+  }
+  entry.count += 1;
+  if (userRateMap.size > 50000) userRateMap.clear();
+  return entry.count <= USER_RATE_MAX;
+}
+
 export async function fetchUserAPI(request, env, ctx) {
   const url = new URL(request.url);
+
+  // Rate limit all user endpoints (API + HTML) by IP
+  if (url.pathname.startsWith("/api/user/") || url.pathname === "/user_app") {
+    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    if (!checkUserRateLimit(ip)) {
+      return new Response(JSON.stringify({ error: "Rate limit exceeded" }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60" } });
+    }
+  }
 
   // 1. Authenticate API requests
   if (url.pathname.startsWith("/api/user/")) {
