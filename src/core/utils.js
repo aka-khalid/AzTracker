@@ -103,7 +103,7 @@ export function buildBroadcastMessage(env, deal, now, t) {
   const rle = '\u202B'; // Right-to-Left Embedding
   const pdf = '\u202C'; // Pop Directional Formatting
 
-  // Tiered header based on drop percentage (mirrors engine's reqDrop buckets)
+  // Two-tier header: الحق for wow deals (≥ 2x threshold), عرض for everything else
   const drop = deal.drop_pct || 0;
   const lastPrice = deal.last_price || deal.price || 1;
   let reqDrop = 10.0;
@@ -113,10 +113,7 @@ export function buildBroadcastMessage(env, deal, now, t) {
   else if (lastPrice <= 50000) reqDrop = 5.0;
   else reqDrop = 3.0;
 
-  let header;
-  if (drop >= reqDrop * 2.0) header = '🔥 الحق 🔥';
-  else if (drop >= reqDrop) header = '🚨 لقطة 🚨';
-  else header = '⚡ عرض ⚡';
+  const header = drop >= reqDrop * 2.0 ? '🔥 الحق 🔥' : '⚡ عرض ⚡';
 
   const text =
     `${header}\n\n` +
