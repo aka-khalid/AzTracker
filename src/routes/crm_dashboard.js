@@ -1915,7 +1915,16 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
             
             filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)) || (u.username && u.username.toLowerCase().includes(query)));
-            
+
+            // Client-side sort: most recent activity first, then by join date as fallback
+            if (activeTab === 'users') {
+                filtered.sort((a, b) => {
+                    const aTime = (a.last_active && a.last_active > 0) ? a.last_active : (a.created_at || 0);
+                    const bTime = (b.last_active && b.last_active > 0) ? b.last_active : (b.created_at || 0);
+                    return bTime - aTime;
+                });
+            }
+
             if (filtered.length === 0) {
                 list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_users_found')} + '</div>';
                 return;
