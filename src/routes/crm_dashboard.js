@@ -406,7 +406,7 @@ export async function fetchAPI(request, env, ctx) {
             FROM Users u
             LEFT JOIN User_Subscriptions s ON u.chat_id = s.chat_id AND s.is_paused = 0
             GROUP BY u.chat_id
-            ORDER BY COALESCE(NULLIF(u.last_active, 0), u.created_at) DESC
+            ORDER BY CASE WHEN u.last_active > 0 THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(u.last_active, 0), u.created_at) DESC
           `).all(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT value as lastRunMs FROM Bot_States WHERE key = 'last_run_time'").first(),
@@ -1916,11 +1916,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             
             filtered = filtered.filter(u => u.chat_id.toString().toLowerCase().includes(query) || u.role.toLowerCase().includes(query) || (u.first_name && u.first_name.toLowerCase().includes(query)) || (u.username && u.username.toLowerCase().includes(query)));
 
-            // Client-side sort: most recent activity first, then by join date as fallback
+            // Client-side sort: active users first (by last_active DESC), then inactive (by created_at DESC)
             if (activeTab === 'users') {
                 filtered.sort((a, b) => {
-                    const aTime = (a.last_active && a.last_active > 0) ? a.last_active : (a.created_at || 0);
-                    const bTime = (b.last_active && b.last_active > 0) ? b.last_active : (b.created_at || 0);
+                    const aActive = (a.last_active && a.last_active > 0) ? 1 : 0;
+                    const bActive = (b.last_active && b.last_active > 0) ? 1 : 0;
+                    if (aActive !== bActive) return bActive - aActive; // active first
+                    // Within same group: sort by time desc
+                    const aTime = aActive ? a.last_active : (a.created_at || 0);
+                    const bTime = bActive ? b.last_active : (b.created_at || 0);
                     return bTime - aTime;
                 });
             }
