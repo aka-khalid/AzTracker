@@ -164,10 +164,11 @@ export async function executeScrapeEngine(env, offset = 0) {
       const alert_url = liveItem.detailPageURL + (primary_mid ? sep + 'm=' + primary_mid : '');
       const btn_text = isUsed ? t('alert.btn_open_resale', lang) : t('alert.btn_open_new', lang);
 
+      const channelUrl = env?.TELEGRAM_PUBLIC_CHANNEL_ID || '@AzTrackerr';
       const btn_markup = {
           inline_keyboard: [
               [{ text: btn_text, url: alert_url }],
-              [{ text: t('alert.btn_disclaimer', lang), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
+              [{ text: t('alert.btn_channel', lang), url: 'https://t.me/' + channelUrl.replace('@', '') }, { text: t('alert.btn_disclaimer', lang), url: "https://telegra.ph/Pricing-Disclaimer-06-05" }]
           ]
       };
 

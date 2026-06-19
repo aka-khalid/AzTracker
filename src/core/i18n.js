@@ -569,6 +569,10 @@ const dict = {
     en: "📦 Open Amazon Resale",
     masry: "♻️ شوف الريسيل"
   },
+  "alert.btn_channel": {
+    en: "📢 See more offers",
+    masry: "📢 شوف عروض أكتر"
+  },
   "alert.btn_disclaimer": {
     en: "ℹ️ Price Disclaimer",
     masry: "ℹ️ الأسعار ممكن تتغير"
