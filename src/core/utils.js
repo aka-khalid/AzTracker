@@ -103,8 +103,23 @@ export function buildBroadcastMessage(env, deal, now, t) {
   const rle = '\u202B'; // Right-to-Left Embedding
   const pdf = '\u202C'; // Pop Directional Formatting
 
+  // Tiered header based on drop percentage (mirrors engine's reqDrop buckets)
+  const drop = deal.drop_pct || 0;
+  const lastPrice = deal.last_price || deal.price || 1;
+  let reqDrop = 10.0;
+  if (lastPrice <= 1000) reqDrop = 15.0;
+  else if (lastPrice <= 5000) reqDrop = 10.0;
+  else if (lastPrice <= 20000) reqDrop = 7.0;
+  else if (lastPrice <= 50000) reqDrop = 5.0;
+  else reqDrop = 3.0;
+
+  let header;
+  if (drop >= reqDrop * 2.0) header = '🔥 الحق 🔥';
+  else if (drop >= reqDrop) header = '🚨 لقطة 🚨';
+  else header = '⚡ عرض ⚡';
+
   const text =
-    `${t('broadcast.snapshot', lang)}\n\n` +
+    `${header}\n\n` +
     `${rle}<b>${safeName}</b>${pdf}\n\n` +
     `${rle}💵 <b>${formatEGP(deal.price)} ج.م</b>${pdf}\n` +
     `${rle}🏬 ${t('broadcast.seller', lang)}: ${safeSeller}${pdf}\n\n` +

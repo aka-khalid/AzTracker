@@ -1,0 +1,2170 @@
+{
+  "version": "1.0.0",
+  "gitCommitHash": "d52f931fb789574140247ed0849f2423200eca4e",
+  "generatedAt": "2026-06-18T23:52:43.935Z",
+  "files": {
+    ".claude/settings.local.json": {
+      "filePath": ".claude/settings.local.json",
+      "contentHash": "8d96a5f576f3dce57fda644e2028e111c1c14286f0eac862ea4de667b85d2283",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 157,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/deploy_worker.yml": {
+      "filePath": ".github/workflows/deploy_worker.yml",
+      "contentHash": "30da98fee6171e6a1da2130d9f2fba3a4e5c7e61af49cb1855d805836f5a2bca",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 61,
+      "hasStructuralAnalysis": true
+    },
+    ".github/workflows/sync-prod-to-dev.yml": {
+      "filePath": ".github/workflows/sync-prod-to-dev.yml",
+      "contentHash": "083ed734348e1552a5f9def069691db4a8508487fab23cb1f7eb5e08a8b530fe",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 48,
+      "hasStructuralAnalysis": true
+    },
+    ".gitignore": {
+      "filePath": ".gitignore",
+      "contentHash": "44e2777c07b913c647bc79d146db2a3b4a6246d44ae4e8437dd91b1abccd1336",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 71,
+      "hasStructuralAnalysis": false
+    },
+    ".understand-anything/.understandignore": {
+      "filePath": ".understand-anything/.understandignore",
+      "contentHash": "0707e41e91912677e74d9a413a66dcc60c0cdc9f4598ed932230b2fa8438d784",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 41,
+      "hasStructuralAnalysis": false
+    },
+    ".understand-anything/config.json": {
+      "filePath": ".understand-anything/config.json",
+      "contentHash": "586c0245fa97df18220abe7a614488315f106f5ec9a5aad825af4fb0ff1ad77c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 2,
+      "hasStructuralAnalysis": true
+    },
+    ".understand-anything/knowledge-graph.json": {
+      "filePath": ".understand-anything/knowledge-graph.json",
+      "contentHash": "dd2dbc107eda8fceb45ccce8f4269cddde55897326927bc15d93a76c600ba914",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 6995,
+      "hasStructuralAnalysis": true
+    },
+    ".understand-anything/meta.json": {
+      "filePath": ".understand-anything/meta.json",
+      "contentHash": "36dc9d2ce9d11ad979c3b3ba86f794c329ee659d8a6fbffb6eb1dcff596dd72c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 56,
+      "hasStructuralAnalysis": true
+    },
+    "CLAUDE.md": {
+      "filePath": "CLAUDE.md",
+      "contentHash": "d8db8f495d6921b849ccfb5a1d067e4d68c8fa8a021008a74788834d6f25ae32",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 35,
+      "hasStructuralAnalysis": true
+    },
+    "LICENSE": {
+      "filePath": "LICENSE",
+      "contentHash": "20ae6bf927a0aecf48ba061a04a7434a987f5ca1f8872b747c700a1334dbef09",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 22,
+      "hasStructuralAnalysis": false
+    },
+    "README.md": {
+      "filePath": "README.md",
+      "contentHash": "ce05661967dda6d8ee38d13dd2ca81a2f321f848e738fff225171e2df877279f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 206,
+      "hasStructuralAnalysis": true
+    },
+    "dist/README.md": {
+      "filePath": "dist/README.md",
+      "contentHash": "18699e2cb5684aab270b73016f040d1f719b7c49a352d511f7bbc53119eae540",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1,
+      "hasStructuralAnalysis": true
+    },
+    "dist/index.js": {
+      "filePath": "dist/index.js",
+      "contentHash": "9c325a21e1f4be1e9037ee6106791844e81124b1852ffedca10f73214ec13f68",
+      "functions": [
+        {
+          "name": "__name",
+          "params": [
+            "target",
+            "value"
+          ],
+          "exported": false,
+          "lineCount": 1
+        },
+        {
+          "name": "scheduled",
+          "params": [
+            "event",
+            "env",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 22
+        },
+        {
+          "name": "getAmazonAccessToken2",
+          "params": [
+            "clientId",
+            "clientSecret"
+          ],
+          "exported": false,
+          "lineCount": 22
+        },
+        {
+          "name": "truncateName",
+          "params": [
+            "name"
+          ],
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "formatEGP",
+          "params": [
+            "price"
+          ],
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "getCairoTime",
+          "params": [
+            "now"
+          ],
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "escapeHtml",
+          "params": [
+            "unsafe"
+          ],
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "executeScrapeEngine2",
+          "params": [
+            "env"
+          ],
+          "exported": false,
+          "lineCount": 502
+        },
+        {
+          "name": "queue",
+          "params": [
+            "batch",
+            "env",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 56
+        },
+        {
+          "name": "getUserRoles",
+          "params": [
+            "chatId",
+            "env",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 18
+        },
+        {
+          "name": "resolveUserProfile",
+          "params": [
+            "env",
+            "id",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 29
+        },
+        {
+          "name": "logAudit",
+          "params": [
+            "env",
+            "adminId",
+            "action",
+            "target",
+            "details"
+          ],
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "handleTelegramWebhook",
+          "params": [
+            "request",
+            "env",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 24
+        },
+        {
+          "name": "handleMessage",
+          "params": [
+            "message",
+            "env",
+            "baseUrl",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 178
+        },
+        {
+          "name": "handleCallback",
+          "params": [
+            "callback",
+            "env",
+            "baseUrl",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 396
+        },
+        {
+          "name": "renderMainMenu",
+          "params": [
+            "env",
+            "chatId"
+          ],
+          "exported": false,
+          "lineCount": 41
+        },
+        {
+          "name": "renderProductList",
+          "params": [
+            "env",
+            "chatId",
+            "messageId"
+          ],
+          "exported": false,
+          "lineCount": 44
+        },
+        {
+          "name": "renderProductView",
+          "params": [
+            "env",
+            "chatId",
+            "messageId",
+            "pid",
+            "baseUrl"
+          ],
+          "exported": false,
+          "lineCount": 111
+        },
+        {
+          "name": "escapeHtml2",
+          "params": [
+            "unsafe"
+          ],
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "toPrice",
+          "params": [
+            "value"
+          ],
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "buildProductUrl",
+          "params": [
+            "pid",
+            "env"
+          ],
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "buildSmartAlternatives",
+          "params": [
+            "pData",
+            "pid",
+            "env"
+          ],
+          "exported": false,
+          "lineCount": 34
+        },
+        {
+          "name": "convertHindiToArabic",
+          "params": [
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "syncUserNames",
+          "params": [
+            "env",
+            "chatId",
+            "from",
+            "baseUrl"
+          ],
+          "exported": false,
+          "lineCount": 21
+        },
+        {
+          "name": "deleteTelegramMessage",
+          "params": [
+            "env",
+            "chatId",
+            "messageId"
+          ],
+          "exported": false,
+          "lineCount": 15
+        },
+        {
+          "name": "expandAmazonUrl",
+          "params": [
+            "url2"
+          ],
+          "exported": false,
+          "lineCount": 19
+        },
+        {
+          "name": "getAsinFromUrl",
+          "params": [
+            "url2"
+          ],
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "sendTelegram2",
+          "params": [
+            "env",
+            "chatId",
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "editTelegramMessage",
+          "params": [
+            "env",
+            "chatId",
+            "messageId",
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 18
+        },
+        {
+          "name": "extractNameFromUrl",
+          "params": [
+            "url2"
+          ],
+          "exported": false,
+          "lineCount": 11
+        },
+        {
+          "name": "sendAppMessage",
+          "params": [
+            "env",
+            "chatId",
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "generateSignature",
+          "params": [
+            "secret",
+            "asin",
+            "exp"
+          ],
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "verifyInitData",
+          "params": [
+            "telegramInitData",
+            "botToken"
+          ],
+          "exported": false,
+          "lineCount": 42
+        },
+        {
+          "name": "fetchAPI",
+          "params": [
+            "request",
+            "env",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 485
+        },
+        {
+          "name": "renderAuditHTML",
+          "params": [
+            "exp",
+            "sig"
+          ],
+          "exported": false,
+          "lineCount": 125
+        },
+        {
+          "name": "renderCrmHTML",
+          "params": [],
+          "exported": false,
+          "lineCount": 731
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "default"
+      ],
+      "totalLines": 3274,
+      "hasStructuralAnalysis": true
+    },
+    "dist/index.js.map": {
+      "filePath": "dist/index.js.map",
+      "contentHash": "b5a59e6fa27c154d267f622cb85f5a72ba66a80c16e969cde7eb1a86579d71a0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 9,
+      "hasStructuralAnalysis": false
+    },
+    "docs/DEPLOYMENT.md": {
+      "filePath": "docs/DEPLOYMENT.md",
+      "contentHash": "efb48230201ad16966f4d9313b48fcc1eacbb22568757874dad0cc82e846634f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 129,
+      "hasStructuralAnalysis": true
+    },
+    "docs/GALLERY.md": {
+      "filePath": "docs/GALLERY.md",
+      "contentHash": "acd20a1123f749bd65b6b13346e8f72fa9e496541e380699aec8bdff808aff22",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 150,
+      "hasStructuralAnalysis": true
+    },
+    "docs/ROADMAP.md": {
+      "filePath": "docs/ROADMAP.md",
+      "contentHash": "1d064bedd69db23e8c049ce45a61e7ddc4cc11dea22d1ef6570cd322b50bf18d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 225,
+      "hasStructuralAnalysis": true
+    },
+    "docs/TESTING.md": {
+      "filePath": "docs/TESTING.md",
+      "contentHash": "9981758e2b8cdb2bc309e8cfbe9af2e56513f588a92fbdb8039cdd1e68698e50",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 92,
+      "hasStructuralAnalysis": true
+    },
+    "docs/assets/01_crm_dashboard_ar.png": {
+      "filePath": "docs/assets/01_crm_dashboard_ar.png",
+      "contentHash": "07ee99092c34ebb74af1665c8d2e52818a924f68902c1cb67e5a71da5d28d481",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 412,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/01_crm_dashboard_en.png": {
+      "filePath": "docs/assets/01_crm_dashboard_en.png",
+      "contentHash": "94fe892f5d2917de34407b7d7a8f159dd2f5773c899cb8dce8b048c84566d54f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 637,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/02_users_approved_ar.png": {
+      "filePath": "docs/assets/02_users_approved_ar.png",
+      "contentHash": "34e5c91a7804455cfef5d76437365413e44bdd7d7ce35ededa57a7399a27bdc3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 678,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/02_users_approved_en.png": {
+      "filePath": "docs/assets/02_users_approved_en.png",
+      "contentHash": "d622540a9740504e3d0a7060d5187eebaec5d29a2e955b7c0fd67c6799b5a791",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 821,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/03_users_pending_ar.png": {
+      "filePath": "docs/assets/03_users_pending_ar.png",
+      "contentHash": "c86bdbf0319952df7a4c5248389ee9ec6bbf011c3ce97cab5fc37dd32b9e58df",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 248,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/03_users_pending_en.png": {
+      "filePath": "docs/assets/03_users_pending_en.png",
+      "contentHash": "96de9ca95f43fca02c71796afba64c584f8cbf81b3f63c6e39e88d3d658e39ab",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 435,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/04_users_banned_ar.png": {
+      "filePath": "docs/assets/04_users_banned_ar.png",
+      "contentHash": "5b1d025994a0a50413188f29025cbda169bdb26a48dc6f516281af4485073002",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 579,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/04_users_banned_en.png": {
+      "filePath": "docs/assets/04_users_banned_en.png",
+      "contentHash": "2591a12ca81849455f86937d283f107fb0635bceed44810305b91834a998eccc",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 661,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/05_users_admins_ar.png": {
+      "filePath": "docs/assets/05_users_admins_ar.png",
+      "contentHash": "fee56f73285908eeb30571fcde6a24356b8ff867fb494aa8f87d05378de72ae6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 403,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/05_users_admins_en.png": {
+      "filePath": "docs/assets/05_users_admins_en.png",
+      "contentHash": "900b4723d57d3fb85f616057a84e5cf5f40f932779ea03fa8b6d6899e35a171b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 565,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/06_security_audit_ar.png": {
+      "filePath": "docs/assets/06_security_audit_ar.png",
+      "contentHash": "94f6f622e89bfc4554cdcc2f8c0ac0b62906f14c965c00a600da96dec8881bc2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1001,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/06_security_audit_en.png": {
+      "filePath": "docs/assets/06_security_audit_en.png",
+      "contentHash": "e0ad60af86490ee64a1351ec00944a56d9cba96945362df2d45dd481760586c0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1262,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/07_active_products_drawer_ar.png": {
+      "filePath": "docs/assets/07_active_products_drawer_ar.png",
+      "contentHash": "f7ad242b7f83ce43606e9c95a10910a0d5d4612b9754b2f9135a0da47cb1349d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 824,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/07_active_products_drawer_en.png": {
+      "filePath": "docs/assets/07_active_products_drawer_en.png",
+      "contentHash": "18e21c1552de6dd3a662ed02ae4e6a4e6eacf54379d808fef6edefe475240002",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1153,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/08_top_charts_drawer_ar.png": {
+      "filePath": "docs/assets/08_top_charts_drawer_ar.png",
+      "contentHash": "94975d460f08bdbbc1d83c3f21eaf6c43bfb6cc8d31e5778276bf66b416d8130",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1280,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/08_top_charts_drawer_en.png": {
+      "filePath": "docs/assets/08_top_charts_drawer_en.png",
+      "contentHash": "e84106b9b4bb6ce299007ba6e8698627356b6397e67a827b572258bcfa8de5b0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1639,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/09_paused_products_drawer_ar.png": {
+      "filePath": "docs/assets/09_paused_products_drawer_ar.png",
+      "contentHash": "09b220181b807fa082d6f25571efa7ed6b9f72966843674a681a521b96e86b30",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 808,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/09_paused_products_drawer_en.png": {
+      "filePath": "docs/assets/09_paused_products_drawer_en.png",
+      "contentHash": "f75cc29e2e4b0748ef85d3f7166659f2dba23435d1004672c7e66c85122bd0d0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1077,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/10_graveyard_drawer_ar.png": {
+      "filePath": "docs/assets/10_graveyard_drawer_ar.png",
+      "contentHash": "e1c444d149900cebbf468383d2b691ab7e41cf05734910e4b04dc89eeb112d11",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 842,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/10_graveyard_drawer_en.png": {
+      "filePath": "docs/assets/10_graveyard_drawer_en.png",
+      "contentHash": "468864f1f5dbec8ed726ef48a4e2229bc2ad2f7ec274fec1d9b35751a3e78954",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1092,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/11_user_products_drawer_ar.png": {
+      "filePath": "docs/assets/11_user_products_drawer_ar.png",
+      "contentHash": "9115395135fa1a5e26c5f05019fc4dcd125393409c9d83b1967c37732617ed63",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 787,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/11_user_products_drawer_en.png": {
+      "filePath": "docs/assets/11_user_products_drawer_en.png",
+      "contentHash": "f15266137af39df6d1488b44422e5ca580b535cd3e677b08892b09864fc586a2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1029,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/12_product_subscribers_drawer_ar.png": {
+      "filePath": "docs/assets/12_product_subscribers_drawer_ar.png",
+      "contentHash": "eae4c07b114ff46be7274c72b0915c2129a9bd162d17671ff56df7e71a8ffede",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 921,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/12_product_subscribers_drawer_en.png": {
+      "filePath": "docs/assets/12_product_subscribers_drawer_en.png",
+      "contentHash": "73e52d4cfc7e3ec520cb896d077f98a528a7d4d7262cd612236ab3e88b474deb",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1113,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/13_chart_modal_ar.png": {
+      "filePath": "docs/assets/13_chart_modal_ar.png",
+      "contentHash": "108c727a60861160c249d1461836e3c2789a4dabe11fe50ce2720560acbf0124",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 665,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/13_chart_modal_en.png": {
+      "filePath": "docs/assets/13_chart_modal_en.png",
+      "contentHash": "602be2b3162402d4d460539d2c72077a75f5791ac85135514c8f6bd76f082e91",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 787,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/14_broadcast_modal_ar.png": {
+      "filePath": "docs/assets/14_broadcast_modal_ar.png",
+      "contentHash": "58345b0cb42366ded8b288e2a1cbecda9794299217dc2ba42c1a81a550437ad0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1094,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/14_broadcast_modal_en.png": {
+      "filePath": "docs/assets/14_broadcast_modal_en.png",
+      "contentHash": "79c36540d6bb30619829ab46f0077581090c4d1007cc34bf520b951930434421",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1226,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/15_broadcast_deals_composer_ar.png": {
+      "filePath": "docs/assets/15_broadcast_deals_composer_ar.png",
+      "contentHash": "e48e06247c7bb43def4d41a20ee2796845b2657202e8731bb695f9eb09f07e50",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 762,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/15_broadcast_deals_composer_en.png": {
+      "filePath": "docs/assets/15_broadcast_deals_composer_en.png",
+      "contentHash": "cacd4d3d4d74821c19a4be317e6dca2da710dde6434c16649ef92a8c2506ce3d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 926,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/16_global_broadcast_ar.png": {
+      "filePath": "docs/assets/16_global_broadcast_ar.png",
+      "contentHash": "220d2f722ce4222dbdfc5fe69f2ac24ea6397d2eae3f15c8fc5060abe3bea946",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 737,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/16_global_broadcast_en.png": {
+      "filePath": "docs/assets/16_global_broadcast_en.png",
+      "contentHash": "9496ea8642d93e2be7d4f7117e4544451b3986fc6a6f7a2bbabbd611767b3c2e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 914,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/17_user_products_ar.png": {
+      "filePath": "docs/assets/17_user_products_ar.png",
+      "contentHash": "44067d95f6ef60815ccf1fd23d1cdbe08cd135c6485efd1ca5cd57e62648aeec",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 679,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/17_user_products_en.png": {
+      "filePath": "docs/assets/17_user_products_en.png",
+      "contentHash": "71e3d4682bfcb6577283bcda3fed4f8e041f9ab1543d5e461df5f63c3c371e02",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 850,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/18_help_modal_ar.png": {
+      "filePath": "docs/assets/18_help_modal_ar.png",
+      "contentHash": "ec56a5d91613e125c3bd48ae61e0c0880d6aaebb6a9940bee9e6272f285fe82b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 710,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/18_help_modal_en.png": {
+      "filePath": "docs/assets/18_help_modal_en.png",
+      "contentHash": "c43cd91cb9eecdbf4d468e1a876bef24367c2c54a24266c71d4c35c119ad3ee8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 869,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/19_hot_deals_ar.png": {
+      "filePath": "docs/assets/19_hot_deals_ar.png",
+      "contentHash": "4f3cef622a5f021642e875e32fd423b46a73837324f15edeaab035911b3ae271",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 937,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/19_hot_deals_en.png": {
+      "filePath": "docs/assets/19_hot_deals_en.png",
+      "contentHash": "b94652ba8e7c799e93a4042fe9a76eac9342dfc23db88ec2f76f964a8f8472a6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1020,
+      "hasStructuralAnalysis": false
+    },
+    "docs/assets/logo.png": {
+      "filePath": "docs/assets/logo.png",
+      "contentHash": "bdf916ee8f326bc82d720c29a3a240a30063b0ba70555a934ad25f475c3dbc09",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 3347,
+      "hasStructuralAnalysis": false
+    },
+    "dump.sql": {
+      "filePath": "dump.sql",
+      "contentHash": "40dde5af02440337687c5b7d5cd35b2cf877ef54646867080100481d4ad7234c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 429,
+      "hasStructuralAnalysis": true
+    },
+    "migrations/0000_baseline.sql": {
+      "filePath": "migrations/0000_baseline.sql",
+      "contentHash": "23f5bca9de8575f08fc4daa5283bae0ca4bc3a05490d233c3ca1a03e4b0d95ac",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 156,
+      "hasStructuralAnalysis": true
+    },
+    "migrations/0001_add_last_active.sql": {
+      "filePath": "migrations/0001_add_last_active.sql",
+      "contentHash": "e22754b20933ca1ff4f48df2baa2589a31162daa5d341305439f7655288fa63e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 8,
+      "hasStructuralAnalysis": true
+    },
+    "migrations/0002_add_always_track.sql": {
+      "filePath": "migrations/0002_add_always_track.sql",
+      "contentHash": "ef1c4f6e736edb69ef93477d8980b6e088bd877e549234dbafa0de6b6329d7e1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 5,
+      "hasStructuralAnalysis": true
+    },
+    "migrations/0003_add_mute_queue.sql": {
+      "filePath": "migrations/0003_add_mute_queue.sql",
+      "contentHash": "59c4e9fe6897d5cb951a36ced1434644a668e9307bc749be29f6164c2f469d72",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 8,
+      "hasStructuralAnalysis": true
+    },
+    "migrations/0004_add_detail_page_url.sql": {
+      "filePath": "migrations/0004_add_detail_page_url.sql",
+      "contentHash": "9bd5d7423cdc4ca91d68d131afafa8de03204ceecb18fbd2d3d6f11075a03a44",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 7,
+      "hasStructuralAnalysis": true
+    },
+    "package-lock.json": {
+      "filePath": "package-lock.json",
+      "contentHash": "4ad6ff086050e73d8e4af90dcf2b234e823f5b07fe90517745341d3d079ef959",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 398,
+      "hasStructuralAnalysis": true
+    },
+    "package.json": {
+      "filePath": "package.json",
+      "contentHash": "9abfc8ebeb0d6c3b8833bf85a62cb313ee56970ecc7e95f20ee81f94a3054ca1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "prod_data.sql": {
+      "filePath": "prod_data.sql",
+      "contentHash": "8a480a03bd575e5e37042e4ded404a5797e7ac19a9df5d797ee2e67fac30507d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 346,
+      "hasStructuralAnalysis": true
+    },
+    "scratch/check.mjs": {
+      "filePath": "scratch/check.mjs",
+      "contentHash": "fe4231495d7cd7b3bc3d0f2c75cc465f743715fc7961e3b6be6406159c0a6325",
+      "functions": [
+        {
+          "name": "generateSignature",
+          "params": [
+            "secret",
+            "asin",
+            "exp"
+          ],
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "verifyInitData",
+          "params": [
+            "telegramInitData",
+            "botToken"
+          ],
+          "exported": false,
+          "lineCount": 49
+        },
+        {
+          "name": "authAdmin",
+          "params": [
+            "req",
+            "environment"
+          ],
+          "exported": false,
+          "lineCount": 21
+        },
+        {
+          "name": "fetchAPI",
+          "params": [
+            "request",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 935
+        },
+        {
+          "name": "renderCrmHTML",
+          "params": [],
+          "exported": true,
+          "lineCount": 2185
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "../core/db.js",
+          "specifiers": [
+            "getUserRoles",
+            "logAudit"
+          ]
+        },
+        {
+          "source": "../core/i18n.js",
+          "specifiers": [
+            "t",
+            "getWelcomeMessage"
+          ]
+        },
+        {
+          "source": "../core/amazon.js",
+          "specifiers": [
+            "getAmazonAccessToken",
+            "AmazonEdgeParser"
+          ]
+        },
+        {
+          "source": "../workers/scraper_engine.js",
+          "specifiers": [
+            "executeScrapeEngine",
+            "checkCircuitBreaker",
+            "recordCircuitSuccess",
+            "recordCircuitFailure"
+          ]
+        },
+        {
+          "source": "../core/telegram.js",
+          "specifiers": [
+            "sendTelegram",
+            "editTelegramMessage"
+          ]
+        },
+        {
+          "source": "../core/utils.js",
+          "specifiers": [
+            "escapeHtml",
+            "buildBroadcastMessage",
+            "expandAmazonUrl"
+          ]
+        },
+        {
+          "source": "./telegram_webhook.js",
+          "specifiers": [
+            "setChatMenuButton"
+          ]
+        }
+      ],
+      "exports": [
+        "fetchAPI",
+        "renderCrmHTML"
+      ],
+      "totalLines": 3215,
+      "hasStructuralAnalysis": true
+    },
+    "scratch/check_js_injections.js": {
+      "filePath": "scratch/check_js_injections.js",
+      "contentHash": "f2d94976d6c3c7a292b155dc37b0102ad914122c62b85665f4a64be4bc95e383",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 26,
+      "hasStructuralAnalysis": true
+    },
+    "scratch/fetch_logs.js": {
+      "filePath": "scratch/fetch_logs.js",
+      "contentHash": "485031c5b94d1db2c29be6a1ccc9826fa8beac9fd928332953732318ca78146f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 16,
+      "hasStructuralAnalysis": true
+    },
+    "scratch/patch_crm_frontend_safe.js": {
+      "filePath": "scratch/patch_crm_frontend_safe.js",
+      "contentHash": "f96af40cb33a3516cee452d8a3259645d3860952a003051301a8ce887084e6a2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 87,
+      "hasStructuralAnalysis": true
+    },
+    "scratch/patch_crm_frontend_safe2.js": {
+      "filePath": "scratch/patch_crm_frontend_safe2.js",
+      "contentHash": "5ae807c4a11db8508f57867c0f74f91a49573cf6a78dccf85013b37dad971db4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 19,
+      "hasStructuralAnalysis": true
+    },
+    "scratch/patch_crm_frontend_safe3.js": {
+      "filePath": "scratch/patch_crm_frontend_safe3.js",
+      "contentHash": "4b9819ed84b5d97bac340a4cb62a36fb56f885c81084890bc0a476f8e1d71fde",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 53,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/generate_screenshots.js": {
+      "filePath": "scripts/generate_screenshots.js",
+      "contentHash": "a50d5f65cad6ff29684d236d8be0530af72ad1cb7d2de7be3a16f01f53b758f0",
+      "functions": [
+        {
+          "name": "delay",
+          "params": [],
+          "exported": false,
+          "lineCount": 1
+        },
+        {
+          "name": "run",
+          "params": [],
+          "exported": false,
+          "lineCount": 365
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 377,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/schema_seed.sql": {
+      "filePath": "scripts/schema_seed.sql",
+      "contentHash": "1a956b57bf4647ea38aecd529caf361c34bf7a563a4ce37e6a281afe4e1aa875",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 26,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/setup_bot_commands.js": {
+      "filePath": "scripts/setup_bot_commands.js",
+      "contentHash": "0350a9618aadb50ab6420fa26dc979c29004e1581ab9cb905e847233c0674a62",
+      "functions": [
+        {
+          "name": "setCommands",
+          "params": [],
+          "exported": false,
+          "lineCount": 27
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 30,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/setup_secrets.ps1": {
+      "filePath": "scripts/setup_secrets.ps1",
+      "contentHash": "0ce3094609cd783f94dfcdbae0566c2fee2e4815f11dae4d464cd063ae7329d1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 67,
+      "hasStructuralAnalysis": false
+    },
+    "scripts/sync-kv.js": {
+      "filePath": "scripts/sync-kv.js",
+      "contentHash": "47b21ef79f2d4a3255aa7ed1b46c256fb26518778ebf292932a486680c291d6f",
+      "functions": [
+        {
+          "name": "syncKV",
+          "params": [],
+          "exported": false,
+          "lineCount": 81
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 86,
+      "hasStructuralAnalysis": true
+    },
+    "src/core/amazon.js": {
+      "filePath": "src/core/amazon.js",
+      "contentHash": "15189e482b725f2db37c151f8c5feb61ba56cc9619247e7283fcf70dab3ebbbf",
+      "functions": [
+        {
+          "name": "getAmazonAccessToken",
+          "params": [
+            "clientId",
+            "clientSecret"
+          ],
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "containsArabic",
+          "params": [
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 4
+        }
+      ],
+      "classes": [
+        {
+          "name": "AmazonEdgeParser",
+          "methods": [
+            "constructor",
+            "getItems",
+            "getItemsWithArabic",
+            "getVariations",
+            "scrapeArabicTitle",
+            "scrapeEnglishTitle",
+            "parseItem"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 371
+        }
+      ],
+      "imports": [],
+      "exports": [
+        "getAmazonAccessToken",
+        "AmazonEdgeParser"
+      ],
+      "totalLines": 403,
+      "hasStructuralAnalysis": true
+    },
+    "src/core/db.js": {
+      "filePath": "src/core/db.js",
+      "contentHash": "36bed9be0a48390c11ed42fb83d38dd8782acccbab23ad26a86902b8ad0de629",
+      "functions": [
+        {
+          "name": "getUserRoles",
+          "params": [
+            "chatId",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 41
+        },
+        {
+          "name": "resolveUserProfile",
+          "params": [
+            "env",
+            "id",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 34
+        },
+        {
+          "name": "logAudit",
+          "params": [
+            "env",
+            "adminId",
+            "action",
+            "target",
+            "details"
+          ],
+          "exported": true,
+          "lineCount": 60
+        },
+        {
+          "name": "cleanupDatabase",
+          "params": [
+            "env"
+          ],
+          "exported": true,
+          "lineCount": 4
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "getUserRoles",
+        "resolveUserProfile",
+        "logAudit",
+        "cleanupDatabase"
+      ],
+      "totalLines": 143,
+      "hasStructuralAnalysis": true
+    },
+    "src/core/i18n.js": {
+      "filePath": "src/core/i18n.js",
+      "contentHash": "68e8a173860eb64d4e6a3eb5a3008b3faf16271ec9dfb964e7bcbbc553edab2c",
+      "functions": [
+        {
+          "name": "t",
+          "params": [
+            "key"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "resolveLanguageCode",
+          "params": [
+            "languageCode"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "getWelcomeMessage",
+          "params": [
+            "lang",
+            "limit"
+          ],
+          "exported": true,
+          "lineCount": 22
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "t",
+        "resolveLanguageCode",
+        "getWelcomeMessage"
+      ],
+      "totalLines": 1744,
+      "hasStructuralAnalysis": true
+    },
+    "src/core/telegram.js": {
+      "filePath": "src/core/telegram.js",
+      "contentHash": "670d58e361a69b87c5a3c6327084bb5231e02fb75b5a9b3f8b1fc74edce50de7",
+      "functions": [
+        {
+          "name": "sendTelegramMessage",
+          "params": [
+            "env",
+            "chatId",
+            "text"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "editTelegramMessage",
+          "params": [
+            "env",
+            "chatId",
+            "messageId",
+            "text"
+          ],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "deleteMessage",
+          "params": [
+            "env",
+            "chatId",
+            "messageId"
+          ],
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "answerCallbackQuery",
+          "params": [
+            "env",
+            "callbackQueryId"
+          ],
+          "exported": true,
+          "lineCount": 20
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "sendTelegramMessage",
+        "editTelegramMessage",
+        "deleteMessage",
+        "answerCallbackQuery"
+      ],
+      "totalLines": 84,
+      "hasStructuralAnalysis": true
+    },
+    "src/core/utils.js": {
+      "filePath": "src/core/utils.js",
+      "contentHash": "3f6fd8014ab54d6328b630f89d5f55d35f31b29e1bc10f194825cdb6b97ee01f",
+      "functions": [
+        {
+          "name": "escapeHtml",
+          "params": [
+            "unsafe"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "formatEGP",
+          "params": [
+            "price"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "delay",
+          "params": [],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "expandAmazonUrl",
+          "params": [
+            "url"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "getAsinFromUrl",
+          "params": [
+            "url"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "truncateName",
+          "params": [
+            "name"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "resolveProductName",
+          "params": [
+            "item",
+            "lang",
+            "fallback"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "convertHindiToArabic",
+          "params": [
+            "text"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "getCairoTime",
+          "params": [
+            "now"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "buildBroadcastMessage",
+          "params": [
+            "env",
+            "deal",
+            "now",
+            "t"
+          ],
+          "exported": true,
+          "lineCount": 49
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "escapeHtml",
+        "formatEGP",
+        "delay",
+        "expandAmazonUrl",
+        "getAsinFromUrl",
+        "truncateName",
+        "resolveProductName",
+        "convertHindiToArabic",
+        "getCairoTime",
+        "buildBroadcastMessage"
+      ],
+      "totalLines": 142,
+      "hasStructuralAnalysis": true
+    },
+    "src/index.js": {
+      "filePath": "src/index.js",
+      "contentHash": "03c4ef9caa672fc495919c1060bcec820ac6e569bfebbd383107a580f3647a6b",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "./workers/cron_trigger.js",
+          "specifiers": [
+            "scheduled"
+          ]
+        },
+        {
+          "source": "./workers/queue_worker.js",
+          "specifiers": [
+            "queue"
+          ]
+        },
+        {
+          "source": "./routes/telegram_webhook.js",
+          "specifiers": [
+            "handleTelegramWebhook"
+          ]
+        },
+        {
+          "source": "./routes/crm_dashboard.js",
+          "specifiers": [
+            "fetchAPI"
+          ]
+        },
+        {
+          "source": "./routes/user_dashboard.js",
+          "specifiers": [
+            "fetchUserAPI"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 41,
+      "hasStructuralAnalysis": true
+    },
+    "src/routes/crm_dashboard.js": {
+      "filePath": "src/routes/crm_dashboard.js",
+      "contentHash": "31d55ae95a90088ee6870abf938109c84ad05817aa9e35cb068686b61055a8ab",
+      "functions": [
+        {
+          "name": "generateSignature",
+          "params": [
+            "secret",
+            "asin",
+            "exp"
+          ],
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "verifyInitData",
+          "params": [
+            "telegramInitData",
+            "botToken"
+          ],
+          "exported": false,
+          "lineCount": 49
+        },
+        {
+          "name": "authAdmin",
+          "params": [
+            "req",
+            "environment"
+          ],
+          "exported": false,
+          "lineCount": 17
+        },
+        {
+          "name": "fetchAPI",
+          "params": [
+            "request",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 967
+        },
+        {
+          "name": "renderCrmHTML",
+          "params": [],
+          "exported": true,
+          "lineCount": 2306
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "../core/db.js",
+          "specifiers": [
+            "getUserRoles",
+            "logAudit"
+          ]
+        },
+        {
+          "source": "../core/i18n.js",
+          "specifiers": [
+            "t",
+            "getWelcomeMessage"
+          ]
+        },
+        {
+          "source": "../core/amazon.js",
+          "specifiers": [
+            "getAmazonAccessToken",
+            "AmazonEdgeParser"
+          ]
+        },
+        {
+          "source": "../workers/scraper_engine.js",
+          "specifiers": [
+            "executeScrapeEngine",
+            "checkCircuitBreaker",
+            "recordCircuitSuccess",
+            "recordCircuitFailure"
+          ]
+        },
+        {
+          "source": "../core/telegram.js",
+          "specifiers": [
+            "sendTelegram",
+            "editTelegramMessage"
+          ]
+        },
+        {
+          "source": "../core/utils.js",
+          "specifiers": [
+            "escapeHtml",
+            "buildBroadcastMessage",
+            "expandAmazonUrl",
+            "getAsinFromUrl"
+          ]
+        },
+        {
+          "source": "./telegram_webhook.js",
+          "specifiers": [
+            "setChatMenuButton"
+          ]
+        }
+      ],
+      "exports": [
+        "fetchAPI",
+        "renderCrmHTML"
+      ],
+      "totalLines": 3363,
+      "hasStructuralAnalysis": true
+    },
+    "src/routes/telegram_webhook.js": {
+      "filePath": "src/routes/telegram_webhook.js",
+      "contentHash": "6d22749af93cc879704354699a03b9f0cad81105b884460d46b2771721884707",
+      "functions": [
+        {
+          "name": "checkRateLimit",
+          "params": [
+            "chatId",
+            "env"
+          ],
+          "exported": false,
+          "lineCount": 20
+        },
+        {
+          "name": "handleTelegramWebhook",
+          "params": [
+            "request",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 52
+        },
+        {
+          "name": "handleMessage",
+          "params": [
+            "message",
+            "env",
+            "baseUrl",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 269
+        },
+        {
+          "name": "handleCallback",
+          "params": [
+            "callback",
+            "env",
+            "baseUrl",
+            "ctx"
+          ],
+          "exported": false,
+          "lineCount": 637
+        },
+        {
+          "name": "renderMainMenu",
+          "params": [
+            "env",
+            "chatId"
+          ],
+          "exported": true,
+          "lineCount": 35
+        },
+        {
+          "name": "generateSignature",
+          "params": [
+            "secret",
+            "asin",
+            "exp"
+          ],
+          "exported": false,
+          "lineCount": 13
+        },
+        {
+          "name": "verifyInitData",
+          "params": [
+            "telegramInitData",
+            "botToken"
+          ],
+          "exported": false,
+          "lineCount": 49
+        },
+        {
+          "name": "toPrice",
+          "params": [
+            "value"
+          ],
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "syncUserNames",
+          "params": [
+            "env",
+            "chatId",
+            "from",
+            "baseUrl"
+          ],
+          "exported": false,
+          "lineCount": 22
+        },
+        {
+          "name": "deleteTelegramMessage",
+          "params": [
+            "env",
+            "chatId",
+            "messageId"
+          ],
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "expandAmazonUrl",
+          "params": [
+            "url"
+          ],
+          "exported": false,
+          "lineCount": 20
+        },
+        {
+          "name": "getAsinFromUrl",
+          "params": [
+            "url"
+          ],
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "sendTelegram",
+          "params": [
+            "env",
+            "chatId",
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 16
+        },
+        {
+          "name": "editTelegramMessage",
+          "params": [
+            "env",
+            "chatId",
+            "messageId",
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 20
+        },
+        {
+          "name": "extractNameFromUrl",
+          "params": [
+            "url"
+          ],
+          "exported": false,
+          "lineCount": 10
+        },
+        {
+          "name": "sendAppMessage",
+          "params": [
+            "env",
+            "chatId",
+            "text"
+          ],
+          "exported": false,
+          "lineCount": 12
+        },
+        {
+          "name": "setChatMenuButton",
+          "params": [
+            "env",
+            "chatId",
+            "baseUrl",
+            "lang"
+          ],
+          "exported": true,
+          "lineCount": 24
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "../core/db.js",
+          "specifiers": [
+            "getUserRoles",
+            "logAudit",
+            "resolveUserProfile"
+          ]
+        },
+        {
+          "source": "../core/i18n.js",
+          "specifiers": [
+            "t",
+            "resolveLanguageCode",
+            "getWelcomeMessage"
+          ]
+        },
+        {
+          "source": "../core/amazon.js",
+          "specifiers": [
+            "getAmazonAccessToken",
+            "AmazonEdgeParser"
+          ]
+        },
+        {
+          "source": "../core/utils.js",
+          "specifiers": [
+            "escapeHtml",
+            "convertHindiToArabic",
+            "resolveProductName"
+          ]
+        }
+      ],
+      "exports": [
+        "handleTelegramWebhook",
+        "renderMainMenu",
+        "setChatMenuButton"
+      ],
+      "totalLines": 1277,
+      "hasStructuralAnalysis": true
+    },
+    "src/routes/user_dashboard.js": {
+      "filePath": "src/routes/user_dashboard.js",
+      "contentHash": "b3051bd565fb354d43867b2b4b7c07cafe1f31f0c11a2bef8a554ff088480286",
+      "functions": [
+        {
+          "name": "fetchUserAPI",
+          "params": [
+            "request",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 281
+        },
+        {
+          "name": "renderUserHTML",
+          "params": [
+            "lang",
+            "partnerTag"
+          ],
+          "exported": false,
+          "lineCount": 781
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "./telegram_webhook.js",
+          "specifiers": [
+            "renderMainMenu",
+            "setChatMenuButton"
+          ]
+        },
+        {
+          "source": "../core/i18n.js",
+          "specifiers": [
+            "t"
+          ]
+        },
+        {
+          "source": "../core/db.js",
+          "specifiers": [
+            "getUserRoles"
+          ]
+        }
+      ],
+      "exports": [
+        "fetchUserAPI"
+      ],
+      "totalLines": 1068,
+      "hasStructuralAnalysis": true
+    },
+    "src/test_variations.mjs": {
+      "filePath": "src/test_variations.mjs",
+      "contentHash": "c378a2a69289a574420f63443a0f407593af9654dd56cc525aba3864038088e7",
+      "functions": [
+        {
+          "name": "run",
+          "params": [],
+          "exported": false,
+          "lineCount": 9
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "fs",
+          "specifiers": [
+            "fs"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 21,
+      "hasStructuralAnalysis": true
+    },
+    "src/workers/cron_trigger.js": {
+      "filePath": "src/workers/cron_trigger.js",
+      "contentHash": "0b6bbf079a1bcb9b089eac02c6729c10daf3dfcd362b75d28b8eb71cf5dda9d4",
+      "functions": [
+        {
+          "name": "scheduled",
+          "params": [
+            "event",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 90
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "../core/db.js",
+          "specifiers": [
+            "logAudit"
+          ]
+        },
+        {
+          "source": "../core/i18n.js",
+          "specifiers": [
+            "t"
+          ]
+        }
+      ],
+      "exports": [
+        "scheduled"
+      ],
+      "totalLines": 94,
+      "hasStructuralAnalysis": true
+    },
+    "src/workers/queue_worker.js": {
+      "filePath": "src/workers/queue_worker.js",
+      "contentHash": "e2d9dbe181cb639c8586a83287dc117766afb116aa0c65e45ba25fe505065b17",
+      "functions": [
+        {
+          "name": "deadLetter",
+          "params": [
+            "env",
+            "queueName",
+            "msg",
+            "error"
+          ],
+          "exported": false,
+          "lineCount": 9
+        },
+        {
+          "name": "queue",
+          "params": [
+            "batch",
+            "env",
+            "ctx"
+          ],
+          "exported": true,
+          "lineCount": 78
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "./scraper_engine.js",
+          "specifiers": [
+            "executeScrapeEngine"
+          ]
+        },
+        {
+          "source": "../core/telegram.js",
+          "specifiers": [
+            "sendTelegramMessage"
+          ]
+        }
+      ],
+      "exports": [
+        "queue"
+      ],
+      "totalLines": 100,
+      "hasStructuralAnalysis": true
+    },
+    "src/workers/scraper_engine.js": {
+      "filePath": "src/workers/scraper_engine.js",
+      "contentHash": "312d90600261cea383d7f28c7267683ce92b5ce62863ff5275cbcdb6d76fb993",
+      "functions": [
+        {
+          "name": "checkCircuitBreaker",
+          "params": [
+            "env"
+          ],
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "recordCircuitSuccess",
+          "params": [
+            "env"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "recordCircuitFailure",
+          "params": [
+            "env"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "truncateMessage",
+          "params": [
+            "msg"
+          ],
+          "exported": false,
+          "lineCount": 6
+        },
+        {
+          "name": "executeScrapeEngine",
+          "params": [
+            "env"
+          ],
+          "exported": true,
+          "lineCount": 647
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "../core/amazon.js",
+          "specifiers": [
+            "AmazonEdgeParser",
+            "getAmazonAccessToken"
+          ]
+        },
+        {
+          "source": "../core/i18n.js",
+          "specifiers": [
+            "t"
+          ]
+        },
+        {
+          "source": "../core/utils.js",
+          "specifiers": [
+            "escapeHtml",
+            "formatEGP",
+            "getCairoTime",
+            "resolveProductName",
+            "truncateName",
+            "buildBroadcastMessage"
+          ]
+        }
+      ],
+      "exports": [
+        "checkCircuitBreaker",
+        "recordCircuitSuccess",
+        "recordCircuitFailure",
+        "executeScrapeEngine"
+      ],
+      "totalLines": 709,
+      "hasStructuralAnalysis": true
+    },
+    "wrangler.temp.toml": {
+      "filePath": "wrangler.temp.toml",
+      "contentHash": "9d760b40bd2e353d684c4d487ab7e96c7868ea82049a34f38d52fae57c01c535",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 34,
+      "hasStructuralAnalysis": true
+    },
+    "wrangler.toml": {
+      "filePath": "wrangler.toml",
+      "contentHash": "9d1f5c6fc39d9192a30674d6667a10d66a72acf505954ecc99439d7af2d63043",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 96,
+      "hasStructuralAnalysis": true
+    }
+  }
+}

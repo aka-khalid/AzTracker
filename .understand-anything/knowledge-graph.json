@@ -1,9 +1,7 @@
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-06-18T15:48:34.771Z",
+  "version": "1.0.0",
   "project": {
     "name": "AzTracker",
-    "description": "A scalable, multi-tenant Amazon.eg price tracking engine built on Cloudflare Workers, D1 SQL, and KV.",
     "languages": [
       "javascript",
       "json",
@@ -20,59 +18,9 @@
       "Cloudflare Queues",
       "GitHub Actions"
     ],
-    "analyzedAt": "2026-06-18T15:48:34.771Z",
-    "gitCommitHash": "94f9d45084c3f328eb1f5a76c6dfcff2c4d178f6"
-  },
-  "stats": {
-    "totalNodes": 130,
-    "totalEdges": 190,
-    "nodeTypes": {
-      "file": 27,
-      "function": 77,
-      "class": 2,
-      "resource": 5,
-      "pipeline": 2,
-      "table": 7,
-      "document": 5,
-      "config": 2,
-      "endpoint": 1,
-      "service": 2
-    },
-    "edgeTypes": {
-      "imports": 38,
-      "contains": 34,
-      "exports": 17,
-      "calls": 52,
-      "called-by": 2,
-      "fallback-for": 2,
-      "uses": 5,
-      "related-to": 2,
-      "referenced-by": 1,
-      "related": 1,
-      "creates": 7,
-      "alters": 4,
-      "depends_on": 4,
-      "references": 7,
-      "complements": 1,
-      "documents": 1,
-      "validates": 2,
-      "modifies": 3,
-      "analyzes": 1,
-      "follows": 2,
-      "queries": 1,
-      "populates": 3
-    },
-    "layers": {
-      "data-access": 12,
-      "utility": 16,
-      "route-handler": 23,
-      "worker": 7,
-      "integration": 9,
-      "core-logic": 41,
-      "infrastructure": 16,
-      "entry-point": 1,
-      "documentation": 5
-    }
+    "description": "A scalable, multi-tenant Amazon.eg price tracking engine built on Cloudflare Workers, D1 SQL, and KV.",
+    "analyzedAt": "2026-06-18T23:48:40.841Z",
+    "gitCommitHash": "d52f931fb789574140247ed0849f2423200eca4e"
   },
   "nodes": [
     {
@@ -80,65 +28,45 @@
       "type": "file",
       "name": "db.js",
       "filePath": "src/core/db.js",
-      "summary": "Core database helper module providing user role resolution with Cloudflare caching, user profile fetching from Telegram API, audit logging with exponential backoff retry, and database cleanup utilities.",
+      "summary": "Database access layer providing cached user role resolution (rootAdmin, admin, approved), Telegram profile lookup with caching, audit logging with retry logic, and database cleanup utilities for the D1 database.",
       "tags": [
-        "utility",
         "database",
+        "auth",
+        "audit",
         "caching",
-        "audit"
+        "d1"
       ],
-      "complexity": "moderate",
-      "languageNotes": "Uses Cloudflare Cache API for role/profile caching. Implements exponential backoff retry for audit log writes.",
-      "layer": "data-access",
-      "fingerprint": "45b220af54f3f142"
+      "complexity": "moderate"
     },
     {
       "id": "file:src/core/i18n.js",
       "type": "file",
       "name": "i18n.js",
       "filePath": "src/core/i18n.js",
-      "summary": "Internationalization module with 1700+ lines of Arabic (masry) and English translation strings for the entire bot UI, plus language resolution and welcome message generation utilities.",
+      "summary": "Internationalization engine with 1700+ lines of flat key-value translations supporting English and Professional Masry Egyptian Arabic, covering all UI strings for Telegram bot menus, CRM dashboard, product views, alerts, and broadcast messages.",
       "tags": [
-        "utility",
         "i18n",
-        "localization"
+        "localization",
+        "masry",
+        "translations",
+        "telegram"
       ],
-      "complexity": "complex",
-      "languageNotes": "Extensive translation table with named placeholder interpolation. Supports Arabic (masry) and English language codes.",
-      "layer": "utility",
-      "fingerprint": "796e243e7f047f7a"
+      "complexity": "complex"
     },
     {
       "id": "file:src/routes/telegram_webhook.js",
       "type": "file",
       "name": "telegram_webhook.js",
       "filePath": "src/routes/telegram_webhook.js",
-      "summary": "Main Telegram webhook handler processing incoming messages and callbacks. Handles user registration, subscription tracking via URL/ASIN, admin approval workflows, deep link tracking, and rich Telegram API interactions including inline keyboards and menu buttons.",
+      "summary": "Telegram webhook handler processing incoming messages and callbacks, implementing rate limiting, product tracking workflows, main menu rendering, user name syncing, and Mini App message sending for the Amazon.eg price tracker bot.",
       "tags": [
         "api-handler",
+        "telegram",
         "webhook",
-        "event-handler"
+        "bot",
+        "rate-limiting"
       ],
-      "complexity": "complex",
-      "languageNotes": "Massive callback handler (637 lines) with admin approval/rejection, role management, and deep link ASIN tracking flows.",
-      "layer": "route-handler",
-      "fingerprint": "47c4a429c6a8dfb2"
-    },
-    {
-      "id": "file:src/routes/user_dashboard.js",
-      "type": "file",
-      "name": "user_dashboard.js",
-      "filePath": "src/routes/user_dashboard.js",
-      "summary": "User-facing API endpoint and HTML renderer for the Telegram Web App dashboard. Provides subscription CRUD operations, price tracking settings, language preferences, deal discovery, and generates the full client-side SPA HTML with embedded i18n and subscription state.",
-      "tags": [
-        "api-handler",
-        "component",
-        "render"
-      ],
-      "complexity": "complex",
-      "languageNotes": "Hybrid endpoint: returns JSON API responses for AJAX calls and full HTML for direct browser access. Contains inline i18n function for client-side rendering.",
-      "layer": "route-handler",
-      "fingerprint": "301d8991d45ba3cc"
+      "complexity": "complex"
     },
     {
       "id": "file:src/workers/cron_trigger.js",
@@ -165,15 +93,14 @@
         1,
         41
       ],
-      "summary": "Resolves user roles (root admin, admin, approved, rejected) with Cloudflare Cache API caching. Checks root admin env var, queries DB for admin/approved lists, and caches results.",
+      "summary": "Resolves user roles (rootAdmin, admin, approved, rejected) from D1 database with Cloudflare cache integration.",
       "tags": [
-        "utility",
-        "authorization",
+        "auth",
+        "roles",
+        "database",
         "caching"
       ],
-      "complexity": "moderate",
-      "layer": "data-access",
-      "fingerprint": "1aab0edb2b45e346"
+      "complexity": "moderate"
     },
     {
       "id": "function:src/core/db.js:resolveUserProfile",
@@ -184,15 +111,13 @@
         43,
         76
       ],
-      "summary": "Fetches user profile from Telegram Bot API with caching. Returns display name from first_name/last_name combination.",
+      "summary": "Fetches Telegram user profile (name, username) via Bot API with Cloudflare cache.",
       "tags": [
-        "utility",
-        "caching",
-        "api-call"
+        "telegram",
+        "profile",
+        "caching"
       ],
-      "complexity": "moderate",
-      "layer": "data-access",
-      "fingerprint": "ef3969850837822e"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/db.js:logAudit",
@@ -203,15 +128,14 @@
         78,
         137
       ],
-      "summary": "Writes audit log entries to the database with exponential backoff retry. Resolves actor and target names from the Users table before inserting.",
+      "summary": "Records admin audit log entries with retry logic (3 attempts, exponential backoff) and forensic error logging.",
       "tags": [
         "audit",
+        "logging",
         "database",
-        "retry-logic"
+        "retry"
       ],
-      "complexity": "moderate",
-      "layer": "data-access",
-      "fingerprint": "b0c8164b864c77ea"
+      "complexity": "moderate"
     },
     {
       "id": "function:src/core/db.js:cleanupDatabase",
@@ -222,15 +146,13 @@
         139,
         142
       ],
-      "summary": "Removes expired Bot_States entries from the database based on expires_at timestamp.",
+      "summary": "Removes expired bot state entries from the database.",
       "tags": [
-        "utility",
         "database",
-        "cleanup"
+        "cleanup",
+        "maintenance"
       ],
-      "complexity": "simple",
-      "layer": "data-access",
-      "fingerprint": "0428ef8b798d27f8"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/i18n.js:t",
@@ -241,15 +163,13 @@
         1683,
         1697
       ],
-      "summary": "Translation function that looks up a key in the current language table and replaces named placeholders ({{key}}) with provided values.",
+      "summary": "Translation function that looks up a key in the dictionary and returns the string for the specified language, with optional variable interpolation.",
       "tags": [
-        "utility",
         "i18n",
-        "translation"
+        "translation",
+        "localization"
       ],
-      "complexity": "simple",
-      "layer": "utility",
-      "fingerprint": "37858eb4ff0114d6"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/i18n.js:resolveLanguageCode",
@@ -260,14 +180,13 @@
         1708,
         1713
       ],
-      "summary": "Normalizes language codes, mapping 'ar' to 'masry' and defaulting unknown codes to 'en'.",
+      "summary": "Resolves a language code to a supported language, defaulting to English.",
       "tags": [
-        "utility",
-        "i18n"
+        "i18n",
+        "language",
+        "utility"
       ],
-      "complexity": "simple",
-      "layer": "utility",
-      "fingerprint": "2918da4ebf184740"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/i18n.js:getWelcomeMessage",
@@ -278,15 +197,13 @@
         1722,
         1743
       ],
-      "summary": "Generates a localized welcome message with the user's product limit and formatted onboarding steps.",
+      "summary": "Returns the localized welcome message for new Telegram bot users.",
       "tags": [
-        "utility",
         "i18n",
-        "messaging"
+        "telegram",
+        "onboarding"
       ],
-      "complexity": "simple",
-      "layer": "utility",
-      "fingerprint": "e83f93cf090f3953"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:checkRateLimit",
@@ -297,15 +214,13 @@
         22,
         41
       ],
-      "summary": "In-memory rate limiter for incoming Telegram messages per chat ID, with automatic cache cleanup.",
+      "summary": "In-memory rate limiter allowing max 30 messages per minute per chat, with automatic window reset and memory leak prevention.",
       "tags": [
-        "utility",
         "rate-limiting",
-        "security"
+        "security",
+        "telegram"
       ],
-      "complexity": "moderate",
-      "layer": "route-handler",
-      "fingerprint": "8b5665dd765459b6"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:handleTelegramWebhook",
@@ -316,15 +231,13 @@
         43,
         94
       ],
-      "summary": "Main webhook entry point that validates secret header, routes messages/callbacks/my_chat_member events, applies rate limiting, and handles bot being kicked from chats.",
+      "summary": "Main webhook entry point that validates the secret token, parses the update, and dispatches to message or callback handlers.",
       "tags": [
-        "api-handler",
+        "telegram",
         "webhook",
         "entry-point"
       ],
-      "complexity": "moderate",
-      "layer": "route-handler",
-      "fingerprint": "8b55fe73b45177b2"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:handleMessage",
@@ -335,15 +248,13 @@
         96,
         364
       ],
-      "summary": "Processes incoming Telegram text messages and web app data. Handles /start commands with deep link tracking, URL/ASIN subscription, admin root commands, unban requests, and state-based flows.",
+      "summary": "Processes incoming Telegram messages, handling /start, /lang, /help commands, Amazon URL detection, ASIN extraction, and product subscription flows.",
       "tags": [
-        "api-handler",
-        "event-handler",
-        "messaging"
+        "telegram",
+        "message-handler",
+        "bot"
       ],
-      "complexity": "complex",
-      "layer": "route-handler",
-      "fingerprint": "1939fd4cb86e2edb"
+      "complexity": "complex"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:handleCallback",
@@ -354,15 +265,13 @@
         366,
         1002
       ],
-      "summary": "Massive callback query handler for inline keyboard interactions. Manages admin approval/rejection workflows, user banning/unbanning, role management, pagination, settings toggles, and all menu navigation callbacks.",
+      "summary": "Processes Telegram callback queries for product views, subscription management, target price settings, pagination, and all inline keyboard interactions.",
       "tags": [
-        "api-handler",
-        "event-handler",
-        "admin"
+        "telegram",
+        "callback",
+        "inline-keyboard"
       ],
-      "complexity": "complex",
-      "layer": "route-handler",
-      "fingerprint": "26d79cc0aa06a7f5"
+      "complexity": "complex"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:renderMainMenu",
@@ -373,15 +282,13 @@
         1008,
         1042
       ],
-      "summary": "Renders the main menu inline keyboard with subscription count, active tracking stats, and admin controls. Queries user role and item limit for display.",
+      "summary": "Renders the main menu inline keyboard with language-aware button labels.",
       "tags": [
-        "api-handler",
-        "ui",
-        "messaging"
+        "telegram",
+        "menu",
+        "ui"
       ],
-      "complexity": "moderate",
-      "layer": "route-handler",
-      "fingerprint": "d6e5ee0535c09c9b"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:generateSignature",
@@ -392,15 +299,13 @@
         1051,
         1063
       ],
-      "summary": "Generates HMAC-SHA256 signature for ASIN-based authentication using Web Crypto API.",
+      "summary": "HMAC-SHA256 signature generator for API authentication in the webhook context.",
       "tags": [
-        "utility",
-        "security",
-        "crypto"
+        "auth",
+        "hmac",
+        "signature"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "f14321a222b6d397"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:verifyInitData",
@@ -411,15 +316,13 @@
         1065,
         1113
       ],
-      "summary": "Verifies Telegram Mini App initData authenticity using HMAC-SHA256 with the bot token, and validates data freshness against a 1-hour expiry.",
+      "summary": "Telegram WebApp initData verification for webhook-authenticated Mini App requests.",
       "tags": [
-        "utility",
-        "security",
-        "validation"
+        "auth",
+        "telegram",
+        "verification"
       ],
-      "complexity": "moderate",
-      "layer": "route-handler",
-      "fingerprint": "f23150fdd43d34b2"
+      "complexity": "moderate"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:toPrice",
@@ -448,15 +351,13 @@
         1121,
         1142
       ],
-      "summary": "Updates the user's first_name and username in the database from Telegram message data, invalidating cache on change.",
+      "summary": "Synchronizes Telegram user display names in the D1 database.",
       "tags": [
-        "utility",
-        "database",
-        "sync"
+        "telegram",
+        "user-sync",
+        "database"
       ],
-      "complexity": "moderate",
-      "layer": "route-handler",
-      "fingerprint": "10f05f72f6ec72dd"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:deleteTelegramMessage",
@@ -467,15 +368,13 @@
         1144,
         1159
       ],
-      "summary": "Deletes a Telegram message via the Bot API deleteMessage endpoint.",
+      "summary": "Deletes a Telegram message via the Bot API.",
       "tags": [
-        "utility",
+        "telegram",
         "messaging",
-        "api-call"
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "d38b10b388fa2ce5"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:expandAmazonUrl",
@@ -486,15 +385,13 @@
         1161,
         1180
       ],
-      "summary": "Follows HTTP redirects to expand shortened Amazon URLs (amzn.to, etc.) using a 5-second timeout fetch.",
+      "summary": "Expands Amazon short URLs to full product URLs by following redirects.",
       "tags": [
         "utility",
-        "url",
-        "api-call"
+        "amazon",
+        "url"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "8cd2c0444bcee960"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:getAsinFromUrl",
@@ -505,15 +402,13 @@
         1182,
         1189
       ],
-      "summary": "Extracts the ASIN (Amazon Standard Identification Number) from various Amazon URL formats using regex patterns for /dp/ and /gp/product/ paths.",
+      "summary": "Extracts ASIN from Amazon product URLs.",
       "tags": [
         "utility",
-        "url",
-        "parsing"
+        "amazon",
+        "asin"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "c27c4c10aaac97e2"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:sendTelegram",
@@ -524,15 +419,13 @@
         1191,
         1206
       ],
-      "summary": "Sends a text message to a Telegram chat via the Bot API sendMessage endpoint.",
+      "summary": "Sends an HTML message to a Telegram chat via the Bot API.",
       "tags": [
-        "utility",
+        "telegram",
         "messaging",
-        "api-call"
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "7bf8d8bb74b26949"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:editTelegramMessage",
@@ -543,15 +436,13 @@
         1208,
         1227
       ],
-      "summary": "Edits an existing Telegram message's text via the Bot API editMessageText endpoint.",
+      "summary": "Edits an existing Telegram message via the Bot API.",
       "tags": [
-        "utility",
+        "telegram",
         "messaging",
-        "api-call"
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "ae5f231a1921a309"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:extractNameFromUrl",
@@ -562,15 +453,13 @@
         1229,
         1238
       ],
-      "summary": "Extracts a human-readable product name from an Amazon URL by parsing the URL path and decoding URI components.",
+      "summary": "Extracts a product name or identifier from a URL string.",
       "tags": [
         "utility",
         "url",
         "parsing"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "e804824562f23ce1"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:sendAppMessage",
@@ -581,15 +470,13 @@
         1240,
         1251
       ],
-      "summary": "Sends a message via Telegram Bot API and persists the message ID in Bot_States for 48-hour tracking, enabling later edits.",
+      "summary": "Sends a message from the Telegram Mini App context.",
       "tags": [
-        "utility",
-        "messaging",
-        "state-management"
+        "telegram",
+        "mini-app",
+        "messaging"
       ],
-      "complexity": "simple",
-      "layer": "route-handler",
-      "fingerprint": "39376e915d2fa28c"
+      "complexity": "simple"
     },
     {
       "id": "function:src/routes/telegram_webhook.js:setChatMenuButton",
@@ -600,53 +487,13 @@
         1253,
         1276
       ],
-      "summary": "Sets the Telegram chat menu button to open the Web App, with localized button text based on user language preference.",
+      "summary": "Sets the chat menu button for the Telegram bot to open the Mini App.",
       "tags": [
-        "utility",
-        "messaging",
-        "i18n"
+        "telegram",
+        "mini-app",
+        "menu-button"
       ],
-      "complexity": "moderate",
-      "layer": "route-handler",
-      "fingerprint": "0026a007dc47af25"
-    },
-    {
-      "id": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "type": "function",
-      "name": "fetchUserAPI",
-      "filePath": "src/routes/user_dashboard.js",
-      "lineRange": [
-        5,
-        290
-      ],
-      "summary": "API endpoint for the user dashboard Web App. Handles subscription CRUD (pause/resume/delete/track), target price updates, language changes, deal discovery, and Telegram initData authentication.",
-      "tags": [
-        "api-handler",
-        "data-model",
-        "validation"
-      ],
-      "complexity": "complex",
-      "layer": "route-handler",
-      "fingerprint": "322ef78cbb3040b0"
-    },
-    {
-      "id": "function:src/routes/user_dashboard.js:renderUserHTML",
-      "type": "function",
-      "name": "renderUserHTML",
-      "filePath": "src/routes/user_dashboard.js",
-      "lineRange": [
-        292,
-        1072
-      ],
-      "summary": "Generates the complete HTML page for the Telegram Web App dashboard, embedding i18n strings, partner tag configuration, and client-side state as JSON for the SPA.",
-      "tags": [
-        "component",
-        "render",
-        "i18n"
-      ],
-      "complexity": "complex",
-      "layer": "route-handler",
-      "fingerprint": "2431b5eeeda61869"
+      "complexity": "simple"
     },
     {
       "id": "function:src/workers/cron_trigger.js:scheduled",
@@ -670,33 +517,17 @@
     {
       "id": "file:src/core/amazon.js",
       "type": "file",
-      "label": "src/core/amazon.js",
-      "description": "Core Amazon.eg integration module providing Creators API client, HTML scraping fallbacks, and item price/title parsing for the AzTracker price-tracking engine.",
-      "title": "Amazon Core Module",
-      "layer": "integration",
+      "name": "amazon.js",
+      "filePath": "src/core/amazon.js",
+      "summary": "Amazon PA-API integration module providing OAuth token acquisition and the AmazonEdgeParser class for fetching product catalog data (prices, names, images, sellers) from the Amazon Creators API for amazon.eg.",
       "tags": [
         "amazon",
-        "creators-api",
-        "edge-parser",
-        "scraping",
-        "price-tracking",
-        "arabic",
-        "bilingual",
-        "asins",
-        "affiliate"
+        "api",
+        "pa-api",
+        "product-data",
+        "oauth"
       ],
-      "metadata": {
-        "lines": 402,
-        "language": "javascript",
-        "fileCategory": "code",
-        "exports": [
-          "getAmazonAccessToken",
-          "AmazonEdgeParser"
-        ]
-      },
-      "languageNotes": "Contains bilingual logic (English/Arabic) via Arabic character detection and locale-specific API calls for product titles.",
-      "complexity": "moderate",
-      "fingerprint": "7cf48defa20b2417"
+      "complexity": "moderate"
     },
     {
       "id": "function:__nofilepath__:fn:getAmazonAccessToken",
@@ -722,7 +553,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "3278cd88bca5b6b1"
+      "fingerprint": "3278cd88bca5b6b1",
+      "name": "getAmazonAccessToken",
+      "summary": "function node: getAmazonAccessToken"
     },
     {
       "id": "class:__nofilepath__:cls:AmazonEdgeParser",
@@ -751,7 +584,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "b433930cb87b9238"
+      "fingerprint": "b433930cb87b9238",
+      "name": "AmazonEdgeParser",
+      "summary": "class node: AmazonEdgeParser"
     },
     {
       "id": "file:fn:AmazonEdgeParser.getItems",
@@ -777,7 +612,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "771befe5b4d78330"
+      "fingerprint": "771befe5b4d78330",
+      "name": "AmazonEdgeParser.getItems",
+      "summary": "function node: AmazonEdgeParser.getItems"
     },
     {
       "id": "file:fn:AmazonEdgeParser.getItemsWithArabic",
@@ -802,7 +639,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "6513b8ae429f021b"
+      "fingerprint": "6513b8ae429f021b",
+      "name": "AmazonEdgeParser.getItemsWithArabic",
+      "summary": "function node: AmazonEdgeParser.getItemsWithArabic"
     },
     {
       "id": "file:fn:AmazonEdgeParser.getVariations",
@@ -828,7 +667,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "a04152faf8a06a32"
+      "fingerprint": "a04152faf8a06a32",
+      "name": "AmazonEdgeParser.getVariations",
+      "summary": "function node: AmazonEdgeParser.getVariations"
     },
     {
       "id": "file:fn:AmazonEdgeParser.scrapeArabicTitle",
@@ -853,7 +694,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "c81bbd23c17cc58d"
+      "fingerprint": "c81bbd23c17cc58d",
+      "name": "AmazonEdgeParser.scrapeArabicTitle",
+      "summary": "function node: AmazonEdgeParser.scrapeArabicTitle"
     },
     {
       "id": "file:fn:AmazonEdgeParser.scrapeEnglishTitle",
@@ -878,7 +721,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "4c3151b7d57338fd"
+      "fingerprint": "4c3151b7d57338fd",
+      "name": "AmazonEdgeParser.scrapeEnglishTitle",
+      "summary": "function node: AmazonEdgeParser.scrapeEnglishTitle"
     },
     {
       "id": "file:fn:AmazonEdgeParser.parseItem",
@@ -901,45 +746,24 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "85e0c9d944d672ea"
+      "fingerprint": "85e0c9d944d672ea",
+      "name": "AmazonEdgeParser.parseItem",
+      "summary": "function node: AmazonEdgeParser.parseItem"
     },
     {
       "id": "file:src/core/utils.js",
       "type": "file",
-      "label": "src/core/utils.js",
-      "description": "Shared utility functions for AzTracker: HTML escaping, currency formatting, URL short-link expansion, ASIN extraction, Arabic/Hindi digit conversion, Cairo time formatting, and Telegram broadcast message composition.",
-      "title": "Core Utilities",
-      "layer": "utility",
+      "name": "utils.js",
+      "filePath": "src/core/utils.js",
+      "summary": "Shared utility functions including HTML escaping, EGP price formatting, Amazon URL expansion (short link resolution), ASIN extraction from URLs, Hindi-to-Arabic numeral conversion, Cairo timezone formatting, and broadcast message builder for Telegram deal alerts.",
       "tags": [
-        "utils",
-        "broadcast",
-        "telegram",
-        "arabic",
-        "i18n",
-        "url-parsing",
+        "utility",
         "formatting",
-        "escape"
+        "amazon",
+        "broadcast",
+        "helpers"
       ],
-      "metadata": {
-        "lines": 126,
-        "language": "javascript",
-        "fileCategory": "code",
-        "exports": [
-          "escapeHtml",
-          "formatEGP",
-          "delay",
-          "expandAmazonUrl",
-          "getAsinFromUrl",
-          "truncateName",
-          "resolveProductName",
-          "convertHindiToArabic",
-          "getCairoTime",
-          "buildBroadcastMessage"
-        ]
-      },
-      "languageNotes": "Formatting oriented toward Arabic/Egyptian locale ('masry' lang code, EGP currency, RTL embedding in broadcasts, Hindi-to-Arabic digit conversion).",
-      "complexity": "moderate",
-      "fingerprint": "fdb0af1b14d11a15"
+      "complexity": "moderate"
     },
     {
       "id": "function:__nofilepath__:fn:escapeHtml",
@@ -963,7 +787,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "eca1a26985d56fb8"
+      "fingerprint": "eca1a26985d56fb8",
+      "name": "escapeHtml",
+      "summary": "function node: escapeHtml"
     },
     {
       "id": "function:__nofilepath__:fn:formatEGP",
@@ -986,7 +812,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "ace1deb7e1f9b481"
+      "fingerprint": "ace1deb7e1f9b481",
+      "name": "formatEGP",
+      "summary": "function node: formatEGP"
     },
     {
       "id": "function:__nofilepath__:fn:delay",
@@ -1009,7 +837,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "cc70d23cf717d7dd"
+      "fingerprint": "cc70d23cf717d7dd",
+      "name": "delay",
+      "summary": "function node: delay"
     },
     {
       "id": "function:__nofilepath__:fn:expandAmazonUrl",
@@ -1034,7 +864,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "71d469633f74b1e0"
+      "fingerprint": "71d469633f74b1e0",
+      "name": "expandAmazonUrl",
+      "summary": "function node: expandAmazonUrl"
     },
     {
       "id": "function:__nofilepath__:fn:getAsinFromUrl",
@@ -1058,7 +890,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "7bb7a18666729683"
+      "fingerprint": "7bb7a18666729683",
+      "name": "getAsinFromUrl",
+      "summary": "function node: getAsinFromUrl"
     },
     {
       "id": "function:__nofilepath__:fn:truncateName",
@@ -1082,7 +916,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "cc5d80de6f8e9bfe"
+      "fingerprint": "cc5d80de6f8e9bfe",
+      "name": "truncateName",
+      "summary": "function node: truncateName"
     },
     {
       "id": "function:__nofilepath__:fn:resolveProductName",
@@ -1107,7 +943,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "cef77d4402692998"
+      "fingerprint": "cef77d4402692998",
+      "name": "resolveProductName",
+      "summary": "function node: resolveProductName"
     },
     {
       "id": "function:__nofilepath__:fn:convertHindiToArabic",
@@ -1131,7 +969,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "5af3e49b098ca079"
+      "fingerprint": "5af3e49b098ca079",
+      "name": "convertHindiToArabic",
+      "summary": "function node: convertHindiToArabic"
     },
     {
       "id": "function:__nofilepath__:fn:getCairoTime",
@@ -1155,7 +995,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "f78fd798dff37a13"
+      "fingerprint": "f78fd798dff37a13",
+      "name": "getCairoTime",
+      "summary": "function node: getCairoTime"
     },
     {
       "id": "function:__nofilepath__:fn:buildBroadcastMessage",
@@ -1184,41 +1026,24 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "983d1c5d43f942e1"
+      "fingerprint": "983d1c5d43f942e1",
+      "name": "buildBroadcastMessage",
+      "summary": "function node: buildBroadcastMessage"
     },
     {
       "id": "file:src/routes/crm_dashboard.js",
       "type": "file",
-      "label": "src/routes/crm_dashboard.js",
-      "description": "Admin CRM dashboard route handler for AzTracker. Serves a full web-based management interface with Telegram WebApp HMAC authentication, user management (approve/revoke/promote/demote), product tracking controls (pause/resume/target/keep-alive), broadcast messaging with deal preview, live price fetching, audit logging, KV-to-D1 migration, and GitHub Actions environment sync.",
-      "title": "CRM Dashboard Route",
-      "layer": "route-handler",
+      "name": "crm_dashboard.js",
+      "filePath": "src/routes/crm_dashboard.js",
+      "summary": "CRM dashboard route handler providing admin API endpoints for product management (live price, history, graveyard, bulk operations), user management, audit logs, environment sync, and the full CRM frontend HTML renderer with embedded i18n translations and Chart.js analytics.",
       "tags": [
+        "api-handler",
         "crm",
         "admin",
-        "route",
-        "telegram-webapp",
-        "hmac-auth",
-        "user-management",
-        "broadcast",
-        "audit-log",
-        "d1",
-        "kv",
-        "tailwind",
-        "chartjs"
+        "dashboard",
+        "html-renderer"
       ],
-      "metadata": {
-        "lines": 3365,
-        "language": "javascript",
-        "fileCategory": "code",
-        "exports": [
-          "fetchAPI",
-          "renderCrmHTML"
-        ]
-      },
-      "languageNotes": "Bilingual (English/Arabic) with RTL layout support. Generates entire CRM frontend as inline HTML/CSS/JS. Uses HMAC-SHA256 for Telegram WebApp initData verification. Implements role-based access control (root admin, admin, approved, rejected).",
-      "complexity": "moderate",
-      "fingerprint": "d9e5547e4c3c5c8f"
+      "complexity": "complex"
     },
     {
       "id": "function:__nofilepath__:fn:fetchAPI",
@@ -1246,7 +1071,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "96c9b91ad546290a"
+      "fingerprint": "96c9b91ad546290a",
+      "name": "fetchAPI",
+      "summary": "function node: fetchAPI"
     },
     {
       "id": "function:__nofilepath__:fn:renderCrmHTML",
@@ -1271,7 +1098,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "6feeea81ebf115db"
+      "fingerprint": "6feeea81ebf115db",
+      "name": "renderCrmHTML",
+      "summary": "function node: renderCrmHTML"
     },
     {
       "id": "function:__nofilepath__:fn:generateSignature",
@@ -1297,7 +1126,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "2e277062ed33cc6a"
+      "fingerprint": "2e277062ed33cc6a",
+      "name": "generateSignature",
+      "summary": "function node: generateSignature"
     },
     {
       "id": "function:__nofilepath__:fn:verifyInitData",
@@ -1323,7 +1154,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "b798f41ae890a364"
+      "fingerprint": "b798f41ae890a364",
+      "name": "verifyInitData",
+      "summary": "function node: verifyInitData"
     },
     {
       "id": "function:__nofilepath__:fn:authAdmin",
@@ -1349,7 +1182,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "47181e372ebe98c8"
+      "fingerprint": "47181e372ebe98c8",
+      "name": "authAdmin",
+      "summary": "function node: authAdmin"
     },
     {
       "id": "function:__nofilepath__:fn:resolveTargetLang",
@@ -1373,7 +1208,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "1c4ebfb74a40e21e"
+      "fingerprint": "1c4ebfb74a40e21e",
+      "name": "resolveTargetLang",
+      "summary": "function node: resolveTargetLang"
     },
     {
       "id": "function:__nofilepath__:fn:adminLangPref",
@@ -1397,7 +1234,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "58ff0a9c632abf34"
+      "fingerprint": "58ff0a9c632abf34",
+      "name": "adminLangPref",
+      "summary": "function node: adminLangPref"
     },
     {
       "id": "file:src/workers/scraper_engine.js",
@@ -1432,7 +1271,9 @@
       },
       "languageNotes": "Implements statistical analysis (time-weighted mean/variance with Bessel's correction, z-score), exponential moving average with 30-day half-life decay, circuit breaker (5 failures / 5-min cooldown), anti-flap hysteresis (1-hour grace + 1 EGP debounce), and 2-phase commit (queue dispatch before DB batch).",
       "complexity": "moderate",
-      "fingerprint": "a5faa7fb4b53d803"
+      "fingerprint": "a5faa7fb4b53d803",
+      "name": "src/workers/scraper_engine.js",
+      "summary": "file node: src/workers/scraper_engine.js"
     },
     {
       "id": "function:__nofilepath__:fn:checkCircuitBreaker",
@@ -1457,7 +1298,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "3e06fd7f8e4d21ed"
+      "fingerprint": "3e06fd7f8e4d21ed",
+      "name": "checkCircuitBreaker",
+      "summary": "function node: checkCircuitBreaker"
     },
     {
       "id": "function:__nofilepath__:fn:recordCircuitSuccess",
@@ -1481,7 +1324,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "b6890554cfe2e5ce"
+      "fingerprint": "b6890554cfe2e5ce",
+      "name": "recordCircuitSuccess",
+      "summary": "function node: recordCircuitSuccess"
     },
     {
       "id": "function:__nofilepath__:fn:recordCircuitFailure",
@@ -1505,7 +1350,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "416adec1f0c02c43"
+      "fingerprint": "416adec1f0c02c43",
+      "name": "recordCircuitFailure",
+      "summary": "function node: recordCircuitFailure"
     },
     {
       "id": "function:__nofilepath__:fn:executeScrapeEngine",
@@ -1532,7 +1379,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "f3322185bf607669"
+      "fingerprint": "f3322185bf607669",
+      "name": "executeScrapeEngine",
+      "summary": "function node: executeScrapeEngine"
     },
     {
       "id": "function:__nofilepath__:fn:truncateMessage",
@@ -1555,7 +1404,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "f0e73d7c8a973709"
+      "fingerprint": "f0e73d7c8a973709",
+      "name": "truncateMessage",
+      "summary": "function node: truncateMessage"
     },
     {
       "id": "function:__nofilepath__:fn:queueAlert",
@@ -1595,7 +1446,9 @@
         ]
       },
       "complexity": "moderate",
-      "fingerprint": "d824425c08bb909b"
+      "fingerprint": "d824425c08bb909b",
+      "name": "queueAlert",
+      "summary": "function node: queueAlert"
     },
     {
       "id": "file:const:AMAZON_EG_MERCHANT_ID",
@@ -1615,7 +1468,9 @@
         "value": "A1ZVRGNO5AYLOV"
       },
       "complexity": "moderate",
-      "fingerprint": "30e355956590dd16"
+      "fingerprint": "30e355956590dd16",
+      "name": "AMAZON_EG_MERCHANT_ID",
+      "summary": "resource node: AMAZON_EG_MERCHANT_ID"
     },
     {
       "id": "file:const:AMAZON_RESALE_MERCHANT_ID",
@@ -1636,7 +1491,9 @@
         "value": "A2N2MP47XAP1MK"
       },
       "complexity": "moderate",
-      "fingerprint": "60b269e8311c1778"
+      "fingerprint": "60b269e8311c1778",
+      "name": "AMAZON_RESALE_MERCHANT_ID",
+      "summary": "resource node: AMAZON_RESALE_MERCHANT_ID"
     },
     {
       "id": "file:const:TELEGRAM_MSG_LIMIT",
@@ -1656,24 +1513,23 @@
         "value": 4096
       },
       "complexity": "moderate",
-      "fingerprint": "e41485b76b7cfc47"
+      "fingerprint": "e41485b76b7cfc47",
+      "name": "TELEGRAM_MSG_LIMIT",
+      "summary": "resource node: TELEGRAM_MSG_LIMIT"
     },
     {
       "id": "file:src/core/telegram.js",
       "type": "file",
       "name": "telegram.js",
       "filePath": "src/core/telegram.js",
-      "summary": "Low-level Telegram Bot API client providing send, edit, delete, and callback-answer helpers used by the async queue worker to deliver price alerts and broadcast messages.",
+      "summary": "Telegram Bot API wrapper providing send message, edit message, delete message, and answer callback query functions with HTML parse mode and error handling.",
       "tags": [
         "telegram",
-        "api-client",
+        "bot-api",
         "messaging",
-        "alert-delivery"
+        "wrapper"
       ],
-      "complexity": "moderate",
-      "languageNotes": "All four helpers share the same try/catch pattern calling the Telegram HTTP Bot API via fetch with HTML parse mode and JSON responses; on failure they return structured {ok, error_code, description} objects that upstream queue logic uses for rate-limit and block handling.",
-      "layer": "integration",
-      "fingerprint": "3f680d7cb3ef114f"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/telegram.js:sendTelegramMessage",
@@ -1684,15 +1540,13 @@
         1,
         21
       ],
-      "summary": "Sends a Telegram message to a chat via the Bot API with HTML parse mode and optional inline keyboard markup. Returns the parsed JSON response or a structured error object.",
+      "summary": "Sends an HTML-formatted message to a Telegram chat via the Bot API.",
       "tags": [
         "telegram",
-        "send-message",
-        "api-call"
+        "messaging",
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "integration",
-      "fingerprint": "53e3d792f56bd64d"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/telegram.js:editTelegramMessage",
@@ -1703,15 +1557,13 @@
         23,
         45
       ],
-      "summary": "Edits an existing Telegram message in-place via editMessageText, reusing the same HTML parse-mode and error-handling pattern as sendTelegramMessage.",
+      "summary": "Edits an existing Telegram message text and reply markup via the Bot API.",
       "tags": [
         "telegram",
-        "edit-message",
-        "api-call"
+        "messaging",
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "integration",
-      "fingerprint": "95be9454b978153e"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/telegram.js:deleteMessage",
@@ -1722,15 +1574,13 @@
         47,
         62
       ],
-      "summary": "Deletes a Telegram message via the Bot API deleteMessage endpoint. Logs errors but does not throw, intended for best-effort cleanup.",
+      "summary": "Deletes a Telegram message via the Bot API.",
       "tags": [
         "telegram",
-        "delete-message",
-        "api-call"
+        "messaging",
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "integration",
-      "fingerprint": "f0fa4ca61e73a8c7"
+      "complexity": "simple"
     },
     {
       "id": "function:src/core/telegram.js:answerCallbackQuery",
@@ -1741,32 +1591,27 @@
         64,
         83
       ],
-      "summary": "Answers a Telegram inline-keyboard callback query, optionally including text or alert flags. Returns parsed JSON or a structured error.",
+      "summary": "Answers a Telegram callback query (dismisses loading state) with optional alert text.",
       "tags": [
         "telegram",
         "callback",
-        "api-call"
+        "bot-api"
       ],
-      "complexity": "simple",
-      "layer": "integration",
-      "fingerprint": "5b93a76213124323"
+      "complexity": "simple"
     },
     {
       "id": "file:src/index.js",
       "type": "file",
       "name": "index.js",
       "filePath": "src/index.js",
-      "summary": "Top-level Cloudflare Worker entry point that exports the default handler with scheduled, queue, and fetch entrypoints, routing HTTP requests to the Telegram webhook, CRM API, and user dashboard handlers.",
+      "summary": "Cloudflare Worker entry point that routes incoming requests to the Telegram webhook handler, CRM API, and user dashboard API based on URL path and HTTP method.",
       "tags": [
         "entry-point",
         "cloudflare-worker",
-        "router",
+        "routing",
         "barrel"
       ],
-      "complexity": "simple",
-      "languageNotes": "Classic Cloudflare Modules-format worker: a single default-export object with scheduled / queue / fetch handlers. URL pathname dispatch delegates to route handlers imported from src/routes and src/workers.",
-      "layer": "entry-point",
-      "fingerprint": "a66324a563eb3654"
+      "complexity": "simple"
     },
     {
       "id": "file:src/workers/queue_worker.js",
@@ -1896,7 +1741,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "40462c44ac691e21"
+      "fingerprint": "40462c44ac691e21",
+      "name": "migrations/0000_baseline.sql"
     },
     {
       "id": "file:migrations/0001_add_last_active.sql",
@@ -1923,7 +1769,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "c4ee9eaefc68a17d"
+      "fingerprint": "c4ee9eaefc68a17d",
+      "name": "migrations/0001_add_last_active.sql"
     },
     {
       "id": "file:migrations/0002_add_always_track.sql",
@@ -1948,7 +1795,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "9f9190c2e0373e69"
+      "fingerprint": "9f9190c2e0373e69",
+      "name": "migrations/0002_add_always_track.sql"
     },
     {
       "id": "file:migrations/0003_add_mute_queue.sql",
@@ -1974,7 +1822,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "7c56aa0af3435ca3"
+      "fingerprint": "7c56aa0af3435ca3",
+      "name": "migrations/0003_add_mute_queue.sql"
     },
     {
       "id": "file:migrations/0004_add_detail_page_url.sql",
@@ -2000,7 +1849,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "23bb45e5f0b62b36"
+      "fingerprint": "23bb45e5f0b62b36",
+      "name": "migrations/0004_add_detail_page_url.sql"
     },
     {
       "id": "table:Users",
@@ -2038,7 +1888,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "cb69f941c22440ec"
+      "fingerprint": "cb69f941c22440ec",
+      "name": "Users"
     },
     {
       "id": "table:Join_Queue",
@@ -2068,7 +1919,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "9b4ebfc499e5ca7b"
+      "fingerprint": "9b4ebfc499e5ca7b",
+      "name": "Join_Queue"
     },
     {
       "id": "table:Global_Products",
@@ -2125,7 +1977,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "f8331e28f50e22dc"
+      "fingerprint": "f8331e28f50e22dc",
+      "name": "Global_Products"
     },
     {
       "id": "table:User_Subscriptions",
@@ -2169,7 +2022,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "080c412ce539df0a"
+      "fingerprint": "080c412ce539df0a",
+      "name": "User_Subscriptions"
     },
     {
       "id": "table:Audit_Logs",
@@ -2199,7 +2053,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "ad96dbfa1ab3130f"
+      "fingerprint": "ad96dbfa1ab3130f",
+      "name": "Audit_Logs"
     },
     {
       "id": "table:Bot_States",
@@ -2225,7 +2080,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "6e9f4509eca8d6cc"
+      "fingerprint": "6e9f4509eca8d6cc",
+      "name": "Bot_States"
     },
     {
       "id": "table:Failed_Queue_Messages",
@@ -2254,7 +2110,8 @@
       },
       "complexity": "moderate",
       "layer": "data-access",
-      "fingerprint": "7334c1e5ba223d03"
+      "fingerprint": "7334c1e5ba223d03",
+      "name": "Failed_Queue_Messages"
     },
     {
       "id": "file:readme",
@@ -2306,7 +2163,8 @@
       },
       "complexity": "moderate",
       "layer": "documentation",
-      "fingerprint": "55c616afa4a7bfa8"
+      "fingerprint": "55c616afa4a7bfa8",
+      "name": "readme"
     },
     {
       "id": "config:package-json",
@@ -2338,7 +2196,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "1ed5093b262f6112"
+      "fingerprint": "1ed5093b262f6112",
+      "name": "package-json"
     },
     {
       "id": "config:wrangler-toml",
@@ -2385,7 +2244,8 @@
       },
       "complexity": "moderate",
       "layer": "infrastructure",
-      "fingerprint": "a070e557f40b3a29"
+      "fingerprint": "a070e557f40b3a29",
+      "name": "wrangler-toml"
     },
     {
       "id": "file:deployment",
@@ -2448,7 +2308,8 @@
       },
       "complexity": "moderate",
       "layer": "documentation",
-      "fingerprint": "6919f6fc60101167"
+      "fingerprint": "6919f6fc60101167",
+      "name": "deployment"
     },
     {
       "id": "file:gallery",
@@ -2509,7 +2370,8 @@
       },
       "complexity": "moderate",
       "layer": "documentation",
-      "fingerprint": "e499b842b1a1ea18"
+      "fingerprint": "e499b842b1a1ea18",
+      "name": "gallery"
     },
     {
       "id": "file:roadmap",
@@ -2587,7 +2449,8 @@
       },
       "complexity": "moderate",
       "layer": "documentation",
-      "fingerprint": "50284031694179d9"
+      "fingerprint": "50284031694179d9",
+      "name": "roadmap"
     },
     {
       "id": "file:testing",
@@ -2643,7 +2506,8 @@
       },
       "complexity": "moderate",
       "layer": "documentation",
-      "fingerprint": "4c61cc131b03925b"
+      "fingerprint": "4c61cc131b03925b",
+      "name": "testing"
     },
     {
       "id": "file:understandignore",
@@ -2661,7 +2525,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "f284148d1782abf9"
+      "fingerprint": "f284148d1782abf9",
+      "name": "understandignore"
     },
     {
       "id": "file:check_js_injections",
@@ -2681,7 +2546,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "c6c77a16399f32ef"
+      "fingerprint": "c6c77a16399f32ef",
+      "name": "check_js_injections"
     },
     {
       "id": "file:fetch_logs",
@@ -2701,7 +2567,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "0828b49c3acabd90"
+      "fingerprint": "0828b49c3acabd90",
+      "name": "fetch_logs"
     },
     {
       "id": "file:patch_crm_frontend_safe",
@@ -2722,7 +2589,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "ae415322134ba875"
+      "fingerprint": "ae415322134ba875",
+      "name": "patch_crm_frontend_safe"
     },
     {
       "id": "file:patch_crm_frontend_safe2",
@@ -2743,7 +2611,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "3ae983bce7213351"
+      "fingerprint": "3ae983bce7213351",
+      "name": "patch_crm_frontend_safe2"
     },
     {
       "id": "file:patch_crm_frontend_safe3",
@@ -2764,7 +2633,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "1b1cc3f71120cb1f"
+      "fingerprint": "1b1cc3f71120cb1f",
+      "name": "patch_crm_frontend_safe3"
     },
     {
       "id": "file:schema_seed",
@@ -2789,7 +2659,8 @@
       ],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "43852592e18f8cd7"
+      "fingerprint": "43852592e18f8cd7",
+      "name": "schema_seed"
     },
     {
       "id": "file:setup_bot_commands",
@@ -2812,7 +2683,8 @@
       ],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "81f9efe7d16ec325"
+      "fingerprint": "81f9efe7d16ec325",
+      "name": "setup_bot_commands"
     },
     {
       "id": "file:setup_secrets",
@@ -2833,7 +2705,8 @@
       "symbols": [],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "c93b2c520865fdaf"
+      "fingerprint": "c93b2c520865fdaf",
+      "name": "setup_secrets"
     },
     {
       "id": "file:sync_kv",
@@ -2856,184 +2729,185 @@
       ],
       "complexity": "moderate",
       "layer": "core-logic",
-      "fingerprint": "00b5e6ba074bacd5"
+      "fingerprint": "00b5e6ba074bacd5",
+      "name": "sync_kv"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/amazon.js:getAmazonAccessToken",
+      "type": "function",
       "name": "getAmazonAccessToken",
       "filePath": "src/core/amazon.js",
-      "summary": "Obtains Amazon Creators API access token with KV caching.",
-      "tags": [
-        "api",
-        "auth"
-      ],
-      "complexity": "moderate",
-      "layer": "integration",
-      "fingerprint": "aa3a350c5dc7cd95"
-    },
-    {
-      "type": "class",
       "lineRange": [
         1,
-        50
+        25
       ],
+      "summary": "Obtains an Amazon PA-API OAuth access token using client credentials flow.",
+      "tags": [
+        "amazon",
+        "oauth",
+        "authentication"
+      ],
+      "complexity": "simple"
+    },
+    {
       "id": "class:src/core/amazon.js:AmazonEdgeParser",
+      "type": "class",
       "name": "AmazonEdgeParser",
       "filePath": "src/core/amazon.js",
-      "summary": "Parser for Amazon Creators API response edge data with Arabic title extraction.",
-      "tags": [
-        "parser"
+      "lineRange": [
+        32,
+        402
       ],
-      "complexity": "moderate",
-      "layer": "integration",
-      "fingerprint": "ad6445e7ce39d646"
+      "summary": "Amazon Creators API client that fetches product catalog data (prices, names, images, sellers) for amazon.eg with batch ASIN lookup support.",
+      "tags": [
+        "amazon",
+        "api-client",
+        "product-data",
+        "pa-api"
+      ],
+      "complexity": "moderate"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:escapeHtml",
+      "type": "function",
       "name": "escapeHtml",
       "filePath": "src/core/utils.js",
-      "summary": "HTML entity escaping utility for XSS prevention.",
-      "tags": [
-        "utility",
-        "security"
-      ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "43aeef752fbe9d1f"
-    },
-    {
-      "type": "function",
       "lineRange": [
         1,
-        50
+        9
       ],
+      "summary": "Escapes HTML special characters (&, <, >, \", ') to prevent XSS in generated HTML output.",
+      "tags": [
+        "utility",
+        "xss",
+        "html",
+        "sanitization"
+      ],
+      "complexity": "simple"
+    },
+    {
       "id": "function:src/core/utils.js:formatEGP",
+      "type": "function",
       "name": "formatEGP",
       "filePath": "src/core/utils.js",
-      "summary": "Egyptian Pound currency formatter.",
+      "lineRange": [
+        11,
+        14
+      ],
+      "summary": "Formats a numeric price value as Egyptian Pounds with 2 decimal places.",
       "tags": [
         "utility",
-        "formatting"
+        "formatting",
+        "currency",
+        "egp"
       ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "8b9b0ae7751c082e"
+      "complexity": "simple"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:buildBroadcastMessage",
+      "type": "function",
       "name": "buildBroadcastMessage",
       "filePath": "src/core/utils.js",
-      "summary": "Constructs Telegram broadcast message with deal info and deep-link button.",
+      "lineRange": [
+        93,
+        126
+      ],
+      "summary": "Builds a formatted Telegram broadcast message for deal alerts with product name, price, seller, affiliate link, and deep link for tracking.",
       "tags": [
+        "telegram",
+        "broadcast",
+        "deal-alert",
         "messaging"
       ],
-      "complexity": "moderate",
-      "layer": "utility",
-      "fingerprint": "faeafeca5a0add64"
+      "complexity": "moderate"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:expandAmazonUrl",
+      "type": "function",
       "name": "expandAmazonUrl",
       "filePath": "src/core/utils.js",
-      "summary": "Expands shortened Amazon URLs to full product URLs.",
+      "lineRange": [
+        22,
+        40
+      ],
+      "summary": "Expands Amazon short URLs (amzn.to, amzn.eu, a.co, amazon.eg/d/) to full product URLs by following up to 3 redirect hops.",
       "tags": [
         "utility",
-        "url"
+        "amazon",
+        "url",
+        "redirect"
       ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "f7d082a9e88e5d4e"
+      "complexity": "simple"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:getAsinFromUrl",
+      "type": "function",
       "name": "getAsinFromUrl",
       "filePath": "src/core/utils.js",
-      "summary": "Extracts ASIN identifier from Amazon product URLs.",
+      "lineRange": [
+        45,
+        52
+      ],
+      "summary": "Extracts the ASIN (Amazon Standard Identification Number) from a product URL using /dp/ or /gp/product/ patterns.",
       "tags": [
         "utility",
-        "url"
+        "amazon",
+        "asin",
+        "parsing"
       ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "f6cf5ffebdfca4c2"
+      "complexity": "simple"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:truncateName",
+      "type": "function",
       "name": "truncateName",
       "filePath": "src/core/utils.js",
-      "summary": "Truncates product names to maximum display length.",
+      "lineRange": [
+        54,
+        58
+      ],
+      "summary": "Truncates a product name to a maximum length with ellipsis.",
       "tags": [
         "utility",
-        "formatting"
+        "string",
+        "truncation"
       ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "42d4dc22e37625e1"
+      "complexity": "simple"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:resolveProductName",
+      "type": "function",
       "name": "resolveProductName",
       "filePath": "src/core/utils.js",
-      "summary": "Resolves product name from API data, fallback scraper, or URL.",
-      "tags": [
-        "utility"
-      ],
-      "complexity": "moderate",
-      "layer": "utility",
-      "fingerprint": "1919e06f4b541a8e"
-    },
-    {
-      "type": "function",
       "lineRange": [
-        1,
-        50
+        60,
+        63
       ],
-      "id": "function:src/core/utils.js:getCairoTime",
-      "name": "getCairoTime",
-      "filePath": "src/core/utils.js",
-      "summary": "Returns current time in Africa/Cairo timezone.",
+      "summary": "Resolves the display name for a product, preferring Arabic name when language is masry.",
       "tags": [
         "utility",
-        "time"
+        "i18n",
+        "product"
       ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "5ff7a76e8c958eed"
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/core/utils.js:getCairoTime",
+      "type": "function",
+      "name": "getCairoTime",
+      "filePath": "src/core/utils.js",
+      "lineRange": [
+        71,
+        81
+      ],
+      "summary": "Formats a timestamp as a Cairo timezone (Africa/Cairo) date-time string using Intl.DateTimeFormat.",
+      "tags": [
+        "utility",
+        "date",
+        "timezone",
+        "cairo"
+      ],
+      "complexity": "simple"
     },
     {
       "type": "function",
@@ -3049,27 +2923,27 @@
         "utility",
         "async"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "utility",
       "fingerprint": "13b52a7845c87366"
     },
     {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
       "id": "function:src/core/utils.js:convertHindiToArabic",
+      "type": "function",
       "name": "convertHindiToArabic",
       "filePath": "src/core/utils.js",
-      "summary": "Converts Hindi/Arabic-Indic numerals to Eastern Arabic numerals.",
+      "lineRange": [
+        65,
+        69
+      ],
+      "summary": "Converts Hindi (Eastern Arabic) numerals to standard Arabic (0-9) digits.",
       "tags": [
         "utility",
-        "i18n"
+        "numerals",
+        "arabic",
+        "conversion"
       ],
-      "complexity": "low",
-      "layer": "utility",
-      "fingerprint": "a426fe756c7acece"
+      "complexity": "simple"
     },
     {
       "type": "function",
@@ -3085,26 +2959,9 @@
         "utility",
         "i18n"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "utility",
       "fingerprint": "812e6b589b43f9a4"
-    },
-    {
-      "type": "function",
-      "lineRange": [
-        1,
-        50
-      ],
-      "id": "function:src/routes/crm_dashboard.js:fetchAPI",
-      "name": "fetchAPI",
-      "filePath": "src/routes/crm_dashboard.js",
-      "summary": "CRM API endpoint handler for AJAX requests (product/user CRUD, audit logs, stats).",
-      "tags": [
-        "api-handler"
-      ],
-      "complexity": "complex",
-      "layer": "route-handler",
-      "fingerprint": "df3452aecd28f850"
     },
     {
       "type": "function",
@@ -3125,7 +2982,7 @@
       "fingerprint": "0a222d415d3315f7"
     },
     {
-      "id": "api:telegram/setMyCommands",
+      "id": "endpoint:api:telegram/setMyCommands",
       "type": "endpoint",
       "name": "setMyCommands",
       "summary": "Telegram Bot API: set bot command menu.",
@@ -3133,12 +2990,12 @@
         "telegram",
         "api"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "integration",
       "fingerprint": "f40d68a3e8eeb60a"
     },
     {
-      "id": "worker:aztracker-prod-worker",
+      "id": "service:worker:aztracker-prod-worker",
       "type": "service",
       "name": "aztracker-prod-worker",
       "summary": "Production Cloudflare Worker deployment.",
@@ -3146,12 +3003,12 @@
         "cloudflare",
         "deployment"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "infrastructure",
       "fingerprint": "67c81f1bd0303e44"
     },
     {
-      "id": "worker:aztracker-dev-worker",
+      "id": "service:worker:aztracker-dev-worker",
       "type": "service",
       "name": "aztracker-dev-worker",
       "summary": "Development Cloudflare Worker deployment.",
@@ -3159,12 +3016,12 @@
         "cloudflare",
         "deployment"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "infrastructure",
       "fingerprint": "4030afa8c1b64447"
     },
     {
-      "id": "kv:prod-namespace",
+      "id": "resource:kv:prod-namespace",
       "type": "resource",
       "name": "prod-namespace",
       "summary": "Production KV namespace for price history and tokens.",
@@ -3172,12 +3029,12 @@
         "cloudflare",
         "kv"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "infrastructure",
       "fingerprint": "a88e42f0d5d647bd"
     },
     {
-      "id": "kv:dev-namespace",
+      "id": "resource:kv:dev-namespace",
       "type": "resource",
       "name": "dev-namespace",
       "summary": "Development KV namespace.",
@@ -3185,9 +3042,1223 @@
         "cloudflare",
         "kv"
       ],
-      "complexity": "low",
+      "complexity": "simple",
       "layer": "infrastructure",
       "fingerprint": "e034551b08cf2913"
+    },
+    {
+      "id": "config:.gitignore",
+      "type": "config",
+      "name": ".gitignore",
+      "filePath": ".gitignore",
+      "summary": "Git ignore rules excluding environment secrets, node_modules, build output, Python artifacts, OS files, Wrangler state, debug logs, IDE config, and generated migration artifacts.",
+      "tags": [
+        "configuration",
+        "git",
+        "secrets"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:CLAUDE.md",
+      "type": "document",
+      "name": "CLAUDE.md",
+      "filePath": "CLAUDE.md",
+      "summary": "Project instructions for AI agents covering strict pattern adherence, multi-layer escaping, contextual modifications, pre-flight evaluation requirements, and the council resolution process.",
+      "tags": [
+        "documentation",
+        "ai-directives",
+        "project-instructions"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "Comprehensive project overview and architecture documentation for AzTracker, a serverless Amazon.eg price engine on Cloudflare Workers, covering the hybrid D1+KV database architecture, edge-rendered CRM, async scraping pipeline, and user dashboard features.",
+      "tags": [
+        "documentation",
+        "architecture",
+        "overview"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "table:dump.sql:Users",
+      "type": "table",
+      "name": "Users",
+      "filePath": "dump.sql",
+      "lineRange": [
+        2,
+        10
+      ],
+      "summary": "Core user table storing Telegram chat_id, name, username, role (admin/approved), item_limit, approval metadata, language preference, and ban status.",
+      "tags": [
+        "database",
+        "users",
+        "telegram"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "table:dump.sql:Global_Products",
+      "type": "table",
+      "name": "Global_Products",
+      "filePath": "dump.sql",
+      "lineRange": [
+        42,
+        78
+      ],
+      "summary": "Global product catalog tracking ASIN, name (EN/AR), new/used/Amazon pricing, seller IDs, market IDs, buybox status, delisting state, historical mean/stdev, and broadcast metadata.",
+      "tags": [
+        "database",
+        "products",
+        "pricing"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "table:dump.sql:User_Subscriptions",
+      "type": "table",
+      "name": "User_Subscriptions",
+      "filePath": "dump.sql",
+      "lineRange": [
+        149,
+        161
+      ],
+      "summary": "User product subscriptions tracking chat_id, ASIN, target price, pause state, and alert-sent flags for new and used price thresholds.",
+      "tags": [
+        "database",
+        "subscriptions",
+        "alerts"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "table:dump.sql:Audit_Logs",
+      "type": "table",
+      "name": "Audit_Logs",
+      "filePath": "dump.sql",
+      "lineRange": [
+        231,
+        239
+      ],
+      "summary": "Audit trail table recording timestamped actor actions with actor details, target entity, and action description for SIEM compliance.",
+      "tags": [
+        "database",
+        "audit",
+        "siem"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "table:dump.sql:Bot_States",
+      "type": "table",
+      "name": "Bot_States",
+      "filePath": "dump.sql",
+      "lineRange": [
+        395,
+        399
+      ],
+      "summary": "Lightweight key-value table for bot state with TTL expiration, used for ephemeral runtime state across worker invocations.",
+      "tags": [
+        "database",
+        "state",
+        "ttl"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "table:dump.sql:Join_Queue",
+      "type": "table",
+      "name": "Join_Queue",
+      "filePath": "dump.sql",
+      "lineRange": [
+        414,
+        414
+      ],
+      "summary": "Access control queue for users requesting to join the bot, tracking chat_id, name, request timestamp, admin messages, request type, and language.",
+      "tags": [
+        "database",
+        "queue",
+        "access-control"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "Node.js package manifest for AzTracker with project metadata, scripts, and dev dependencies for the Cloudflare Workers project.",
+      "tags": [
+        "configuration",
+        "npm",
+        "package"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:package-lock.json",
+      "type": "config",
+      "name": "package-lock.json",
+      "filePath": "package-lock.json",
+      "summary": "Deterministic lockfile pinning exact dependency versions for reproducible installs.",
+      "tags": [
+        "configuration",
+        "npm",
+        "lockfile"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:wrangler.toml",
+      "type": "config",
+      "name": "wrangler.toml",
+      "filePath": "wrangler.toml",
+      "summary": "Cloudflare Workers configuration defining the dev worker entry point, KV namespace binding, D1 database binding, queue producers/consumers (telegram-outbox-dev, scraper-queue-dev), environment variables, and a full production environment section with separate database, KV, and queue bindings.",
+      "tags": [
+        "configuration",
+        "cloudflare",
+        "workers",
+        "infrastructure"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "config:wrangler.temp.toml",
+      "type": "config",
+      "name": "wrangler.temp.toml",
+      "filePath": "wrangler.temp.toml",
+      "summary": "Temporary Wrangler configuration for a test/temp UI worker pointing to production D1 database with mock puppeteer auth and a Telegram root admin ID override.",
+      "tags": [
+        "configuration",
+        "cloudflare",
+        "testing"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "schema:dump.sql",
+      "type": "schema",
+      "name": "dump.sql",
+      "filePath": "dump.sql",
+      "summary": "Full database DDL dump defining 6 tables (Users, Global_Products, User_Subscriptions, Audit_Logs, Bot_States, Join_Queue) with 13 supporting indexes for the AzTracker D1 SQLite database.",
+      "tags": [
+        "database",
+        "schema",
+        "d1"
+      ],
+      "complexity": "complex",
+      "languageNotes": "SQLite dialect with PRAGMA defer_foreign_keys and TEXT/INTEGER/REAL column types. Indexes on chat_id, asin, role, timestamps, and pause state for query performance."
+    },
+    {
+      "id": "table:prod_data.sql:Users",
+      "type": "table",
+      "name": "Users",
+      "filePath": "prod_data.sql",
+      "lineRange": [
+        1,
+        345
+      ],
+      "summary": "Production seed data for the Users table containing real Telegram user records with roles, item limits, approval chains, and language preferences.",
+      "tags": [
+        "database",
+        "seed-data",
+        "production"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "table:prod_data.sql:Global_Products",
+      "type": "table",
+      "name": "Global_Products",
+      "filePath": "prod_data.sql",
+      "lineRange": [
+        1,
+        345
+      ],
+      "summary": "Production seed data for the Global_Products table containing real Amazon.eg product listings with ASINs, pricing in EGP, market IDs, seller info, and Arabic product names.",
+      "tags": [
+        "database",
+        "seed-data",
+        "production"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:docs/DEPLOYMENT.md",
+      "type": "document",
+      "name": "DEPLOYMENT.md",
+      "filePath": "docs/DEPLOYMENT.md",
+      "summary": "Comprehensive deployment guide for AzTracker covering dual-environment workflow (dev/prod), V2 ES6 modular structure, D1 and KV provisioning, secret management, GitHub Actions CI/CD, webhook registration, and persistent menu initialization.",
+      "tags": [
+        "documentation",
+        "deployment",
+        "infrastructure",
+        "ci-cd",
+        "cloudflare"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "Covers Cloudflare Workers, D1 SQLite, KV namespaces, and Queues with a strict dual-environment separation pattern."
+    },
+    {
+      "id": "document:docs/GALLERY.md",
+      "type": "document",
+      "name": "GALLERY.md",
+      "filePath": "docs/GALLERY.md",
+      "summary": "Visual gallery showcasing AzTracker's bilingual (English LTR / Masry RTL) dashboard interface with 19 side-by-side screenshot comparisons covering CRM views, user management drawers, broadcast modals, price charts, and the hot deals discovery tab.",
+      "tags": [
+        "documentation",
+        "ui-reference",
+        "gallery",
+        "localization",
+        "rtl"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "Uses HTML tables with image assets to present LTR and RTL layout comparisons for the entire UI."
+    },
+    {
+      "id": "document:docs/ROADMAP.md",
+      "type": "document",
+      "name": "ROADMAP.md",
+      "filePath": "docs/ROADMAP.md",
+      "summary": "Architecture roadmap and tech debt tracker documenting completed Phase 6 milestones (6.8 through 6.16) including D1 migration, async queue decomposition, Masry localization, Web App CRM, statistical engine overhaul, native dialogs, and product variations broadcasting, plus Phase 7 R&D exploration and intentional architectural boundaries.",
+      "tags": [
+        "documentation",
+        "roadmap",
+        "architecture",
+        "tech-debt",
+        "milestones"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Extensive use of collapsible detail blocks for each phase execution brief, with checkboxes for completion tracking and an archived V1 history section."
+    },
+    {
+      "id": "document:docs/TESTING.md",
+      "type": "document",
+      "name": "TESTING.md",
+      "filePath": "docs/TESTING.md",
+      "summary": "Living test specification for AzTracker's asynchronous queue architecture, covering scraper queue pagination (TC-101 to TC-103), Telegram outbox rate limiting and 2PC commits (TC-201 to TC-204), bilingual localization (TC-301 to TC-303), and native confirm dialogs and toast notifications (TC-401 to TC-411), with edge-diagnostic test vectors instead of heavy E2E frameworks.",
+      "tags": [
+        "documentation",
+        "testing",
+        "quality-assurance",
+        "diagnostics",
+        "async-queues"
+      ],
+      "complexity": "moderate",
+      "languageNotes": "Uses a table-driven test vector format with test IDs, diagnostic vectors, and expected success criteria for each scenario."
+    },
+    {
+      "id": "config:.claude/settings.local.json",
+      "type": "config",
+      "name": "settings.local.json",
+      "filePath": ".claude/settings.local.json",
+      "summary": "Claude Code local permissions configuration for the AzTracker project, defining allowed Bash commands, MCP servers, and tool permissions for the development environment.",
+      "tags": [
+        "configuration",
+        "permissions",
+        "claude-code",
+        "security"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dist/index.js",
+      "type": "file",
+      "name": "index.js",
+      "filePath": "dist/index.js",
+      "summary": "Bundled production build of the entire AzTracker Cloudflare Worker, containing all routes, Telegram bot handlers, CRM dashboard HTML renderer, and the full application in a single 3273-line file.",
+      "tags": [
+        "bundle",
+        "production",
+        "cloudflare-worker",
+        "entry-point"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "config:dist/index.js.map",
+      "type": "config",
+      "name": "index.js.map",
+      "filePath": "dist/index.js.map",
+      "summary": "Source map file for the bundled dist/index.js, mapping compiled code back to original source locations for debugging purposes.",
+      "tags": [
+        "configuration",
+        "source-map",
+        "debugging"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:LICENSE",
+      "type": "file",
+      "name": "LICENSE",
+      "filePath": "LICENSE",
+      "summary": "Project license file defining the legal terms and conditions for use, distribution, and modification of the AzTracker software.",
+      "tags": [
+        "license",
+        "legal",
+        "documentation"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scratch/check_js_injections.js",
+      "type": "file",
+      "name": "check_js_injections.js",
+      "filePath": "scratch/check_js_injections.js",
+      "summary": "Diagnostic utility that scans crm_dashboard.js for potentially unsafe ${js(...)} template literal injection patterns, flagging lines that are not string concatenations, assignments, prompts, or object properties.",
+      "tags": [
+        "scratch",
+        "security",
+        "diagnostic",
+        "injection-detection"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scratch/check.mjs",
+      "type": "file",
+      "name": "check.mjs",
+      "filePath": "scratch/check.mjs",
+      "summary": "Standalone verification script that replicates the CRM dashboard's auth flow (HMAC signature generation, initData verification, admin auth) and renders the full CRM HTML for local testing without Cloudflare Workers.",
+      "tags": [
+        "scratch",
+        "testing",
+        "auth",
+        "standalone"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:scratch/fetch_logs.js",
+      "type": "file",
+      "name": "fetch_logs.js",
+      "filePath": "scratch/fetch_logs.js",
+      "summary": "Quick utility to fetch the last 50 audit log entries from the Cloudflare D1 database via wrangler and write them as a markdown report.",
+      "tags": [
+        "scratch",
+        "utility",
+        "audit",
+        "reporting"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scratch/patch_crm_frontend_safe.js",
+      "type": "file",
+      "name": "patch_crm_frontend_safe.js",
+      "filePath": "scratch/patch_crm_frontend_safe.js",
+      "summary": "Safe patching script for the CRM frontend that applies targeted modifications to the CRM dashboard HTML/JS with proper escaping and validation.",
+      "tags": [
+        "scratch",
+        "patching",
+        "crm",
+        "frontend"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:scratch/patch_crm_frontend_safe2.js",
+      "type": "file",
+      "name": "patch_crm_frontend_safe2.js",
+      "filePath": "scratch/patch_crm_frontend_safe2.js",
+      "summary": "Second iteration of the CRM frontend safe patching script, applying additional fixes with improved safety checks over the first version.",
+      "tags": [
+        "scratch",
+        "patching",
+        "crm",
+        "frontend"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scratch/patch_crm_frontend_safe3.js",
+      "type": "file",
+      "name": "patch_crm_frontend_safe3.js",
+      "filePath": "scratch/patch_crm_frontend_safe3.js",
+      "summary": "Third iteration of the CRM frontend safe patching script, further refining the patching approach with additional edge case handling.",
+      "tags": [
+        "scratch",
+        "patching",
+        "crm",
+        "frontend"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:scripts/generate_screenshots.js",
+      "type": "file",
+      "name": "generate_screenshots.js",
+      "filePath": "scripts/generate_screenshots.js",
+      "summary": "Puppeteer-based screenshot generation script that patches the CRM and user dashboard auth for mock authentication, then captures UI screenshots for documentation and testing.",
+      "tags": [
+        "script",
+        "puppeteer",
+        "screenshot",
+        "testing",
+        "documentation"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "table:scripts/schema_seed.sql",
+      "type": "table",
+      "name": "schema_seed.sql",
+      "filePath": "scripts/schema_seed.sql",
+      "summary": "SQL seed data for UI screenshots, inserting dummy users (admin, regular, rejected, pending), global products (Samsung, Apple, Sony, PlayStation), and user subscriptions into the D1 database.",
+      "tags": [
+        "database",
+        "seed-data",
+        "testing",
+        "dummy-data"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:scheduled",
+      "type": "function",
+      "name": "scheduled",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        5,
+        26
+      ],
+      "summary": "Cloudflare Worker scheduled event handler for cron triggers.",
+      "tags": [
+        "cron",
+        "scheduled",
+        "cloudflare-worker"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:getAmazonAccessToken2",
+      "type": "function",
+      "name": "getAmazonAccessToken2",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        30,
+        51
+      ],
+      "summary": "Obtains an Amazon OAuth access token using client credentials.",
+      "tags": [
+        "amazon",
+        "oauth",
+        "authentication"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:getCairoTime",
+      "type": "function",
+      "name": "getCairoTime",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        202,
+        218
+      ],
+      "summary": "Formats a timestamp to Cairo timezone (EET) string.",
+      "tags": [
+        "utility",
+        "date",
+        "timezone"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:executeScrapeEngine2",
+      "type": "function",
+      "name": "executeScrapeEngine2",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        225,
+        726
+      ],
+      "summary": "Core scraping engine that orchestrates product data fetching, price comparison, and alert generation.",
+      "tags": [
+        "scraper",
+        "engine",
+        "price-tracking"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:dist/index.js:queue",
+      "type": "function",
+      "name": "queue",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        730,
+        785
+      ],
+      "summary": "Cloudflare Queue batch message processor.",
+      "tags": [
+        "queue",
+        "cloudflare-worker",
+        "batch-processing"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dist/index.js:getUserRoles",
+      "type": "function",
+      "name": "getUserRoles",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        789,
+        806
+      ],
+      "summary": "Resolves user roles (rootAdmin, admin, approved) from the database.",
+      "tags": [
+        "auth",
+        "roles",
+        "database"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:resolveUserProfile",
+      "type": "function",
+      "name": "resolveUserProfile",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        808,
+        836
+      ],
+      "summary": "Fetches and caches a Telegram user profile via the Bot API.",
+      "tags": [
+        "telegram",
+        "profile",
+        "caching"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:logAudit",
+      "type": "function",
+      "name": "logAudit",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        838,
+        854
+      ],
+      "summary": "Records an audit log entry in the D1 database.",
+      "tags": [
+        "audit",
+        "logging",
+        "database"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:handleTelegramWebhook",
+      "type": "function",
+      "name": "handleTelegramWebhook",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        858,
+        881
+      ],
+      "summary": "Entry point for incoming Telegram webhook requests, parsing and dispatching updates.",
+      "tags": [
+        "telegram",
+        "webhook",
+        "entry-point"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:handleMessage",
+      "type": "function",
+      "name": "handleMessage",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        883,
+        1060
+      ],
+      "summary": "Processes incoming Telegram text messages, handling product URL detection, ASIN extraction, and subscription flows.",
+      "tags": [
+        "telegram",
+        "message-handler",
+        "bot"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:dist/index.js:handleCallback",
+      "type": "function",
+      "name": "handleCallback",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1062,
+        1457
+      ],
+      "summary": "Processes Telegram callback queries from inline keyboards, handling product views, subscriptions, settings, and navigation.",
+      "tags": [
+        "telegram",
+        "callback",
+        "inline-keyboard"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:dist/index.js:renderMainMenu",
+      "type": "function",
+      "name": "renderMainMenu",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1459,
+        1499
+      ],
+      "summary": "Renders the Telegram bot main menu with inline keyboard.",
+      "tags": [
+        "telegram",
+        "menu",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:renderProductList",
+      "type": "function",
+      "name": "renderProductList",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1501,
+        1544
+      ],
+      "summary": "Renders a paginated product list as an inline keyboard for Telegram.",
+      "tags": [
+        "telegram",
+        "product-list",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:renderProductView",
+      "type": "function",
+      "name": "renderProductView",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1546,
+        1656
+      ],
+      "summary": "Renders a detailed product view with price, seller, and action buttons for Telegram.",
+      "tags": [
+        "telegram",
+        "product-view",
+        "ui"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dist/index.js:buildProductUrl",
+      "type": "function",
+      "name": "buildProductUrl",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1669,
+        1679
+      ],
+      "summary": "Builds an Amazon affiliate product URL from an ASIN.",
+      "tags": [
+        "amazon",
+        "url",
+        "affiliate"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:buildSmartAlternatives",
+      "type": "function",
+      "name": "buildSmartAlternatives",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1681,
+        1714
+      ],
+      "summary": "Builds smart alternative product suggestions based on product data.",
+      "tags": [
+        "product",
+        "alternatives",
+        "recommendations"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dist/index.js:syncUserNames",
+      "type": "function",
+      "name": "syncUserNames",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1722,
+        1742
+      ],
+      "summary": "Synchronizes Telegram user display names in the database.",
+      "tags": [
+        "telegram",
+        "user-sync",
+        "database"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:expandAmazonUrl",
+      "type": "function",
+      "name": "expandAmazonUrl",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1760,
+        1778
+      ],
+      "summary": "Expands Amazon short URLs (amzn.to, a.co) to full product URLs by following redirects.",
+      "tags": [
+        "amazon",
+        "url",
+        "redirect"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:sendTelegram2",
+      "type": "function",
+      "name": "sendTelegram2",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1789,
+        1804
+      ],
+      "summary": "Sends a message via the Telegram Bot API.",
+      "tags": [
+        "telegram",
+        "messaging",
+        "bot-api"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:editTelegramMessage",
+      "type": "function",
+      "name": "editTelegramMessage",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1806,
+        1823
+      ],
+      "summary": "Edits an existing Telegram message via the Bot API.",
+      "tags": [
+        "telegram",
+        "messaging",
+        "bot-api"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:generateSignature",
+      "type": "function",
+      "name": "generateSignature",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1852,
+        1864
+      ],
+      "summary": "Generates an HMAC-SHA256 signature for API authentication.",
+      "tags": [
+        "auth",
+        "hmac",
+        "signature"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dist/index.js:verifyInitData",
+      "type": "function",
+      "name": "verifyInitData",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1866,
+        1907
+      ],
+      "summary": "Verifies Telegram WebApp initData authenticity using HMAC-SHA256.",
+      "tags": [
+        "auth",
+        "telegram",
+        "verification"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dist/index.js:fetchAPI",
+      "type": "function",
+      "name": "fetchAPI",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        1909,
+        2393
+      ],
+      "summary": "CRM API router handling admin endpoints for products, users, audit logs, and system operations.",
+      "tags": [
+        "api",
+        "crm",
+        "admin"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:dist/index.js:renderAuditHTML",
+      "type": "function",
+      "name": "renderAuditHTML",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        2395,
+        2519
+      ],
+      "summary": "Renders the audit log viewer HTML page for the CRM dashboard.",
+      "tags": [
+        "crm",
+        "audit",
+        "html-renderer"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dist/index.js:renderCrmHTML",
+      "type": "function",
+      "name": "renderCrmHTML",
+      "filePath": "dist/index.js",
+      "lineRange": [
+        2521,
+        3251
+      ],
+      "summary": "Renders the complete CRM dashboard HTML with embedded CSS, JavaScript, i18n translations, and Chart.js analytics.",
+      "tags": [
+        "crm",
+        "html-renderer",
+        "dashboard"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:scratch/check.mjs:generateSignature",
+      "type": "function",
+      "name": "generateSignature",
+      "filePath": "scratch/check.mjs",
+      "lineRange": [
+        9,
+        21
+      ],
+      "summary": "HMAC-SHA256 signature generation for local testing of the CRM auth flow.",
+      "tags": [
+        "auth",
+        "hmac",
+        "testing"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:scratch/check.mjs:verifyInitData",
+      "type": "function",
+      "name": "verifyInitData",
+      "filePath": "scratch/check.mjs",
+      "lineRange": [
+        22,
+        70
+      ],
+      "summary": "Local test replica of Telegram WebApp initData verification.",
+      "tags": [
+        "auth",
+        "telegram",
+        "testing"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:scratch/check.mjs:authAdmin",
+      "type": "function",
+      "name": "authAdmin",
+      "filePath": "scratch/check.mjs",
+      "lineRange": [
+        72,
+        92
+      ],
+      "summary": "Local test admin authentication using HMAC verification.",
+      "tags": [
+        "auth",
+        "admin",
+        "testing"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:scratch/check.mjs:fetchAPI",
+      "type": "function",
+      "name": "fetchAPI",
+      "filePath": "scratch/check.mjs",
+      "lineRange": [
+        94,
+        1028
+      ],
+      "summary": "Standalone CRM API handler for local testing without Cloudflare Workers.",
+      "tags": [
+        "api",
+        "crm",
+        "testing"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:scratch/check.mjs:renderCrmHTML",
+      "type": "function",
+      "name": "renderCrmHTML",
+      "filePath": "scratch/check.mjs",
+      "lineRange": [
+        1029,
+        3213
+      ],
+      "summary": "Standalone CRM HTML renderer for local testing, replicating the production CRM dashboard.",
+      "tags": [
+        "crm",
+        "html-renderer",
+        "testing"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:scripts/generate_screenshots.js:run",
+      "type": "function",
+      "name": "run",
+      "filePath": "scripts/generate_screenshots.js",
+      "lineRange": [
+        8,
+        372
+      ],
+      "summary": "Main Puppeteer screenshot workflow: patches auth, starts wrangler dev, captures CRM and user dashboard screenshots.",
+      "tags": [
+        "puppeteer",
+        "screenshot",
+        "automation"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:scripts/setup_bot_commands.js",
+      "type": "file",
+      "name": "setup_bot_commands.js",
+      "filePath": "scripts/setup_bot_commands.js",
+      "summary": "One-shot script that registers the /lang and /help bot commands with the Telegram BotFather API using the TELEGRAM_BOT_TOKEN environment variable.",
+      "tags": [
+        "script",
+        "telegram",
+        "bot-setup",
+        "commands"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scripts/setup_secrets.ps1",
+      "type": "file",
+      "name": "setup_secrets.ps1",
+      "filePath": "scripts/setup_secrets.ps1",
+      "summary": "PowerShell script that interactively prompts for Amazon and Telegram secrets, generates secure webhook secrets, deploys Cloudflare Workers, and injects all secrets into both production and dev environments via wrangler.",
+      "tags": [
+        "script",
+        "powershell",
+        "secrets",
+        "deployment",
+        "cloudflare"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:scripts/sync-kv.js",
+      "type": "file",
+      "name": "sync-kv.js",
+      "filePath": "scripts/sync-kv.js",
+      "summary": "Node.js utility that syncs all key-value pairs from the production Cloudflare KV namespace to the dev KV namespace, fetching keys in pages and uploading in bulk chunks of 5000.",
+      "tags": [
+        "script",
+        "kv-sync",
+        "cloudflare",
+        "data-migration"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/routes/user_dashboard.js",
+      "type": "file",
+      "name": "user_dashboard.js",
+      "filePath": "src/routes/user_dashboard.js",
+      "summary": "User-facing dashboard API providing authenticated product listing, subscription management (add/remove/pause), target price updates, and the full user dashboard HTML renderer with Telegram Mini App integration for the Amazon price tracker.",
+      "tags": [
+        "api-handler",
+        "user-dashboard",
+        "telegram-mini-app",
+        "subscriptions"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:scripts/setup_bot_commands.js:setCommands",
+      "type": "function",
+      "name": "setCommands",
+      "filePath": "scripts/setup_bot_commands.js",
+      "lineRange": [
+        1,
+        27
+      ],
+      "summary": "Registers /lang and /help bot commands with the Telegram BotFather API.",
+      "tags": [
+        "telegram",
+        "bot-setup",
+        "commands"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:scripts/sync-kv.js:syncKV",
+      "type": "function",
+      "name": "syncKV",
+      "filePath": "scripts/sync-kv.js",
+      "lineRange": [
+        3,
+        83
+      ],
+      "summary": "Fetches all KV keys from production and bulk-uploads them to the dev namespace.",
+      "tags": [
+        "kv-sync",
+        "cloudflare",
+        "data-migration"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/routes/crm_dashboard.js:generateSignature",
+      "type": "function",
+      "name": "generateSignature",
+      "filePath": "src/routes/crm_dashboard.js",
+      "lineRange": [
+        9,
+        21
+      ],
+      "summary": "Generates an HMAC-SHA256 signature for API request authentication using a secret key.",
+      "tags": [
+        "auth",
+        "hmac",
+        "signature"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/routes/crm_dashboard.js:verifyInitData",
+      "type": "function",
+      "name": "verifyInitData",
+      "filePath": "src/routes/crm_dashboard.js",
+      "lineRange": [
+        22,
+        70
+      ],
+      "summary": "Verifies Telegram WebApp initData by computing HMAC-SHA256 and comparing the hash, with expiry validation.",
+      "tags": [
+        "auth",
+        "telegram",
+        "verification",
+        "hmac"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/routes/crm_dashboard.js:authAdmin",
+      "type": "function",
+      "name": "authAdmin",
+      "filePath": "src/routes/crm_dashboard.js",
+      "lineRange": [
+        72,
+        88
+      ],
+      "summary": "Authenticates an admin request by verifying Telegram initData and checking root admin or admin role membership.",
+      "tags": [
+        "auth",
+        "admin",
+        "telegram"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/routes/crm_dashboard.js:fetchAPI",
+      "type": "function",
+      "name": "fetchAPI",
+      "filePath": "src/routes/crm_dashboard.js",
+      "lineRange": [
+        90,
+        1056
+      ],
+      "summary": "CRM API router handling 20+ admin endpoints for product CRUD, live pricing, history, graveyard, user management, audit logs, bulk operations, and environment sync.",
+      "tags": [
+        "api",
+        "crm",
+        "admin",
+        "rest"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/routes/crm_dashboard.js:renderCrmHTML",
+      "type": "function",
+      "name": "renderCrmHTML",
+      "filePath": "src/routes/crm_dashboard.js",
+      "lineRange": [
+        1057,
+        3362
+      ],
+      "summary": "Renders the complete CRM dashboard HTML page with embedded Tailwind CSS, Chart.js, Telegram WebApp JS, i18n translations, and interactive admin UI components.",
+      "tags": [
+        "crm",
+        "html-renderer",
+        "dashboard",
+        "tailwind"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/routes/user_dashboard.js:fetchUserAPI",
+      "type": "function",
+      "name": "fetchUserAPI",
+      "filePath": "src/routes/user_dashboard.js",
+      "lineRange": [
+        5,
+        285
+      ],
+      "summary": "User-facing API handler providing authenticated endpoints for product listing, subscription management (add/remove/pause), and target price updates with Telegram initData verification.",
+      "tags": [
+        "api",
+        "user-dashboard",
+        "subscriptions",
+        "auth"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/routes/user_dashboard.js:renderUserHTML",
+      "type": "function",
+      "name": "renderUserHTML",
+      "filePath": "src/routes/user_dashboard.js",
+      "lineRange": [
+        287,
+        1067
+      ],
+      "summary": "Renders the complete user dashboard HTML with Telegram Mini App integration, product cards, subscription management UI, and i18n support.",
+      "tags": [
+        "user-dashboard",
+        "html-renderer",
+        "telegram-mini-app"
+      ],
+      "complexity": "complex"
     }
   ],
   "edges": [
@@ -3222,30 +4293,6 @@
       "direction": "forward",
       "weight": 0.7,
       "fingerprint": "f571e00d5f6524d3"
-    },
-    {
-      "source": "file:src/routes/user_dashboard.js",
-      "target": "file:src/core/db.js",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7,
-      "fingerprint": "e32b2da64888426e"
-    },
-    {
-      "source": "file:src/routes/user_dashboard.js",
-      "target": "file:src/core/i18n.js",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7,
-      "fingerprint": "7376fe09523bcea3"
-    },
-    {
-      "source": "file:src/routes/user_dashboard.js",
-      "target": "file:src/routes/telegram_webhook.js",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7,
-      "fingerprint": "51ba00d24ac747bc"
     },
     {
       "source": "file:src/workers/cron_trigger.js",
@@ -3456,22 +4503,6 @@
       "fingerprint": "6f4c130666be360c"
     },
     {
-      "source": "file:src/routes/user_dashboard.js",
-      "target": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1,
-      "fingerprint": "5a1976815c746b9f"
-    },
-    {
-      "source": "file:src/routes/user_dashboard.js",
-      "target": "function:src/routes/user_dashboard.js:renderUserHTML",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1,
-      "fingerprint": "5a846a35040e5720"
-    },
-    {
       "source": "file:src/workers/cron_trigger.js",
       "target": "function:src/workers/cron_trigger.js:scheduled",
       "type": "contains",
@@ -3558,14 +4589,6 @@
       "direction": "forward",
       "weight": 0.8,
       "fingerprint": "dfb093dcd38f9d95"
-    },
-    {
-      "source": "file:src/routes/user_dashboard.js",
-      "target": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8,
-      "fingerprint": "27450ced4b761a28"
     },
     {
       "source": "file:src/workers/cron_trigger.js",
@@ -3776,38 +4799,6 @@
       "fingerprint": "dc46bc7cf739449c"
     },
     {
-      "source": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "target": "function:src/core/db.js:getUserRoles",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8,
-      "fingerprint": "53431277fc2f72c9"
-    },
-    {
-      "source": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "target": "function:src/routes/telegram_webhook.js:renderMainMenu",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8,
-      "fingerprint": "194577c1bd976a21"
-    },
-    {
-      "source": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "target": "function:src/routes/telegram_webhook.js:setChatMenuButton",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8,
-      "fingerprint": "dc9e103f68a2e239"
-    },
-    {
-      "source": "function:src/routes/user_dashboard.js:renderUserHTML",
-      "target": "function:src/core/i18n.js:t",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8,
-      "fingerprint": "2ab31ff5e1e10d30"
-    },
-    {
       "source": "function:src/workers/cron_trigger.js:scheduled",
       "target": "function:src/core/db.js:logAudit",
       "type": "calls",
@@ -3926,7 +4917,7 @@
       "id": "edge:internal:utils.getAsinFromUrl->expandAmazonUrl",
       "source": "function:__nofilepath__:fn:getAsinFromUrl",
       "target": "function:__nofilepath__:fn:expandAmazonUrl",
-      "type": "related-to",
+      "type": "related",
       "description": "Both functions handle Amazon URL parsing: getAsinFromUrl extracts ASINs while expandAmazonUrl resolves short links. They are typically used together in URL-processing pipelines.",
       "direction": "forward",
       "fingerprint": "5f76ee2f2e580253"
@@ -4016,7 +5007,7 @@
       "id": "edge:intra:scraper.checkCircuitBreaker->recordCircuitSuccess",
       "source": "function:__nofilepath__:fn:checkCircuitBreaker",
       "target": "function:__nofilepath__:fn:recordCircuitSuccess",
-      "type": "related-to",
+      "type": "related",
       "description": "checkCircuitBreaker transitions to half_open after cooldown; recordCircuitSuccess is called after a successful API call in half_open state to close the breaker.",
       "direction": "forward",
       "fingerprint": "6b42a38594b5f970"
@@ -4148,14 +5139,6 @@
     },
     {
       "source": "file:src/index.js",
-      "target": "file:src/routes/user_dashboard.js",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7,
-      "fingerprint": "47347aa76227db1a"
-    },
-    {
-      "source": "file:src/index.js",
       "target": "file:src/workers/cron_trigger.js",
       "type": "imports",
       "direction": "forward",
@@ -4193,14 +5176,6 @@
       "direction": "forward",
       "weight": 0.8,
       "fingerprint": "5c1807c400f6cf0c"
-    },
-    {
-      "source": "file:src/index.js",
-      "target": "function:src/routes/user_dashboard.js:fetchUserAPI",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8,
-      "fingerprint": "0d301a070783ce53"
     },
     {
       "source": "file:src/workers/queue_worker.js",
@@ -4822,359 +5797,1036 @@
       "target": "function:src/core/amazon.js:getAmazonAccessToken",
       "type": "imports",
       "label": "",
-      "fingerprint": "ee5ee647537924ec"
+      "fingerprint": "ee5ee647537924ec",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "class:src/core/amazon.js:AmazonEdgeParser",
       "type": "imports",
       "label": "",
-      "fingerprint": "341b6b1950efe6b9"
+      "fingerprint": "341b6b1950efe6b9",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:escapeHtml",
       "type": "imports",
       "label": "",
-      "fingerprint": "fbdabf8dc1f42133"
+      "fingerprint": "fbdabf8dc1f42133",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:formatEGP",
       "type": "imports",
       "label": "",
-      "fingerprint": "5e5cf3b76e82f509"
+      "fingerprint": "5e5cf3b76e82f509",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:buildBroadcastMessage",
       "type": "imports",
       "label": "",
-      "fingerprint": "e54e56003f773fd8"
+      "fingerprint": "e54e56003f773fd8",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:expandAmazonUrl",
       "type": "imports",
       "label": "",
-      "fingerprint": "a7fc0e000ca2c723"
+      "fingerprint": "a7fc0e000ca2c723",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:getAsinFromUrl",
       "type": "imports",
       "label": "",
-      "fingerprint": "83ca7e4152e0548f"
+      "fingerprint": "83ca7e4152e0548f",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:truncateName",
       "type": "imports",
       "label": "",
-      "fingerprint": "f958c408a4962647"
+      "fingerprint": "f958c408a4962647",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:resolveProductName",
       "type": "imports",
       "label": "",
-      "fingerprint": "8e1e309a7dc0436b"
+      "fingerprint": "8e1e309a7dc0436b",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:getCairoTime",
       "type": "imports",
       "label": "",
-      "fingerprint": "2c8710c575480bcc"
+      "fingerprint": "2c8710c575480bcc",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:delay",
       "type": "imports",
       "label": "",
-      "fingerprint": "08a5e49b833eba31"
+      "fingerprint": "08a5e49b833eba31",
+      "direction": "forward"
     },
     {
       "source": "file:src/routes/telegram_webhook.js",
       "target": "function:src/core/utils.js:convertHindiToArabic",
       "type": "imports",
       "label": "",
-      "fingerprint": "e0544c7481207e22"
-    },
-    {
-      "source": "file:src/index.js",
-      "target": "function:src/routes/crm_dashboard.js:fetchAPI",
-      "type": "calls",
-      "label": "",
-      "fingerprint": "d14d6c7b5a962bbf"
+      "fingerprint": "e0544c7481207e22",
+      "direction": "forward"
     },
     {
       "source": "function:src/workers/queue_worker.js:queue",
       "target": "function:src/workers/scraper_engine.js:executeScrapeEngine",
       "type": "calls",
       "label": "",
-      "fingerprint": "3edfbc1cbc735e41"
+      "fingerprint": "3edfbc1cbc735e41",
+      "direction": "forward"
+    },
+    {
+      "source": "config:wrangler.toml",
+      "target": "config:.gitignore",
+      "type": "configures",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "config:wrangler.toml",
+      "target": "config:wrangler.temp.toml",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:README.md",
+      "target": "config:wrangler.toml",
+      "type": "documents",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:README.md",
+      "target": "config:package.json",
+      "type": "documents",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "document:README.md",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "schema:dump.sql",
+      "target": "table:dump.sql:Users",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "schema:dump.sql",
+      "target": "table:dump.sql:Global_Products",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "schema:dump.sql",
+      "target": "table:dump.sql:User_Subscriptions",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "schema:dump.sql",
+      "target": "table:dump.sql:Audit_Logs",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "schema:dump.sql",
+      "target": "table:dump.sql:Bot_States",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "schema:dump.sql",
+      "target": "table:dump.sql:Join_Queue",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "config:wrangler.toml",
+      "target": "schema:dump.sql",
+      "type": "configures",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "table:prod_data.sql:Users",
+      "target": "table:dump.sql:Users",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "table:prod_data.sql:Global_Products",
+      "target": "table:dump.sql:Global_Products",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:docs/DEPLOYMENT.md",
+      "target": "document:docs/ROADMAP.md",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:docs/DEPLOYMENT.md",
+      "target": "document:docs/TESTING.md",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:docs/ROADMAP.md",
+      "target": "document:docs/GALLERY.md",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "document:docs/TESTING.md",
+      "target": "document:docs/ROADMAP.md",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:scheduled",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:getAmazonAccessToken2",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:getCairoTime",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:executeScrapeEngine2",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:queue",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:getUserRoles",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:resolveUserProfile",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:logAudit",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:handleTelegramWebhook",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:handleMessage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:handleCallback",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:renderMainMenu",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:renderProductList",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:renderProductView",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:buildProductUrl",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:buildSmartAlternatives",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:syncUserNames",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:expandAmazonUrl",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:sendTelegram2",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:editTelegramMessage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:generateSignature",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:verifyInitData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:fetchAPI",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:renderAuditHTML",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:renderCrmHTML",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:generateSignature",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:verifyInitData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:authAdmin",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:fetchAPI",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:renderCrmHTML",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scripts/generate_screenshots.js",
+      "target": "function:scripts/generate_screenshots.js:run",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dist/index.js",
+      "target": "function:dist/index.js:scheduled",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:fetchAPI",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "function:scratch/check.mjs:renderCrmHTML",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "config:.claude/settings.local.json",
+      "target": "file:src/index.js",
+      "type": "configures",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "config:dist/index.js.map",
+      "target": "file:dist/index.js",
+      "type": "configures",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:scripts/generate_screenshots.js",
+      "target": "file:src/routes/crm_dashboard.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:scripts/generate_screenshots.js",
+      "target": "file:src/routes/user_dashboard.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:scratch/check_js_injections.js",
+      "target": "file:src/routes/crm_dashboard.js",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:scratch/check.mjs",
+      "target": "file:src/routes/crm_dashboard.js",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:scratch/fetch_logs.js",
+      "target": "file:src/core/db.js",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:scratch/patch_crm_frontend_safe.js",
+      "target": "file:src/routes/crm_dashboard.js",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:scratch/patch_crm_frontend_safe2.js",
+      "target": "file:src/routes/crm_dashboard.js",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:scratch/patch_crm_frontend_safe3.js",
+      "target": "file:src/routes/crm_dashboard.js",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "table:scripts/schema_seed.sql",
+      "target": "file:src/core/db.js",
+      "type": "defines_schema",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:scripts/setup_bot_commands.js",
+      "target": "function:scripts/setup_bot_commands.js:setCommands",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:scripts/sync-kv.js",
+      "target": "function:scripts/sync-kv.js:syncKV",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/amazon.js",
+      "target": "function:src/core/amazon.js:getAmazonAccessToken",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/amazon.js",
+      "target": "class:src/core/amazon.js:AmazonEdgeParser",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:escapeHtml",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:formatEGP",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:expandAmazonUrl",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:getAsinFromUrl",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:truncateName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:resolveProductName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:convertHindiToArabic",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:getCairoTime",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:buildBroadcastMessage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:generateSignature",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:verifyInitData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:authAdmin",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:fetchAPI",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:renderCrmHTML",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "function:src/routes/user_dashboard.js:fetchUserAPI",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "function:src/routes/user_dashboard.js:renderUserHTML",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/core/amazon.js",
+      "target": "function:src/core/amazon.js:getAmazonAccessToken",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/amazon.js",
+      "target": "class:src/core/amazon.js:AmazonEdgeParser",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:escapeHtml",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:formatEGP",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:expandAmazonUrl",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:getAsinFromUrl",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:truncateName",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:resolveProductName",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:convertHindiToArabic",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:getCairoTime",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:buildBroadcastMessage",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:fetchAPI",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/routes/crm_dashboard.js:renderCrmHTML",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "function:src/routes/user_dashboard.js:fetchUserAPI",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/index.js",
+      "target": "file:src/routes/user_dashboard.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "file:src/routes/telegram_webhook.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "file:src/core/i18n.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "file:src/core/db.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "file:src/core/db.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "file:src/core/i18n.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:src/routes/telegram_webhook.js",
+      "target": "file:src/core/db.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:src/routes/telegram_webhook.js",
+      "target": "file:src/core/i18n.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "file:src/core/db.js",
+      "type": "depends_on",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/core/db.js:getUserRoles",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/core/db.js:logAudit",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/crm_dashboard.js",
+      "target": "function:src/core/i18n.js:t",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/telegram_webhook.js",
+      "target": "function:src/core/db.js:getUserRoles",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/telegram_webhook.js",
+      "target": "function:src/core/db.js:logAudit",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/telegram_webhook.js",
+      "target": "function:src/core/telegram.js:sendTelegramMessage",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/telegram_webhook.js",
+      "target": "function:src/core/i18n.js:t",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "function:src/core/db.js:getUserRoles",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "function:src/routes/telegram_webhook.js:renderMainMenu",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/routes/user_dashboard.js",
+      "target": "function:src/core/i18n.js:t",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:escapeHtml",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:truncateName",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:getCairoTime",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/core/utils.js",
+      "target": "function:src/core/utils.js:formatEGP",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
     }
   ],
-  "tour": [
-    {
-      "order": 1,
-      "title": "Project Overview",
-      "description": "AzTracker is a bilingual (English/Masry Arabic) serverless price tracking engine for Amazon.eg. It monitors product prices, detects deals using statistical analysis, and delivers Telegram alerts to users. The system runs entirely on Cloudflare Workers with D1 relational storage, KV time-series caching, and async Queues for decoupled processing.",
-      "nodeIds": [
-        "file:readme"
-      ],
-      "layer": "documentation"
-    },
-    {
-      "order": 2,
-      "title": "Worker Entry Point",
-      "description": "The top-level Cloudflare Worker entry point exports a default handler with scheduled, queue, and fetch entrypoints. URL pathname dispatch routes HTTP requests to the Telegram webhook, CRM API, and user dashboard handlers. This is the single barrel file that wires all request types together.",
-      "nodeIds": [
-        "file:src/index.js"
-      ],
-      "layer": "entry-point"
-    },
-    {
-      "order": 3,
-      "title": "Telegram Webhook Handler",
-      "description": "The main Telegram webhook handler processes incoming messages and callbacks. It validates secret headers, applies rate limiting, handles user registration, subscription tracking via ASIN links, admin approval workflows, and renders inline keyboard menus. This is the primary user-facing entry point for the Telegram bot interface.",
-      "nodeIds": [
-        "file:src/routes/telegram_webhook.js",
-        "function:src/routes/telegram_webhook.js:handleTelegramWebhook",
-        "function:src/routes/telegram_webhook.js:handleMessage"
-      ],
-      "layer": "route-handler"
-    },
-    {
-      "order": 4,
-      "title": "User Dashboard and CRM",
-      "description": "Two complementary web interfaces: the user dashboard is a Telegram Web App for subscription CRUD and price settings, while the CRM dashboard is an admin-only web interface for user management, product tracking, broadcast messaging, and audit logging. Both are edge-rendered HTML with embedded i18n and HMAC-SHA256 Telegram auth.",
-      "nodeIds": [
-        "file:src/routes/user_dashboard.js",
-        "file:src/routes/crm_dashboard.js"
-      ],
-      "layer": "route-handler"
-    },
-    {
-      "order": 5,
-      "title": "Core Data Access and Utilities",
-      "description": "The data access layer provides user role resolution with Cloudflare Cache API caching, Telegram profile fetching, audit logging with exponential backoff, and database cleanup. Shared utilities handle HTML escaping, EGP currency formatting, ASIN extraction, Arabic/Hindi digit conversion, and Cairo-timezone broadcast message composition.",
-      "nodeIds": [
-        "file:src/core/db.js",
-        "file:src/core/utils.js",
-        "file:src/core/i18n.js"
-      ],
-      "layer": "data-access"
-    },
-    {
-      "order": 6,
-      "title": "Amazon Creators API Integration",
-      "description": "The Amazon integration module provides an OAuth 2.0 client-credentials token flow and the AmazonEdgeParser class for interacting with the Amazon Creators API. It fetches product items, Arabic/English titles, child variations, and parses raw API responses into normalized price/title objects. Fallback HTML scrapers handle cases where the API fails to return titles.",
-      "nodeIds": [
-        "file:src/core/amazon.js",
-        "class:__nofilepath__:cls:AmazonEdgeParser",
-        "file:fn:AmazonEdgeParser.getItems"
-      ],
-      "layer": "integration"
-    },
-    {
-      "order": 7,
-      "title": "Scraper Engine and Deal Detection",
-      "description": "The core price scraping engine fetches live Amazon prices via the Creators API, computes time-weighted EMA statistics with 30-day half-life decay, detects price drops/restocks/target matches using z-score analysis, queues Telegram alerts via Cloudflare Queues, and persists price history to KV. It implements a circuit breaker (5 failures / 5-min cooldown) and anti-flap timers (1-hour grace + 1 EGP debounce) to prevent alert storms.",
-      "nodeIds": [
-        "file:src/workers/scraper_engine.js",
-        "function:__nofilepath__:fn:executeScrapeEngine",
-        "function:__nofilepath__:fn:checkCircuitBreaker"
-      ],
-      "layer": "worker"
-    },
-    {
-      "order": 8,
-      "title": "Async Queue Worker and Alert Delivery",
-      "description": "The queue worker drives two pipelines: a paginated scraper fan-out on the scraper-queue and a Telegram alert delivery loop on the message-queue. It implements 429 rate-limit backoff, 403 bot-block auto-pause via D1 updates, and a 2-phase-commit pattern where the alert_sent flag is only flipped after a successful Telegram API call. Failed messages are dead-lettered to a D1 table for replay.",
-      "nodeIds": [
-        "file:src/workers/queue_worker.js",
-        "function:src/workers/queue_worker.js:queue",
-        "function:src/workers/queue_worker.js:deadLetter"
-      ],
-      "layer": "worker"
-    },
-    {
-      "order": 9,
-      "title": "Cron Trigger and Maintenance",
-      "description": "The scheduled cron handler orchestrates periodic maintenance tasks: cleaning expired bot state, pausing dormant user subscriptions, rejecting idle unapproved users, triggering product scraping via the scraper queue, and recording hardware cron run timestamps. This is the heartbeat that keeps the system healthy.",
-      "nodeIds": [
-        "file:src/workers/cron_trigger.js",
-        "function:src/workers/cron_trigger.js:scheduled"
-      ],
-      "layer": "worker"
-    },
-    {
-      "order": 10,
-      "title": "Database Schema and Tables",
-      "description": "The D1 relational schema defines 8 tables: Users (identity and access directory), Join_Queue (pending access requests), Global_Products (hysteresis state engine with pricing and anti-flap timestamps), User_Subscriptions (junction table with target prices and pause state), Audit_Logs (append-only compliance log), Bot_States (conversational state offload), and Failed_Queue_Messages (dead letter queue). 13 performance indexes optimize CRM queries, cron joins, and audit filtering.",
-      "nodeIds": [
-        "file:migrations/0000_baseline.sql",
-        "table:Users",
-        "table:Global_Products",
-        "table:User_Subscriptions"
-      ],
-      "layer": "infrastructure"
-    },
-    {
-      "order": 11,
-      "title": "Deployment and CI/CD",
-      "description": "The Wrangler configuration defines dual-environment (dev/production) wiring for D1 databases, KV namespaces, queue producers/consumers, and cron triggers. GitHub Actions workflows deploy the worker and apply D1 migrations on pushes to main/dev/feature branches, with a separate on-demand workflow for syncing production data to development.",
-      "nodeIds": [
-        "config:wrangler-toml",
-        "pipeline:.github/workflows/deploy_worker.yml",
-        "pipeline:.github/workflows/sync-prod-to-dev.yml"
-      ],
-      "layer": "infrastructure"
-    }
-  ],
-  "version": "1.0.0",
-  "kind": "codebase",
   "layers": [
     {
-      "id": "data-access",
-      "name": "data-access",
-      "description": "Database query modules and data persistence",
+      "id": "layer:entry-point",
+      "name": "Entry Point",
+      "description": "Cloudflare Worker entry point that bootstraps the application and dispatches HTTP requests to route handlers",
       "nodeIds": [
+        "file:src/index.js"
+      ]
+    },
+    {
+      "id": "layer:route-handler",
+      "name": "Route Handler",
+      "description": "HTTP request handlers for CRM admin dashboard, Telegram webhook, and user-facing Mini App dashboard",
+      "nodeIds": [
+        "file:src/routes/crm_dashboard.js",
+        "file:src/routes/telegram_webhook.js",
+        "file:src/routes/user_dashboard.js",
+        "endpoint:api:telegram/setMyCommands"
+      ]
+    },
+    {
+      "id": "layer:worker",
+      "name": "Worker",
+      "description": "Background workers including cron-triggered scheduling, queue-based product processing, and the price scraping engine with circuit breaker",
+      "nodeIds": [
+        "file:src/workers/cron_trigger.js",
+        "file:src/workers/queue_worker.js",
+        "file:src/workers/scraper_engine.js"
+      ]
+    },
+    {
+      "id": "layer:core-logic",
+      "name": "Core Logic",
+      "description": "Core business logic and shared services: D1 database access, Amazon API token management, Telegram Bot API wrappers, i18n localization, and shared utilities",
+      "nodeIds": [
+        "file:src/core/amazon.js",
         "file:src/core/db.js",
-        "function:src/core/db.js:getUserRoles",
-        "function:src/core/db.js:resolveUserProfile",
-        "function:src/core/db.js:logAudit",
-        "function:src/core/db.js:cleanupDatabase",
+        "file:src/core/i18n.js",
+        "file:src/core/telegram.js",
+        "file:src/core/utils.js"
+      ]
+    },
+    {
+      "id": "layer:data-access",
+      "name": "Data Access",
+      "description": "Database schema definitions for the Cloudflare D1 SQL storage layer",
+      "nodeIds": [
+        "table:dump.sql:Users",
+        "file:migrations/0000_baseline.sql",
+        "file:migrations/0001_add_last_active.sql",
+        "file:migrations/0002_add_always_track.sql",
+        "file:migrations/0003_add_mute_queue.sql",
+        "file:migrations/0004_add_detail_page_url.sql",
         "table:Users",
         "table:Join_Queue",
         "table:Global_Products",
         "table:User_Subscriptions",
         "table:Audit_Logs",
         "table:Bot_States",
-        "table:Failed_Queue_Messages"
+        "table:Failed_Queue_Messages",
+        "table:dump.sql:Global_Products",
+        "table:dump.sql:User_Subscriptions",
+        "table:dump.sql:Audit_Logs",
+        "table:dump.sql:Bot_States",
+        "table:dump.sql:Join_Queue",
+        "schema:dump.sql",
+        "table:prod_data.sql:Users",
+        "table:prod_data.sql:Global_Products",
+        "table:scripts/schema_seed.sql"
       ]
     },
     {
-      "id": "utility",
-      "name": "utility",
-      "description": "Shared utilities, i18n, formatting helpers",
+      "id": "layer:infrastructure",
+      "name": "Infrastructure",
+      "description": "Cloudflare Workers deployment configuration, bundled production artifact, CI/CD pipelines, and package manifest",
       "nodeIds": [
-        "file:src/core/i18n.js",
-        "function:src/core/i18n.js:t",
-        "function:src/core/i18n.js:resolveLanguageCode",
-        "function:src/core/i18n.js:getWelcomeMessage",
-        "file:src/core/utils.js",
-        "function:src/core/utils.js:escapeHtml",
-        "function:src/core/utils.js:formatEGP",
-        "function:src/core/utils.js:buildBroadcastMessage",
-        "function:src/core/utils.js:expandAmazonUrl",
-        "function:src/core/utils.js:getAsinFromUrl",
-        "function:src/core/utils.js:truncateName",
-        "function:src/core/utils.js:resolveProductName",
-        "function:src/core/utils.js:getCairoTime",
-        "function:src/core/utils.js:delay",
-        "function:src/core/utils.js:convertHindiToArabic",
-        "function:src/core/utils.js:containsArabic"
-      ]
-    },
-    {
-      "id": "route-handler",
-      "name": "route-handler",
-      "description": "HTTP route handlers for webhooks and API endpoints",
-      "nodeIds": [
-        "file:src/routes/telegram_webhook.js",
-        "file:src/routes/user_dashboard.js",
-        "function:src/routes/telegram_webhook.js:checkRateLimit",
-        "function:src/routes/telegram_webhook.js:handleTelegramWebhook",
-        "function:src/routes/telegram_webhook.js:handleMessage",
-        "function:src/routes/telegram_webhook.js:handleCallback",
-        "function:src/routes/telegram_webhook.js:renderMainMenu",
-        "function:src/routes/telegram_webhook.js:generateSignature",
-        "function:src/routes/telegram_webhook.js:verifyInitData",
-        "function:src/routes/telegram_webhook.js:toPrice",
-        "function:src/routes/telegram_webhook.js:syncUserNames",
-        "function:src/routes/telegram_webhook.js:deleteTelegramMessage",
-        "function:src/routes/telegram_webhook.js:expandAmazonUrl",
-        "function:src/routes/telegram_webhook.js:getAsinFromUrl",
-        "function:src/routes/telegram_webhook.js:sendTelegram",
-        "function:src/routes/telegram_webhook.js:editTelegramMessage",
-        "function:src/routes/telegram_webhook.js:extractNameFromUrl",
-        "function:src/routes/telegram_webhook.js:sendAppMessage",
-        "function:src/routes/telegram_webhook.js:setChatMenuButton",
-        "function:src/routes/user_dashboard.js:fetchUserAPI",
-        "function:src/routes/user_dashboard.js:renderUserHTML",
-        "file:src/routes/crm_dashboard.js",
-        "function:src/routes/crm_dashboard.js:fetchAPI"
-      ]
-    },
-    {
-      "id": "worker",
-      "name": "worker",
-      "description": "Background queue consumers and cron handlers",
-      "nodeIds": [
-        "file:src/workers/cron_trigger.js",
-        "function:src/workers/cron_trigger.js:scheduled",
-        "file:src/workers/scraper_engine.js",
-        "file:src/workers/queue_worker.js",
-        "function:src/workers/queue_worker.js:deadLetter",
-        "function:src/workers/queue_worker.js:queue",
-        "function:src/workers/scraper_engine.js:executeScrapeEngine"
-      ]
-    },
-    {
-      "id": "integration",
-      "name": "integration",
-      "description": "External API clients (Amazon, Telegram)",
-      "nodeIds": [
-        "file:src/core/amazon.js",
-        "file:src/core/telegram.js",
-        "function:src/core/telegram.js:sendTelegramMessage",
-        "function:src/core/telegram.js:editTelegramMessage",
-        "function:src/core/telegram.js:deleteMessage",
-        "function:src/core/telegram.js:answerCallbackQuery",
-        "function:src/core/amazon.js:getAmazonAccessToken",
-        "class:src/core/amazon.js:AmazonEdgeParser",
-        "api:telegram/setMyCommands"
-      ]
-    },
-    {
-      "id": "core-logic",
-      "name": "core-logic",
-      "description": "Core business logic and domain services",
-      "nodeIds": [
-        "function:__nofilepath__:fn:getAmazonAccessToken",
-        "class:__nofilepath__:cls:AmazonEdgeParser",
-        "file:fn:AmazonEdgeParser.getItems",
-        "file:fn:AmazonEdgeParser.getItemsWithArabic",
-        "file:fn:AmazonEdgeParser.getVariations",
-        "file:fn:AmazonEdgeParser.scrapeArabicTitle",
-        "file:fn:AmazonEdgeParser.scrapeEnglishTitle",
-        "file:fn:AmazonEdgeParser.parseItem",
-        "function:__nofilepath__:fn:escapeHtml",
-        "function:__nofilepath__:fn:formatEGP",
-        "function:__nofilepath__:fn:delay",
-        "function:__nofilepath__:fn:expandAmazonUrl",
-        "function:__nofilepath__:fn:getAsinFromUrl",
-        "function:__nofilepath__:fn:truncateName",
-        "function:__nofilepath__:fn:resolveProductName",
-        "function:__nofilepath__:fn:convertHindiToArabic",
-        "function:__nofilepath__:fn:getCairoTime",
-        "function:__nofilepath__:fn:buildBroadcastMessage",
-        "function:__nofilepath__:fn:fetchAPI",
-        "function:__nofilepath__:fn:renderCrmHTML",
-        "function:__nofilepath__:fn:generateSignature",
-        "function:__nofilepath__:fn:verifyInitData",
-        "function:__nofilepath__:fn:authAdmin",
-        "function:__nofilepath__:fn:resolveTargetLang",
-        "function:__nofilepath__:fn:adminLangPref",
-        "function:__nofilepath__:fn:checkCircuitBreaker",
-        "function:__nofilepath__:fn:recordCircuitSuccess",
-        "function:__nofilepath__:fn:recordCircuitFailure",
-        "function:__nofilepath__:fn:executeScrapeEngine",
-        "function:__nofilepath__:fn:truncateMessage",
-        "function:__nofilepath__:fn:queueAlert",
+        "config:package.json",
+        "config:wrangler.toml",
+        "pipeline:.github/workflows/deploy_worker.yml",
+        "pipeline:.github/workflows/sync-prod-to-dev.yml",
+        "file:const:AMAZON_EG_MERCHANT_ID",
+        "file:const:AMAZON_RESALE_MERCHANT_ID",
+        "file:const:TELEGRAM_MSG_LIMIT",
+        "file:readme",
+        "config:package-json",
+        "config:wrangler-toml",
+        "file:deployment",
+        "file:gallery",
+        "file:roadmap",
+        "file:testing",
         "file:understandignore",
         "file:check_js_injections",
         "file:fetch_logs",
@@ -5184,50 +6836,159 @@
         "file:schema_seed",
         "file:setup_bot_commands",
         "file:setup_secrets",
-        "file:sync_kv"
+        "file:sync_kv",
+        "service:worker:aztracker-prod-worker",
+        "service:worker:aztracker-dev-worker",
+        "resource:kv:prod-namespace",
+        "resource:kv:dev-namespace",
+        "config:.gitignore",
+        "config:package-lock.json",
+        "config:wrangler.temp.toml",
+        "config:.claude/settings.local.json",
+        "file:dist/index.js",
+        "config:dist/index.js.map",
+        "file:LICENSE",
+        "file:scratch/check_js_injections.js",
+        "file:scratch/check.mjs",
+        "file:scratch/fetch_logs.js",
+        "file:scratch/patch_crm_frontend_safe.js",
+        "file:scratch/patch_crm_frontend_safe2.js",
+        "file:scratch/patch_crm_frontend_safe3.js",
+        "file:scripts/generate_screenshots.js",
+        "file:scripts/setup_bot_commands.js",
+        "file:scripts/setup_secrets.ps1",
+        "file:scripts/sync-kv.js"
       ]
     },
     {
-      "id": "infrastructure",
-      "name": "infrastructure",
-      "description": "Deployment, CI/CD, and configuration",
+      "id": "layer:documentation",
+      "name": "Documentation",
+      "description": "Project documentation including README, deployment guide, testing guide, UI gallery, and development roadmap",
       "nodeIds": [
-        "file:const:AMAZON_EG_MERCHANT_ID",
-        "file:const:AMAZON_RESALE_MERCHANT_ID",
-        "file:const:TELEGRAM_MSG_LIMIT",
-        "pipeline:.github/workflows/deploy_worker.yml",
-        "pipeline:.github/workflows/sync-prod-to-dev.yml",
-        "file:migrations/0000_baseline.sql",
-        "file:migrations/0001_add_last_active.sql",
-        "file:migrations/0002_add_always_track.sql",
-        "file:migrations/0003_add_mute_queue.sql",
-        "file:migrations/0004_add_detail_page_url.sql",
-        "config:package-json",
-        "config:wrangler-toml",
-        "worker:aztracker-prod-worker",
-        "worker:aztracker-dev-worker",
-        "kv:prod-namespace",
-        "kv:dev-namespace"
+        "document:README.md",
+        "document:docs/GALLERY.md",
+        "document:docs/DEPLOYMENT.md",
+        "document:docs/ROADMAP.md",
+        "document:docs/TESTING.md",
+        "document:CLAUDE.md"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Project Overview",
+      "description": "Start with README.md to understand what AzTracker is and why it exists. The README describes a highly scalable, multi-tenant Amazon.eg price tracking engine built on Cloudflare Workers, D1 SQL, and Queues. It features a localized (English/Egyptian Arabic) interactive Admin CRM Web App, dual-hysteresis anti-flap protection, and dynamic queue-based scheduling. This document sets the stage for every code file you will encounter in the tour.",
+      "nodeIds": [
+        "document:README.md"
       ]
     },
     {
-      "id": "entry-point",
-      "name": "entry-point",
-      "description": "Worker entry point and top-level request routing",
+      "order": 2,
+      "title": "Worker Entry Point",
+      "description": "The Cloudflare Worker entry point (src/index.js) is where every HTTP request begins. It imports and routes to the three main route handlers -- telegram_webhook, user_dashboard, and crm_dashboard -- and directly calls into the database and Telegram core modules. With a fan-out of 5 edges, this file has the broadest scope in the codebase and serves as the top-level orchestrator for all incoming requests.",
       "nodeIds": [
         "file:src/index.js"
       ]
     },
     {
-      "id": "documentation",
-      "name": "documentation",
-      "description": "Project docs, README, and guides",
+      "order": 3,
+      "title": "Route Handlers -- Webhook and Dashboards",
+      "description": "The three route handlers define the HTTP interface of the application. telegram_webhook.js receives and processes incoming Telegram Bot messages. user_dashboard.js serves the user-facing Mini App dashboard where users manage their tracked products. crm_dashboard.js renders the admin CRM dashboard with embedded HTML for managing the entire system. Together, these routes translate HTTP requests into business logic and UI responses.",
       "nodeIds": [
-        "file:readme",
-        "file:deployment",
-        "file:gallery",
-        "file:roadmap",
-        "file:testing"
+        "file:src/routes/telegram_webhook.js",
+        "file:src/routes/user_dashboard.js",
+        "file:src/routes/crm_dashboard.js"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Database Access Layer",
+      "description": "The database module (src/core/db.js) is the most widely depended-upon file in the project with a fan-in of 5. Every route handler and every worker ultimately goes through this module to read and write data to Cloudflare D1 SQL. Understanding this layer is essential because it defines the data access patterns that the entire application relies on, from user management to product tracking and price history.",
+      "nodeIds": [
+        "file:src/core/db.js"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Telegram Bot Integration",
+      "description": "The Telegram module (src/core/telegram.js) wraps the Telegram Bot API and is called directly by the entry point and the queue worker. It handles sending notifications to users when product prices change, formatting messages with price drop alerts, and managing bot interactions. This module is the bridge between the price tracking engine and the end user's Telegram client.",
+      "nodeIds": [
+        "file:src/core/telegram.js"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Internationalization and Localization",
+      "description": "The i18n module (src/core/i18n.js) provides full localization support for both English and Egyptian Arabic. It is imported by both the CRM dashboard and the user dashboard, ensuring that every user-facing string is rendered in the correct language. This module reflects AzTracker's target audience in Egypt and demonstrates how a serverless application can support multiple languages without a separate translation service.",
+      "nodeIds": [
+        "file:src/core/i18n.js"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Shared Utilities",
+      "description": "The utilities module (src/core/utils.js) contains shared helper functions used across the application. The CRM dashboard imports these utilities for common operations like formatting, validation, and data transformation. Keeping these functions in a dedicated module avoids duplication and ensures consistent behavior across different parts of the codebase.",
+      "nodeIds": [
+        "file:src/core/utils.js"
+      ]
+    },
+    {
+      "order": 8,
+      "title": "Price Scraping Engine",
+      "description": "The scraper engine (src/workers/scraper_engine.js) is the heart of the price tracking system. It fetches product data from Amazon.eg using access tokens managed by amazon.js, parses the responses at the edge, and stores results via the database layer. It includes a circuit breaker pattern to handle failures gracefully and avoid overwhelming the target site. This module is invoked by the cron trigger on a scheduled basis.",
+      "nodeIds": [
+        "file:src/workers/scraper_engine.js",
+        "file:src/core/amazon.js"
+      ],
+      "languageLesson": "The circuit breaker pattern prevents cascading failures by stopping requests to a failing service after a threshold of errors. It transitions between closed (normal), open (blocking), and half-open (testing recovery) states -- essential for resilient scraping against rate-limited e-commerce sites."
+    },
+    {
+      "order": 9,
+      "title": "Scheduled Triggers and Queue Workers",
+      "description": "The cron trigger (src/workers/cron_trigger.js) runs on a schedule to initiate price scraping by invoking the scraper engine. The queue worker (src/workers/queue_worker.js) processes individual product updates from Cloudflare Queues, using the Amazon API, database, and Telegram modules to fetch prices, persist changes, and notify users. Together, these workers implement the asynchronous, queue-based architecture that makes AzTracker scalable without running expensive always-on infrastructure.",
+      "nodeIds": [
+        "file:src/workers/cron_trigger.js",
+        "file:src/workers/queue_worker.js"
+      ]
+    },
+    {
+      "order": 10,
+      "title": "Database Schema",
+      "description": "The Users table in dump.sql defines the core data model for user accounts. This schema underpins the database access layer from Step 4 and the user-related operations in both dashboards from Step 3. Understanding the table structure clarifies how the application stores user preferences, tracked products, and notification settings in Cloudflare D1 SQL.",
+      "nodeIds": [
+        "table:dump.sql:Users"
+      ],
+      "languageLesson": "Cloudflare D1 is a serverless SQLite database. Schema design in D1 follows standard SQL conventions but must account for the distributed, eventually-consistent nature of the Workers runtime. Foreign keys and indexes should be chosen carefully to minimize read latency."
+    },
+    {
+      "order": 11,
+      "title": "Cloudflare Workers Configuration",
+      "description": "The wrangler.toml file configures the Cloudflare Workers runtime, defining environment variables, D1 database bindings, KV namespace bindings, and queue consumer/producer settings. This is the infrastructure-as-code file that tells Cloudflare how to deploy and run the worker. The bundled production artifact (dist/index.js) is the compiled output that Wrangler deploys based on this configuration.",
+      "nodeIds": [
+        "config:wrangler.toml"
+      ],
+      "languageLesson": "Wrangler.toml uses TOML format to define Cloudflare Workers settings. Key sections include [[d1_databases]] for SQL bindings, [[kv_namespaces]] for key-value storage, and [[queues]] for message queue configuration. Environment-specific settings use [env.production] and [env.staging] blocks."
+    },
+    {
+      "order": 12,
+      "title": "CI/CD and Deployment Pipelines",
+      "description": "The GitHub Actions workflows automate the deployment lifecycle. deploy_worker.yml handles building and deploying the worker to Cloudflare, while sync-prod-to-dev.yml synchronizes production data back to the development environment for safe testing. These pipelines ensure that code changes go through automated testing before reaching production, and that developers always have realistic data to work with.",
+      "nodeIds": [
+        "pipeline:.github/workflows/deploy_worker.yml",
+        "pipeline:.github/workflows/sync-prod-to-dev.yml"
+      ],
+      "languageLesson": "GitHub Actions workflows use YAML with 'on' triggers (push, schedule, manual), 'jobs' for parallel execution, and 'steps' for sequential commands. The deploy_worker.yml pipeline typically runs 'wrangler deploy' after installing dependencies and running tests."
+    },
+    {
+      "order": 13,
+      "title": "Project Documentation and Roadmap",
+      "description": "The remaining documentation files provide deeper context. DEPLOYMENT.md covers the step-by-step process for setting up the project in a new environment. TESTING.md explains the testing strategy and how to run tests. ROADMAP.md outlines planned features and the project's future direction. GALLERY.md showcases the UI through screenshots. These files complete the picture of AzTracker as a living, well-documented open-source project.",
+      "nodeIds": [
+        "document:docs/DEPLOYMENT.md",
+        "document:docs/TESTING.md",
+        "document:docs/ROADMAP.md",
+        "document:docs/GALLERY.md"
       ]
     }
   ]

@@ -1,55 +1,6 @@
 {
-  "generatedAt": "2026-06-18T15:48:34.778Z",
-  "schemaVersion": 1,
-  "stats": {
-    "totalNodes": 130,
-    "totalEdges": 190,
-    "nodeTypes": {
-      "file": 27,
-      "function": 77,
-      "class": 2,
-      "resource": 5,
-      "pipeline": 2,
-      "table": 7,
-      "document": 5,
-      "config": 2,
-      "endpoint": 1,
-      "service": 2
-    },
-    "edgeTypes": {
-      "imports": 38,
-      "contains": 34,
-      "exports": 17,
-      "calls": 52,
-      "called-by": 2,
-      "fallback-for": 2,
-      "uses": 5,
-      "related-to": 2,
-      "referenced-by": 1,
-      "related": 1,
-      "creates": 7,
-      "alters": 4,
-      "depends_on": 4,
-      "references": 7,
-      "complements": 1,
-      "documents": 1,
-      "validates": 2,
-      "modifies": 3,
-      "analyzes": 1,
-      "follows": 2,
-      "queries": 1,
-      "populates": 3
-    },
-    "layers": {
-      "data-access": 12,
-      "utility": 16,
-      "route-handler": 23,
-      "worker": 7,
-      "integration": 9,
-      "core-logic": 41,
-      "infrastructure": 16,
-      "entry-point": 1,
-      "documentation": 5
-    }
-  }
+  "lastAnalyzedAt": "2026-06-18T23:53:05.083Z",
+  "gitCommitHash": "d52f931fb789574140247ed0849f2423200eca4e",
+  "version": "1.0.0",
+  "analyzedFiles": 92
 }
