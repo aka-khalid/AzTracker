@@ -280,8 +280,11 @@ export async function fetchAPI(request, env, ctx) {
     }
 
     if (url.pathname === "/api/test-asin") {
-      const auth = await authAdmin(request, env);
-      //if (!auth) return new Response("Unauthorized", { status: 401 });
+      // Protected by shared secret (set via `wrangler secret put TEST_ASIN_KEY`)
+      const providedKey = url.searchParams.get("key");
+      if (!providedKey || providedKey !== env.TEST_ASIN_KEY) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+      }
       try {
         const asin = url.searchParams.get("asin") || "B094HJ4JSH";
         let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
@@ -293,39 +296,16 @@ export async function fetchAPI(request, env, ctx) {
         const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
         const items = await parser.getItems([asin]);
         const arabicNames = await parser.getItemsWithArabic([asin]);
-        const response2 = await fetch(parser.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Accept': 'application/json, text/javascript',
-            'Authorization': `Bearer ${accessToken}`,
-            'X-Marketplace': parser.endpointHost
-          },
-          body: JSON.stringify({
-            itemIds: [asin],
-            itemIdType: 'ASIN',
-            resources: [
-              'itemInfo.title',
-              'offersV2.listings.price',
-              'offersV2.listings.condition',
-              'offersV2.listings.merchantInfo',
-              'offersV2.listings.isBuyBoxWinner'
-            ],
-            partnerTag: parser.partnerTag,
-            condition: 'Any',
-            offerCount: 10
-          })
-        });
-        const data = await response2.json();
-        return new Response(JSON.stringify({ parsed: items, arabicName: arabicNames.get(asin) || null, raw: data }, null, 2), { headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ parsed: items, arabicName: arabicNames.get(asin) || null }, null, 2), { headers: { "Content-Type": "application/json" } });
       } catch (e) {
-        return new Response(e.stack || e.message, { status: 500 });
+        return new Response(e.message, { status: 500 });
       }
     }
 
     if (url.pathname === "/api/migrate-kv" && request.method === "GET") {
       const auth = await authAdmin(request, env);
-      if (!auth) return new Response("Unauthorized", { status: 401 });
+      if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+      if (!auth.isRootAdmin) return new Response(JSON.stringify({ error: "Forbidden: Root Admin only" }), { status: 403, headers: { "Content-Type": "application/json" } });
       
       try {
         let migratedCount = 0;
