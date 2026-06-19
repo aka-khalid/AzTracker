@@ -3141,8 +3141,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <div class="relative bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 transform transition-all">
                         <p class="text-sm text-gray-200 mb-5 leading-relaxed" id="custom-confirm-message"></p>
                         <div class="flex gap-3 justify-between" id="custom-confirm-buttons">
-                            <button id="custom-confirm-cancel" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition border border-gray-700"></button>
-                            <button id="custom-confirm-ok" class="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-medium transition border border-red-500/20"></button>
+                            <button id="custom-confirm-cancel" class="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-medium transition border border-red-500/20"></button>
+                            <button id="custom-confirm-ok" class="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium transition border border-emerald-500/20"></button>
                         </div>
                     </div>
                 \`;
