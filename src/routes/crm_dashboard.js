@@ -406,7 +406,7 @@ export async function fetchAPI(request, env, ctx) {
             FROM Users u
             LEFT JOIN User_Subscriptions s ON u.chat_id = s.chat_id AND s.is_paused = 0
             GROUP BY u.chat_id
-            ORDER BY COALESCE(u.last_active, u.created_at) DESC
+            ORDER BY COALESCE(NULLIF(u.last_active, 0), u.created_at) DESC
           `).all(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT value as lastRunMs FROM Bot_States WHERE key = 'last_run_time'").first(),
