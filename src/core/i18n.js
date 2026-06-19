@@ -703,6 +703,22 @@ const dict = {
     en: "Admins",
     masry: "الادمنز"
   },
+  "crm.sort_by": {
+    en: "Sort by",
+    masry: "ترتيب بـ"
+  },
+  "crm.sort_date": {
+    en: "Date added",
+    masry: "تاريخ الإضافة"
+  },
+  "crm.sort_price": {
+    en: "Price",
+    masry: "السعر"
+  },
+  "crm.sort_name": {
+    en: "Name",
+    masry: "الاسم"
+  },
   "crm.search_placeholder": {
     en: "Search by name or ASIN...",
     masry: "دور بالاسم أو ASIN..."
@@ -1360,6 +1376,14 @@ const dict = {
   "crm.confirm_revoke_access": {
     en: "Are you sure you want to revoke this user's access? This cannot be undone.",
     masry: "متأكد إنك عايز تسحب وصول اليوزر ده؟ مش هتقدر ترجعه."
+  },
+  "crm.confirm_promote": {
+    en: "Are you sure you want to promote this user to Admin? They will have full access to the CRM.",
+    masry: "متأكد إنك عايز تخلي اليوزر ده أدمن؟ هيكون عنده وصول كامل للـ CRM."
+  },
+  "crm.confirm_demote": {
+    en: "Are you sure you want to demote this user from Admin? They will lose CRM admin privileges.",
+    masry: "متأكد إنك عايز تشيل صلاحيات الأدمن من اليوزر ده؟ هيخسر صلاحيات الـ CRM."
   },
   "crm.confirm_generic": {
     en: "Are you sure you want to proceed?",

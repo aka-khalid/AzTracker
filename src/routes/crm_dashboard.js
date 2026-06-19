@@ -1386,7 +1386,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-active" oninput="filterDrawer(this.value, 'drawer-active-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-active" oninput="filterDrawer(this.value, 'drawer-active-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-active" onclick="toggleSortDropdown('active')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-active">${t('crm.sort_by', lang)}</span><span id="sort-dir-active" class="text-[10px]">↕</span></button><div id="sort-dropdown-active" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('active', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('active', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('active', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-active-items" onscroll="handleActiveScroll()">
             </div>
         </div>
@@ -1406,7 +1406,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-top-charts" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-top-charts" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-top-charts" onclick="toggleSortDropdown('top-charts')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-top-charts">${t('crm.sort_by', lang)}</span><span id="sort-dir-top-charts" class="text-[10px]">↕</span></button><div id="sort-dropdown-top-charts" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('top-charts', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('top-charts', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('top-charts', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-top-charts-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
             </div>
@@ -1427,7 +1427,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-paused" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-paused" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-paused" onclick="toggleSortDropdown('paused')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-paused">${t('crm.sort_by', lang)}</span><span id="sort-dir-paused" class="text-[10px]">↕</span></button><div id="sort-dropdown-paused" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('paused', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('paused', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('paused', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
             <div class="px-4 py-2 border-b border-gray-800 bg-red-900/10 flex items-center justify-between" id="drawer-paused-toolbar" style="display: none;">
                 <label class="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" id="paused-select-all" onchange="togglePausedSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
@@ -1457,7 +1457,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-graveyard" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-graveyard" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-graveyard" onclick="toggleSortDropdown('graveyard')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-graveyard">${t('crm.sort_by', lang)}</span><span id="sort-dir-graveyard" class="text-[10px]">↕</span></button><div id="sort-dropdown-graveyard" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('graveyard', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('graveyard', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('graveyard', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
             <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10">
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" id="graveyard-select-all" onchange="toggleGraveyardSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
@@ -2082,6 +2082,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { document.getElementById('drawer').classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-users');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-items'); }
+            resetSortUI('users');
         }
 
         async function openTopChartsDrawer() {
@@ -2106,7 +2107,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
                 const price = item.amazon_price || item.new_price;
                 const priceStr = price ? ${js('chrome.currency_egp')} + ' ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + escapeHtml(name).toLowerCase() + '" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
+                const sortName = escapeHtml(name).toLowerCase();
+                const sortPrice = price || 0;
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="' + sortPrice + '" data-added="" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
@@ -2128,7 +2131,104 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-top-charts');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-top-charts-items'); }
+            resetSortUI('top-charts');
         }
+
+
+        // ── Drawer Sort ──────────────────────────────────────────────────────────
+
+        const sortByLabel = ${js('crm.sort_by')};
+
+        const sortState = {
+            active:      { field: null, dir: 'desc' },
+            'top-charts': { field: null, dir: 'desc' },
+            paused:      { field: null, dir: 'desc' },
+            graveyard:   { field: null, dir: 'desc' },
+        };
+
+        function toggleSortDropdown(drawer) {
+            const dropdown = document.getElementById('sort-dropdown-' + drawer);
+            const isOpen = !dropdown.classList.contains('hidden');
+            // Close all sort dropdowns
+            document.querySelectorAll('[id^="sort-dropdown-"]').forEach(d => d.classList.add('hidden'));
+            if (!isOpen) dropdown.classList.remove('hidden');
+        }
+
+        function applySort(drawer, field) {
+            const state = sortState[drawer];
+            if (state.field === field) {
+                state.dir = state.dir === 'desc' ? 'asc' : 'desc';
+            } else {
+                state.field = field;
+                state.dir = (field === 'name') ? 'asc' : 'desc';
+            }
+            // Update button label
+            const labelEl = document.getElementById('sort-label-' + drawer);
+            const dirEl = document.getElementById('sort-dir-' + drawer);
+            const dropdown = document.getElementById('sort-dropdown-' + drawer);
+            const selectedBtn = dropdown ? dropdown.querySelector('[data-sort="' + field + '"]') : null;
+            if (labelEl && selectedBtn) labelEl.innerText = selectedBtn.innerText.trim();
+            if (dirEl) dirEl.innerText = state.dir === 'desc' ? '▼' : '▲';
+            // Close dropdown
+            document.getElementById('sort-dropdown-' + drawer).classList.add('hidden');
+            // Active drawer: render all remaining items before sorting
+            if (drawer === 'active' && typeof activeRenderIndex !== 'undefined' && typeof activeProductsData !== 'undefined' && activeRenderIndex < activeProductsData.length) {
+                const lang = document.documentElement.lang || 'masry';
+                const isMasry = lang === 'masry';
+                const remaining = activeProductsData.slice(activeRenderIndex);
+                activeRenderIndex = activeProductsData.length;
+                renderActiveProductCards(remaining, lang, isMasry);
+            }
+            performSort(drawer);
+        }
+
+        function performSort(drawer) {
+            const state = sortState[drawer];
+            if (!state.field) return;
+            const containerId = 'drawer-' + drawer + '-items';
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const items = Array.from(container.querySelectorAll('[data-search]'));
+            if (items.length === 0) return;
+
+            const field = state.field;
+            const dir = state.dir === 'desc' ? -1 : 1;
+
+            items.sort((a, b) => {
+                let valA, valB;
+                if (field === 'name') {
+                    valA = a.getAttribute('data-name') || '';
+                    valB = b.getAttribute('data-name') || '';
+                    return dir * valA.localeCompare(valB, 'ar');
+                } else if (field === 'price') {
+                    valA = parseFloat(a.getAttribute('data-price')) || 0;
+                    valB = parseFloat(b.getAttribute('data-price')) || 0;
+                    return dir * (valA - valB);
+                } else if (field === 'date') {
+                    valA = a.getAttribute('data-added') || '';
+                    valB = b.getAttribute('data-added') || '';
+                    return dir * valA.localeCompare(valB);
+                }
+                return 0;
+            });
+
+            items.forEach(item => container.appendChild(item));
+        }
+
+        function resetSortUI(drawer) {
+            sortState[drawer] = { field: null, dir: 'desc' };
+            const labelEl = document.getElementById('sort-label-' + drawer);
+            const dirEl = document.getElementById('sort-dir-' + drawer);
+            if (labelEl) labelEl.innerText = sortByLabel;
+            if (dirEl) dirEl.innerText = '↕';
+        }
+
+        // Close sort dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('[id^="sort-btn-"]') && !e.target.closest('[id^="sort-dropdown-"]')) {
+                document.querySelectorAll('[id^="sort-dropdown-"]').forEach(d => d.classList.add('hidden'));
+            }
+        });
 
 
         function filterDrawer(query, containerId) {
@@ -2161,6 +2261,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 container.innerHTML = '';
                 activeRenderIndex = activeProductsData.length;
                 renderActiveProductCards(matched, lang, isMasry);
+                if (sortState.active && sortState.active.field) performSort('active');
                 return;
             }
 
@@ -2174,6 +2275,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     item.style.display = 'none';
                 }
             });
+
+            // Re-apply sort after filtering (for drawers with active sort state)
+            const drawerId = containerId.replace('drawer-', '').replace('-items', '');
+            if (sortState[drawerId] && sortState[drawerId].field) {
+                performSort(drawerId);
+            }
         }
 
         let activeProductsData = [];
@@ -2221,8 +2328,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent'
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
+                const sortPrice = item.new_price || item.amazon_price || 0;
+                const sortAdded = item.added_at || '';
+                const sortName = escapeHtml(name).toLowerCase();
+
                 return \`
-                <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
+                <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${sortName}" data-name="\${sortName}" data-price="\${sortPrice}" data-added="\${sortAdded}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
@@ -2280,6 +2391,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-active');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-active-items'); }
+            resetSortUI('active');
         }
 
         async function openPausedDrawer() {
@@ -2315,8 +2427,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
 
+                const sortPrice = item.new_price || item.amazon_price || 0;
+                const sortName = escapeHtml(name).toLowerCase();
+
                 return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden paused-card" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${escapeHtml(name).toLowerCase()}">
+                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden paused-card" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${sortName}" data-name="\${sortName}" data-price="\${sortPrice}" data-added="">
                     <div class="flex items-start gap-3 mb-2">
                         <input type="checkbox" class="paused-checkbox mt-1 w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer shrink-0" data-asin="\${item.asin}" onchange="updatePausedToolbar()">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
@@ -2358,6 +2473,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-paused');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-paused-items'); }
+            resetSortUI('paused');
         }
 
         // ── Paused Products: Bulk Select & Delete ──────────────────────────────────
@@ -2457,7 +2573,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 }
                 const subsText = '<bdi>' + item.active_subs + '</bdi> ' + ${js('crm.graveyard_subs')};
 
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + escapeHtml(name).toLowerCase() + '" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
+                const sortName = escapeHtml(name).toLowerCase();
+                const sortAdded = item.last_updated || '';
+                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="0" data-added="' + sortAdded + '" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
                 html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
@@ -2475,6 +2593,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             setTimeout(() => { document.getElementById('drawer-graveyard').classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-graveyard');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-graveyard-items'); }
+            resetSortUI('graveyard');
         }
 
         async function openProductSubsDrawer(asin) {
@@ -2832,18 +2951,22 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
 
             // Sensitive actions: require custom confirmation dialog
-            const sensitiveActions = ['ban', 'unban', 'revoke', 'approve', 'reject'];
+            const sensitiveActions = ['ban', 'unban', 'revoke', 'approve', 'reject', 'promote', 'demote'];
             if (sensitiveActions.includes(action)) {
                 const confirmTranslations = {
                     'ban': ${js('crm.confirm_ban')},
                     'unban': ${js('crm.confirm_unban')},
                     'revoke': ${js('crm.confirm_revoke_access')},
+                    'promote': ${js('crm.confirm_promote')},
+                    'demote': ${js('crm.confirm_demote')},
                     'generic': ${js('crm.confirm_generic')}
                 };
                 let confirmText = confirmTranslations.generic;
                 if (action === 'ban') confirmText = confirmTranslations.ban;
                 else if (action === 'unban') confirmText = confirmTranslations.unban;
                 else if (action === 'revoke') confirmText = confirmTranslations.revoke;
+                else if (action === 'promote') confirmText = confirmTranslations.promote;
+                else if (action === 'demote') confirmText = confirmTranslations.demote;
 
                 if (!await showConfirmDialog(confirmText, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) {
                     return;
@@ -2952,7 +3075,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         async function confirmRevoke(userId) {
-            const ok = await showConfirmDialog(${js('crm.btn_demote_drawer')} + " — " + userId + "?", ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
+            const ok = await showConfirmDialog(${js('crm.confirm_revoke_access')} + " — " + userId, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
             if(ok) performAction('revoke', userId);
         }
 
