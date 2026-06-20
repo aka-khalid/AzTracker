@@ -4,6 +4,21 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## 🚀 Active Architecture: Core Engine Modernization (Phase 6)
 
+- [x] **Phase 6.18: Bulk Addition Drawer & Strict ASIN Extraction**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Enable CRM admins to seamlessly ingest massive lists of mixed Amazon URLs, `amzn.to` shortlinks, and raw ASINs while providing a rich, localized pre-flight validation summary and strictly blocking malformed identifiers.
+
+  **The Strategy:** Deployed a dedicated "Bulk Add" drawer in the CRM UI. Engineered an asynchronous backend link-resolver that unspools `amzn.to` shortlinks over HTTP and extracts true ASINs. Hardened the regex extraction engine to strictly reject loose 10-character blocks. Designed a BIDI-compatible RTL summary screen to preview ingest operations before committing them to the database.
+
+  **Execution Highlights:**
+  - **Asynchronous Link Resolver:** Built an edge-native link unspooler that follows HTTP 301/302 redirects for `amzn.to` URLs to automatically resolve the destination path before extracting the ASIN, completely eliminating manual URL unshortening.
+  - **Strict Regex Hardening:** Replaced loose `[A-Z0-9]{10}` extraction with `\b(B[\dA-Z]{9}|\d{9}[X\d])\b`. This completely blocks malformed Amazon identifiers (like `creatorsapi`) from being parsed as valid products, preventing database pollution.
+  - **Rich Validation Pre-Flight:** Before writing to D1, the engine responds with a categorized pre-flight payload (`validAsins`, `activeGlobal`, `errors`). The CRM UI parses this into an interactive, localized summary with dynamic counts (e.g. `X New`, `Y Active`, `Z Errors`).
+  - **BIDI Rendering Architecture:** Overhauled the localized string formats in `src/core/i18n.js` to natively support Complex Text Layout (CTL). By wrapping RTL translation segments with trailing LTR stabilizer emojis, Arabic translations perfectly render mixed English numerals in correct Right-To-Left sequence (e.g., `5 جديد 🆕` rather than `🆕 5 جديد`).
+  </details>
+
 - [x] **Phase 6.17: True Dynamic Governor, AIMD Probing & Edge Hardening**
   <details>
   <summary><b>View Execution Brief</b></summary>
