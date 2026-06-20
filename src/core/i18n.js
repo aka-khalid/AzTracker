@@ -1760,7 +1760,7 @@ const dict = {
   },
   "crm.bulk_summary": {
     en: "🆕 {added} New | ♻️ {upgraded} Upgraded | ⚠️ {skipped} Skipped",
-    masry: "🆕 {added} جديد | ♻️ {upgraded} اترقى | ⚠️ {skipped} اتعمله تخطي"
+    masry: "\u200F🆕 {added} جديد | \u200F♻️ {upgraded} اترقى | \u200F⚠️ {skipped} اتعمله تخطي"
   },
   "crm.graveyard_select_purge": {
     en: "Select at least one product to purge",
