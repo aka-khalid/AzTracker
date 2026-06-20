@@ -1,11 +1,11 @@
 {
   "version": "1.0.0",
   "gitCommitHash": "45bc4767c7e74a32a882b228c3fa17f1f7b66426",
-  "analyzedAt": "2026-06-19T16:05:06.881Z",
+  "analyzedAt": "2026-06-20T13:25:09.236Z",
   "stats": {
-    "totalNodes": 210,
-    "totalEdges": 255,
+    "totalNodes": 243,
+    "totalEdges": 361,
     "totalLayers": 8,
-    "tourSteps": 13
+    "tourSteps": 23
   }
 }
