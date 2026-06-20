@@ -435,7 +435,7 @@ export async function fetchAPI(request, env, ctx) {
             GROUP BY u.chat_id
             ORDER BY CASE WHEN u.last_active > 0 THEN 1 ELSE 0 END DESC, COALESCE(NULLIF(u.last_active, 0), u.created_at) DESC
           `).all(),
-          env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
+          env.DB.prepare("SELECT COUNT(*) as activeWatchPool FROM (SELECT asin FROM Global_Products WHERE always_track = 1 UNION SELECT asin FROM User_Subscriptions WHERE is_paused = 0)").first(),
           env.DB.prepare("SELECT value as lastRunMs FROM Bot_States WHERE key = 'last_run_time'").first(),
           env.DB.prepare("SELECT COUNT(*) as pausedCount FROM (SELECT g.asin FROM Global_Products g LEFT JOIN User_Subscriptions s ON g.asin = s.asin WHERE g.always_track = 0 AND g.delisted = 0 AND (g.last_updated = 0 OR g.new_price IS NOT NULL OR g.used_price IS NOT NULL OR g.amazon_price IS NOT NULL) GROUP BY g.asin HAVING SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) = 0)").first(),
           env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (last_updated > 0 AND new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
@@ -757,13 +757,13 @@ export async function fetchAPI(request, env, ctx) {
                 asin = getAsinFromUrl(expanded);
                 if (!asin || !/^[A-Z0-9]{10}$/.test(asin)) asin = null;
             } else {
-                const direct = t.match(/^([a-zA-Z0-9]{10})$/);
+                const direct = t.match(/^(B[\dA-Z]{9}|\d{9}[X\d])$/i);
                 if (direct) asin = direct[1].toUpperCase();
                 else {
                     const fromUrl = t.match(/\/(?:dp|gp\/product|product)\/([a-zA-Z0-9]{10})/i);
                     if (fromUrl) asin = fromUrl[1].toUpperCase();
                     else {
-                        const fallback = t.match(/([a-zA-Z0-9]{10})/);
+                        const fallback = t.match(/\b(B[\dA-Z]{9}|\d{9}[X\d])\b/i);
                         if (fallback) asin = fallback[1].toUpperCase();
                     }
                 }
@@ -3007,11 +3007,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 if (/^https?:\\/\\/(?:www\\.)?(?:amazon\\.[a-z\\.]+|amzn\\.(?:to|eu)|a\\.co)/i.test(token)) {
                     return token;
                 }
-                const direct = token.match(/^([a-zA-Z0-9]{10})$/);
+                const direct = token.match(/^(B[\dA-Z]{9}|\d{9}[X\d])$/i);
                 if (direct) return direct[1].toUpperCase();
                 const fromUrl = token.match(/\\/(?:dp|gp\\/product|product)\\/([a-zA-Z0-9]{10})/i);
                 if (fromUrl) return fromUrl[1].toUpperCase();
-                const fallback = token.match(/([a-zA-Z0-9]{10})/);
+                const fallback = token.match(/\b(B[\dA-Z]{9}|\d{9}[X\d])\b/i);
                 if (fallback) return fallback[1].toUpperCase();
                 return null;
             }
