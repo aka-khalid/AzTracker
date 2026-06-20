@@ -391,18 +391,18 @@ export async function fetchAPI(request, env, ctx) {
       const logs = results.map(row => {
         const payload = row.details ? JSON.parse(row.details) : {};
         
-        let adminHandle = row.actor_id;
-        if (row.actor_first || row.actor_user) {
-          const fn = row.actor_first || '';
-          const un = row.actor_user ? `@${row.actor_user}` : null;
-          adminHandle = un ? `${fn} (${un})`.trim() : fn;
+        function formatHandle(first, user, id) {
+          const fn = first ? first.trim() : '';
+          const un = user ? `@${user.trim()}` : '';
+          if (fn) return un ? `${fn} (${un})` : `${fn} (${id})`;
+          return un || String(id);
         }
+
+        const adminHandle = formatHandle(row.actor_first, row.actor_user, row.actor_id);
 
         let targetHandle = payload.targetHandle || row.target_id;
         if (row.target_first || row.target_user) {
-          const fn = row.target_first || '';
-          const un = row.target_user ? `@${row.target_user}` : null;
-          targetHandle = un ? `${fn} (${un})`.trim() : fn;
+          targetHandle = formatHandle(row.target_first, row.target_user, row.target_id);
         }
 
         return {
