@@ -400,7 +400,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       try {
-        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes, hardwareCronRes] = await Promise.all([
+        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes, globalRes, hardwareCronRes] = await Promise.all([
           env.DB.prepare(`
             SELECT u.*, COUNT(s.asin) as active_items
             FROM Users u
@@ -410,8 +410,9 @@ export async function fetchAPI(request, env, ctx) {
           `).all(),
           env.DB.prepare("SELECT COUNT(DISTINCT asin) as activeWatchPool FROM User_Subscriptions WHERE is_paused = 0").first(),
           env.DB.prepare("SELECT value as lastRunMs FROM Bot_States WHERE key = 'last_run_time'").first(),
-          env.DB.prepare("SELECT COUNT(*) as pausedCount FROM (SELECT g.asin FROM Global_Products g LEFT JOIN User_Subscriptions s ON g.asin = s.asin GROUP BY g.asin HAVING SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) = 0)").first(),
-          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
+          env.DB.prepare("SELECT COUNT(*) as pausedCount FROM (SELECT g.asin FROM Global_Products g LEFT JOIN User_Subscriptions s ON g.asin = s.asin WHERE g.always_track = 0 AND g.delisted = 0 AND (g.last_updated = 0 OR g.new_price IS NOT NULL OR g.used_price IS NOT NULL OR g.amazon_price IS NOT NULL) GROUP BY g.asin HAVING SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) = 0)").first(),
+          env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (last_updated > 0 AND new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
+          env.DB.prepare("SELECT COUNT(*) as globalCount FROM Global_Products WHERE always_track = 1 AND delisted = 0 AND (last_updated = 0 OR new_price IS NOT NULL OR used_price IS NOT NULL OR amazon_price IS NOT NULL) AND asin NOT IN (SELECT DISTINCT asin FROM User_Subscriptions WHERE is_paused = 0)").first(),
           env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value')
         ]);
         
@@ -464,6 +465,7 @@ export async function fetchAPI(request, env, ctx) {
             lastRunMs: lastUpdatedRes && lastUpdatedRes.lastRunMs ? parseInt(lastUpdatedRes.lastRunMs, 10) : null,
             pausedProducts: pausedRes ? pausedRes.pausedCount : 0,
             ghostProducts: ghostRes ? ghostRes.ghostCount : 0,
+            globalProducts: globalRes ? globalRes.globalCount : 0,
             hardwareIntervalMs: hardwareCronRes || "300000",
             queueLimit: env.DAILY_QUEUE_LIMIT || "10000"
           },
@@ -498,6 +500,7 @@ export async function fetchAPI(request, env, ctx) {
             SUM(CASE WHEN s.is_paused = 1 THEN 1 ELSE 0 END) as paused_subs
         FROM Global_Products g
         LEFT JOIN User_Subscriptions s ON g.asin = s.asin
+        WHERE g.always_track = 0 AND g.delisted = 0 AND (g.last_updated = 0 OR g.new_price IS NOT NULL OR g.used_price IS NOT NULL OR g.amazon_price IS NOT NULL)
         GROUP BY g.asin
         HAVING active_subs = 0 AND (paused_subs > 0 OR s.asin IS NULL)
         ORDER BY g.always_track DESC, paused_subs DESC
@@ -573,7 +576,7 @@ export async function fetchAPI(request, env, ctx) {
         FROM Global_Products gp
         LEFT JOIN User_Subscriptions s ON gp.asin = s.asin
         WHERE gp.delisted = 1
-           OR (gp.new_price IS NULL AND gp.used_price IS NULL AND gp.amazon_price IS NULL)
+           OR (gp.last_updated > 0 AND gp.new_price IS NULL AND gp.used_price IS NULL AND gp.amazon_price IS NULL)
         GROUP BY gp.asin
         ORDER BY active_subs ASC, gp.last_updated ASC
       `).all();
@@ -634,12 +637,11 @@ export async function fetchAPI(request, env, ctx) {
         return new Response(JSON.stringify({ success: false, error: "No valid ASINs" }), { status: 400 });
       }
 
-      // Delete from Global_Products, User_Subscriptions, and Price_History
+      // Delete from Global_Products and User_Subscriptions
       const stmts = [];
       for (const asin of validAsins) {
         stmts.push(env.DB.prepare("DELETE FROM Global_Products WHERE asin = ?").bind(asin));
         stmts.push(env.DB.prepare("DELETE FROM User_Subscriptions WHERE asin = ?").bind(asin));
-        stmts.push(env.DB.prepare("DELETE FROM Price_History WHERE asin = ?").bind(asin));
       }
       await env.DB.batch(stmts);
 
@@ -699,6 +701,141 @@ export async function fetchAPI(request, env, ctx) {
       `).bind(targetId).all();
       
       return new Response(JSON.stringify(products.results || []), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/api/crm/bulk-add-products" && request.method === "POST") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+      
+      try {
+        const body = await request.json();
+        const asinsInput = body.asins || [];
+        const isPreview = body.preview === true;
+        if (!Array.isArray(asinsInput)) return new Response(JSON.stringify({ error: 'invalid_input' }), { status: 400 });
+
+        const validAsins = new Set();
+        const invalid = [];
+        const items = [];
+
+        for (let token of asinsInput) {
+            if (!token || typeof token !== 'string') continue;
+            let t = token.trim();
+            let asin = null;
+            
+            if (/^https?:\/\//i.test(t)) {
+                const expanded = await expandAmazonUrl(t);
+                asin = getAsinFromUrl(expanded);
+                if (!asin || !/^[A-Z0-9]{10}$/.test(asin)) asin = null;
+            } else {
+                const direct = t.match(/^([a-zA-Z0-9]{10})$/);
+                if (direct) asin = direct[1].toUpperCase();
+                else {
+                    const fromUrl = t.match(/\/(?:dp|gp\/product|product)\/([a-zA-Z0-9]{10})/i);
+                    if (fromUrl) asin = fromUrl[1].toUpperCase();
+                    else {
+                        const fallback = t.match(/([a-zA-Z0-9]{10})/);
+                        if (fallback) asin = fallback[1].toUpperCase();
+                    }
+                }
+            }
+            
+            if (asin) {
+                items.push({ input: token, asin });
+                validAsins.add(asin);
+            } else {
+                items.push({ input: token, asin: null, status: 'invalid' });
+                invalid.push(token);
+            }
+        }
+
+        const asins = Array.from(validAsins);
+        if (asins.length === 0) return new Response(JSON.stringify({ error: "bulk_add_no_valid" }), { status: 400 });
+
+        let added = 0;
+        let upgraded = 0;
+        let already_global = 0;
+        const dbStatusMap = new Map();
+        
+        for (let i = 0; i < asins.length; i += 50) {
+            const chunk = asins.slice(i, i + 50);
+            const placeholders = chunk.map(() => '?').join(',');
+            
+            const existingRes = await env.DB.prepare(`SELECT asin, always_track, name, name_ar FROM Global_Products WHERE asin IN (${placeholders})`).bind(...chunk).all();
+            const existingMap = new Map();
+            if (existingRes && existingRes.results) {
+                existingRes.results.forEach(row => {
+                    existingMap.set(row.asin, row);
+                });
+            }
+
+            const batchStmts = [];
+            
+            for (const asin of chunk) {
+                if (existingMap.has(asin)) {
+                    const row = existingMap.get(asin);
+                    if (row.always_track === 0) {
+                        batchStmts.push(env.DB.prepare("UPDATE Global_Products SET always_track = 1 WHERE asin = ?").bind(asin));
+                        upgraded++;
+                        dbStatusMap.set(asin, { status: 'upgraded', name: row.name, name_ar: row.name_ar });
+                    } else {
+                        already_global++;
+                        dbStatusMap.set(asin, { status: 'already_global', name: row.name, name_ar: row.name_ar });
+                    }
+                } else {
+                    batchStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, always_track, last_updated, name) VALUES (?, 1, 0, ?)").bind(asin, asin));
+                    added++;
+                    dbStatusMap.set(asin, { status: 'added', name: null, name_ar: null });
+                }
+            }
+            
+            if (!isPreview && batchStmts.length > 0) {
+                await env.DB.batch(batchStmts);
+            }
+        }
+
+        const details = items.map(item => {
+            if (item.status === 'invalid') return item;
+            const dbInfo = dbStatusMap.get(item.asin);
+            if (dbInfo) return { ...item, ...dbInfo };
+            return item;
+        });
+
+        return new Response(JSON.stringify({
+            added,
+            upgraded,
+            already_global,
+            invalid: invalid.length,
+            total: asinsInput.length,
+            valid_asins: asins,
+            details
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    if (url.pathname === "/api/crm/global-products" && request.method === "GET") {
+      const auth = await authAdmin(request, env);
+      if (!auth) return new Response("Unauthorized", { status: 401 });
+
+      const products = await env.DB.prepare(`
+        SELECT g.asin, g.name, g.name_ar, g.image_url, g.amazon_price, g.new_price,
+               g.used_price, g.detail_page_url, g.always_track, g.last_updated,
+               COUNT(CASE WHEN s.is_paused = 0 THEN 1 END) as active_subs
+        FROM Global_Products g
+        LEFT JOIN User_Subscriptions s ON g.asin = s.asin
+        WHERE g.always_track = 1 AND g.delisted = 0 AND (g.last_updated = 0 OR g.new_price IS NOT NULL OR g.used_price IS NOT NULL OR g.amazon_price IS NOT NULL)
+        GROUP BY g.asin
+        HAVING active_subs = 0
+        ORDER BY g.last_updated DESC
+        LIMIT 100
+      `).all();
+
+      return new Response(JSON.stringify({ items: products.results || [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
@@ -943,12 +1080,6 @@ export async function fetchAPI(request, env, ctx) {
       } else if (action === "toggle_keep_alive") {
         const asin = data.asin;
         const currentTracker = await env.DB.prepare("SELECT always_track FROM Global_Products WHERE asin = ?").bind(asin).first('always_track');
-        if (!currentTracker) {
-             const limitRes = await env.DB.prepare("SELECT COUNT(*) as count FROM Global_Products WHERE always_track = 1").first();
-             if (limitRes && limitRes.count >= 500) {
-                 return new Response(JSON.stringify({ error: 'limit_reached', message: 'Maximum 500 global products allowed.' }), { status: 400 });
-             }
-        }
         const result = await env.DB.prepare("UPDATE Global_Products SET always_track = CASE WHEN always_track = 1 THEN 0 ELSE 1 END WHERE asin = ?").bind(asin).run();
         if (result.meta && result.meta.changes === 0) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200 });
         const actionLog = currentTracker ? "DISABLE_KEEP_ALIVE" : "ENABLE_KEEP_ALIVE";
@@ -1125,21 +1256,70 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             <section>
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_overview', lang)}</h2>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-emerald-500/20" onclick="openActiveDrawer()" role="button" tabindex="0">
-                        <div class="text-gray-400 text-sm mb-1">${t('crm.products_title', lang)}</div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition border border-emerald-500/20 h-full" onclick="openActiveDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_pool', lang))}">
+                        <div class="text-gray-400 text-sm mb-1">
+                            <div class="flex items-center justify-between">
+                                <span>${t('crm.products_title', lang)}</span>
+                                <button onclick="event.stopPropagation(); document.getElementById('tooltip-pool').classList.toggle('hidden')" class="p-1 hover:text-white transition">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </button>
+                            </div>
+                            <p id="tooltip-pool" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-2">${t('crm.tooltip_pool', lang)}</p>
+                        </div>
                         <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20" onclick="openTopChartsDrawer()" role="button" tabindex="0">
+                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20 h-full" onclick="openTopChartsDrawer()" role="button" tabindex="0">
                         <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
                         <div class="text-sm font-bold text-brand-400 mt-1">${t('crm.btn_view', lang)}</div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition border border-amber-500/20" onclick="openPausedDrawer()" role="button" tabindex="0">
-                        <div class="text-gray-400 text-sm mb-1">${t('crm.paused_products', lang)}</div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition border border-amber-500/20 h-full" onclick="openPausedDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_paused', lang))}">
+                        <div class="text-gray-400 text-sm mb-1">
+                            <div class="flex items-center justify-between">
+                                <span>${t('crm.paused_products', lang)}</span>
+                                <button onclick="event.stopPropagation(); document.getElementById('tooltip-paused').classList.toggle('hidden')" class="p-1 hover:text-white transition">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </button>
+                            </div>
+                            <p id="tooltip-paused" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-2">${t('crm.tooltip_paused', lang)}</p>
+                        </div>
                         <div class="text-2xl font-bold text-amber-400" id="stat-paused">--</div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-center cursor-pointer hover:bg-gray-800/50 transition" onclick="openGraveyardDrawer()" role="button" tabindex="0">
-                        <div class="text-gray-400 text-sm mb-1">${t('crm.ghost_products', lang)}</div>
+                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition h-full" onclick="openGraveyardDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_ghost', lang))}">
+                        <div class="text-gray-400 text-sm mb-1">
+                            <div class="flex items-center justify-between">
+                                <span>${t('crm.ghost_products', lang)}</span>
+                                <button onclick="event.stopPropagation(); document.getElementById('tooltip-ghost').classList.toggle('hidden')" class="p-1 hover:text-white transition">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </button>
+                            </div>
+                            <p id="tooltip-ghost" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-2">${t('crm.tooltip_ghost', lang)}</p>
+                        </div>
                         <div class="text-2xl font-bold text-red-400" id="stat-ghost">--</div>
+                    </div>
+                    <!-- Row 3: Globally Tracked (distinct gradient card) -->
+                    <div class="col-span-2 rounded-xl p-[1px] bg-gradient-to-r from-purple-500/40 via-fuchsia-500/40 to-cyan-500/40 cursor-pointer hover:from-purple-500/60 hover:via-fuchsia-500/60 hover:to-cyan-500/60 transition-all" onclick="openGlobalDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_global', lang))}">
+                        <div class="glass rounded-[11px] p-4 bg-gradient-to-br from-purple-950/40 to-gray-900/60 flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 sm:gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-purple-500/15 flex shrink-0 items-center justify-center">
+                                    <span class="text-xl">🌐</span>
+                                </div>
+                                <div>
+                                    <div class="text-gray-400 text-sm mb-0.5">
+                                        <div class="whitespace-nowrap flex items-center gap-1">
+                                            <span class="text-xs sm:text-sm">${t('crm.global_products', lang)}</span>
+                                            <button onclick="event.stopPropagation(); document.getElementById('tooltip-global').classList.toggle('hidden')" class="p-0.5 hover:text-white transition">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                            </button>
+                                        </div>
+                                        <p id="tooltip-global" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-1 max-w-[200px] whitespace-normal">${t('crm.tooltip_global', lang)}</p>
+                                    </div>
+                                    <div class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent" id="stat-global">--</div>
+                                </div>
+                            </div>
+                            <button onclick="event.stopPropagation(); openBulkAddModal()" class="px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-purple-500/10 text-purple-300 text-[11px] sm:text-sm font-bold hover:bg-purple-500/25 transition-all border border-purple-500/20 hover:border-purple-500/30 whitespace-nowrap shrink-0">
+                                ${t('crm.btn_add_products', lang)}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1235,8 +1415,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             <section id="env-sync-section" class="mb-6">
                 <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.env_sync_title', lang)}</h2>
                 <div class="glass rounded-xl p-4 border border-gray-800/50 relative overflow-hidden group">
-                    <div class="flex items-center gap-4 mb-4 relative z-10">
-                        <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shadow-inner group-hover:bg-brand-500/10 transition-colors">
+                    <div class="flex items-center justify-between gap-4 relative z-10">
+                        <div class="w-10 h-10 rounded-lg bg-gray-800 flex shrink-0 items-center justify-center shadow-inner group-hover:bg-brand-500/10 transition-colors">
                             <span class="text-lg">🔄</span>
                         </div>
                         <div class="flex-1">
@@ -1245,7 +1425,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                                 ${t('crm.env_sync_desc', lang)}
                             </div>
                         </div>
-                        <button onclick="triggerSync(this)" class="px-4 py-2 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20 flex items-center gap-2 group-hover:shadow-[0_0_15px_rgba(14,165,233,0.3)]">
+                        <button onclick="triggerSync(this)" class="px-4 py-2 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20 flex items-center gap-2 group-hover:shadow-[0_0_15px_rgba(14,165,233,0.3)] whitespace-nowrap shrink-0">
                             <span>🔄</span>
                             ${t('crm.btn_sync', lang)}
                         </button>
@@ -1414,7 +1594,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     <span class="text-xs text-gray-400">${t('crm.select_all', lang)}</span>
                 </label>
                 <button onclick="deleteSelectedPaused()" id="paused-delete-selected-btn" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
-                    🗑️ ${t('crm.bulk_delete', lang)}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    <span>${t('crm.bulk_delete', lang)}</span>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-paused-items">
@@ -1438,17 +1619,85 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 </button>
             </div>
             <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-graveyard" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-graveyard" onclick="toggleSortDropdown('graveyard')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-graveyard">${t('crm.sort_by', lang)}</span><span id="sort-dir-graveyard" class="text-[10px]">↕</span></button><div id="sort-dropdown-graveyard" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('graveyard', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('graveyard', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('graveyard', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
-            <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10">
+            <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10" id="drawer-graveyard-toolbar" style="display: none;">
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" id="graveyard-select-all" onchange="toggleGraveyardSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
                     <span class="text-xs text-gray-400" id="graveyard-select-all-label">${t('crm.select_all', lang)}</span>
                 </label>
                 <button onclick="purgeSelectedGhosts()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
-                    ${t('crm.graveyard_purge_btn', lang)}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    <span>${t('crm.graveyard_purge_btn', lang)}</span>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
                 <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Globally Tracked Drawer -->
+    <div id="drawer-global" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeGlobalDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-global-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg flex items-center gap-2">🌐 ${t('crm.global_products', lang)}</h3>
+                    <p class="text-xs text-gray-400" id="drawer-global-count">--</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openBulkAddModal()" class="px-3 py-1.5 bg-purple-500/10 text-purple-300 rounded-lg text-xs font-bold hover:bg-purple-500/25 transition border border-purple-500/20 whitespace-nowrap">
+                        ${t('crm.btn_add_products', lang)}
+                    </button>
+                    <button onclick="closeGlobalDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-global" oninput="filterDrawer(this.value, 'drawer-global-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-global" onclick="toggleSortDropdown('global')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-global">${t('crm.sort_by', lang)}</span><span id="sort-dir-global" class="text-[10px]">↕</span></button><div id="sort-dropdown-global" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('global', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('global', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('global', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
+            <div class="px-4 py-2 border-b border-gray-800 bg-red-900/10 flex items-center justify-between" id="drawer-global-toolbar" style="display: none;">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="global-select-all" onchange="toggleGlobalSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
+                    <span class="text-xs text-gray-400">${t('crm.select_all', lang)}</span>
+                </label>
+                <button onclick="deleteSelectedGlobal()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    <span>${t('crm.graveyard_purge_btn', lang)}</span>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-global-items">
+                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Add Modal -->
+    <div id="bulk-add-modal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBulkAddModal()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col" id="bulk-add-modal-content">
+            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
+            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">📦 ${t('crm.bulk_add_title', lang)}</h3>
+                <button onclick="closeBulkAddModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 flex flex-col gap-4">
+                <textarea id="bulk-add-input" rows="8" placeholder="${escapeHtml(t('crm.bulk_add_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition resize-none"></textarea>
+                
+                <div id="bulk-add-preview" class="hidden glass rounded-xl p-3 border border-purple-500/20">
+                    <p class="text-xs font-bold text-purple-400 mb-2">${t('crm.bulk_add_preview', lang)}</p>
+                    <div id="bulk-add-summary-text" class="text-sm font-medium"></div>
+                </div>
+
+                <div class="flex gap-2 justify-end mt-2">
+                    <button onclick="closeBulkAddModal()" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-700 transition">
+                        ${t('crm.confirm_btn_cancel', lang)}
+                    </button>
+                    <button onclick="submitBulkAdd()" id="bulk-add-submit-btn" class="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-500 transition shadow-lg shadow-purple-500/20 flex items-center gap-2">
+                        <span id="bulk-add-btn-text">${t('crm.bulk_add_preview', lang)}</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1555,10 +1804,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
     </div>
 
     <!-- Toast Container -->
-    <div id="toast-container" class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+    <div id="toast-container" class="fixed bottom-6 left-4 right-4 z-[110] flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        const tg = window.Telegram?.WebApp || {};
+        const tg = (window.Telegram && window.Telegram.WebApp) || {};
         if (tg.expand) tg.expand();
         if (tg.ready) tg.ready();
         if (tg.BackButton) tg.BackButton.hide();
@@ -1586,12 +1835,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
 
-        async function fetchAPI(path, method = 'GET', body = null) {
+        async function fetchAPI(path, method = 'GET', body = null, options = {}) {
             if(!initData) return showToast(${js('crm.local_mode_toast')}, "error");
             try {
                 const opts = {
                     method,
-                    headers: { 'Authorization': 'Bearer ' + initData, 'Content-Type': 'application/json' }
+                    headers: { 'Authorization': 'Bearer ' + initData, 'Content-Type': 'application/json' },
+                    ...options
                 };
                 if (body) opts.body = JSON.stringify(body);
                 
@@ -1643,6 +1893,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             document.getElementById('stat-pool').innerText = activeLength;
             document.getElementById('stat-paused').innerText = appData.systemStats.pausedProducts || 0;
             document.getElementById('stat-ghost').innerText = appData.systemStats.ghostProducts || 0;
+            document.getElementById('stat-global').innerText = appData.systemStats.globalProducts || 0;
             const ms = appData.systemStats.lastRunMs;
             document.getElementById('stat-sync').innerText = ms ? new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ${js('crm.never')};
 
@@ -2051,7 +2302,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
                         '<div class="flex-1 min-w-0 pe-2">' +
-                            '<a href="' + escapeHtml(p.detail_page_url || '') + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
+                            '<a href="' + escapeHtml(p.detail_page_url || ('https://www.amazon.eg/dp/' + p.asin)) + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
                             '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
                         '</div>' +
                         '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap shrink-0">' + statusText + '</span>' +
@@ -2105,7 +2356,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
                 html += '</div>';
                 html += '<div class="text-right">';
@@ -2404,7 +2655,6 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 return;
             }
 
-            if (toolbar) toolbar.style.display = 'flex';
             const lang = document.documentElement.lang || 'masry';
             itemsCont.innerHTML = data.items.map((item) => {
                 const isMasry = lang === 'masry';
@@ -2429,7 +2679,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin))}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
@@ -2466,6 +2716,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const searchInput = document.getElementById('search-drawer-paused');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-paused-items'); }
             resetSortUI('paused');
+            const selectAll = document.getElementById('paused-select-all');
+            if (selectAll) selectAll.checked = false;
+            const toolbar = document.getElementById('drawer-paused-toolbar');
+            if (toolbar) toolbar.style.display = 'none';
         }
 
         // ── Paused Products: Bulk Select & Delete ──────────────────────────────────
@@ -2474,13 +2728,25 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const selectAll = document.getElementById('paused-select-all');
             const checkboxes = document.querySelectorAll('.paused-checkbox');
             checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+            updatePausedToolbar();
         }
 
         function updatePausedToolbar() {
-            const checkboxes = document.querySelectorAll('.paused-checkbox');
+            const checkboxesAll = document.querySelectorAll('.paused-checkbox');
+            const checkboxesChecked = document.querySelectorAll('.paused-checkbox:checked');
             const selectAll = document.getElementById('paused-select-all');
-            if (selectAll && checkboxes.length > 0) {
-                selectAll.checked = Array.from(checkboxes).every(cb => cb.checked);
+            const toolbar = document.getElementById('drawer-paused-toolbar');
+            
+            if (selectAll && checkboxesAll.length > 0) {
+                selectAll.checked = checkboxesChecked.length === checkboxesAll.length;
+            }
+            
+            if (toolbar) {
+                if (checkboxesChecked.length > 0) {
+                    toolbar.style.display = 'flex';
+                } else {
+                    toolbar.style.display = 'none';
+                }
             }
         }
 
@@ -2497,32 +2763,16 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             if (!confirmed) return;
 
             try {
-                const res = await fetch('/api/crm/paused/bulk-delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ asins })
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.error || 'Bulk delete failed');
+                const res = await fetchAPI('/paused/bulk-delete', 'POST', { asins });
+                if (res.error) {
+                    throw new Error(res.error || 'Bulk delete failed');
                 }
-
-                // Remove deleted cards from DOM
-                for (const asin of asins) {
-                    const card = document.getElementById('paused-item-' + asin);
-                    if (card) card.remove();
-                }
-
-                // Hide toolbar if no cards left
-                const remaining = document.querySelectorAll('.paused-card');
-                if (remaining.length === 0) {
-                    document.getElementById('drawer-paused-toolbar').style.display = 'none';
-                }
-                document.getElementById('paused-select-all').checked = false;
 
                 if (typeof showToast === 'function') {
-                    showToast(asins.length + ' ' + (lang === 'masry' ? 'منتج اتمسح' : 'product(s) deleted'));
+                    showToast(${js('crm.graveyard_deleted')}.replace('{count}', asins.length));
                 }
+                closePausedDrawer();
+                refreshData();
             } catch (e) {
                 if (typeof showToast === 'function') {
                     showToast(e.message, 'error');
@@ -2568,10 +2818,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const sortName = escapeHtml(name).toLowerCase();
                 const sortAdded = item.last_updated || '';
                 html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="0" data-added="' + sortAdded + '" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
-                html += '<input type="checkbox" onclick="event.stopPropagation()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
+                html += '<input type="checkbox" onclick="event.stopPropagation()" onchange="updateGraveyardToolbar()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || '') + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
                 html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
                 html += '</div></div>';
@@ -2586,7 +2836,324 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const searchInput = document.getElementById('search-drawer-graveyard');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-graveyard-items'); }
             resetSortUI('graveyard');
+            document.getElementById('graveyard-select-all').checked = false;
+            document.getElementById('drawer-graveyard-toolbar').style.display = 'none';
         }
+
+        async function openGlobalDrawer() {
+            const drawer = document.getElementById('drawer-global');
+            const content = document.getElementById('drawer-global-content');
+            const itemsCont = document.getElementById('drawer-global-items');
+
+            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+
+            drawer.classList.remove('hidden');
+            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+
+            const data = await fetchAPI('/global-products');
+            if (!data || !data.items || data.items.length === 0) {
+                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">✅ ' + ${js('crm.global_empty')} + '</div>';
+                document.getElementById('drawer-global-count').innerText = '0 ' + ${js('crm.items_label')};
+                return;
+            }
+
+            document.getElementById('drawer-global-count').innerText = data.items.length + ' ' + ${js('crm.items_label')};
+
+            const lang = document.documentElement.lang || 'masry';
+            let html = '';
+            data.items.forEach(item => {
+                const name = lang === 'masry' && item.name_ar ? escapeHtml(item.name_ar) : escapeHtml(item.name || item.asin);
+                const sortName = escapeHtml(name).toLowerCase();
+                const sortPrice = item.amazon_price || item.new_price || item.used_price || 0;
+                const sortAdded = item.last_updated || '';
+                
+                const btnClass = 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                const btnLabel = ${js('crm.btn_untrack')};
+                const asinEsc = escapeHtml(item.asin);
+
+                const badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-purple-400 bg-purple-400/10">' + ${js('crm.global_products')} + '</span>';
+                
+                let priceHtml = '<div class="text-sm font-semibold text-gray-500">--</div>';
+                if (item.amazon_price) {
+                    priceHtml = '<div class="text-sm font-semibold text-emerald-400"><bdi>' + item.amazon_price.toFixed(2) + '</bdi> <span class="text-[10px] text-emerald-500/70">EGP</span></div>';
+                }
+
+                html += '<div class="glass rounded-xl p-3 border border-purple-500/20 relative overflow-hidden global-card" id="global-item-' + escapeHtml(item.asin) + '" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="' + sortPrice + '" data-added="' + sortAdded + '">';
+                html += '<div class="flex gap-3 mb-2">';
+                html += '<input type="checkbox" class="global-checkbox mt-1 w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer shrink-0" data-asin="' + asinEsc.replace(/'/g, "\\'") + '" onchange="updateGlobalToolbar()">';
+                html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.src=\\'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\\'};">';
+                html += '<div class="flex-1 min-w-0">';
+                html += '<div class="flex items-center justify-between mb-1">';
+                html += '<div class="font-medium text-sm truncate max-w-[60%]"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += badgeHtml;
+                html += '</div>';
+                html += '<div class="flex items-center justify-between text-xs mb-3">';
+                html += '<code class="text-gray-400">' + escapeHtml(item.asin) + '</code>';
+                html += '</div></div></div>';
+                html += '<div class="flex justify-between items-end mb-3">';
+                html += priceHtml;
+                html += '</div>';
+                html += '<div class="grid grid-cols-3 gap-2">';
+                html += '<button onclick="untrackGlobalProduct(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\', this)" class="py-1.5 rounded-lg text-xs font-bold transition border ' + btnClass + '">' + btnLabel + '</button>';
+                html += '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>';
+                html += '<button onclick="openBroadcastModal(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">' + ${js('crm.per_product_broadcast')} + '</button>';
+                html += '</div></div>';
+            });
+            itemsCont.innerHTML = html;
+        }
+
+        function closeGlobalDrawer() {
+            const content = document.getElementById('drawer-global-content');
+            content.style.transform = 'translateY(100%)';
+            setTimeout(() => { document.getElementById('drawer-global').classList.add('hidden'); }, 300);
+            const searchInput = document.getElementById('search-drawer-global');
+            if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-global-items'); }
+            resetSortUI('global');
+            document.getElementById('global-select-all').checked = false;
+            document.getElementById('drawer-global-toolbar').style.display = 'none';
+        }
+
+        function toggleGlobalSelectAll() {
+            const checked = document.getElementById('global-select-all').checked;
+            document.querySelectorAll('.global-card:not([style*="display: none"]) .global-checkbox').forEach(cb => { 
+                cb.checked = checked; 
+            });
+            updateGlobalToolbar();
+        }
+
+        function updateGlobalToolbar() {
+            const checkboxes = document.querySelectorAll('.global-checkbox:checked');
+            const toolbar = document.getElementById('drawer-global-toolbar');
+            if (checkboxes.length > 0) {
+                toolbar.style.display = 'flex';
+            } else {
+                toolbar.style.display = 'none';
+            }
+        }
+
+        async function deleteSelectedGlobal() {
+            const checkboxes = document.querySelectorAll('.global-checkbox:checked');
+            const asins = Array.from(checkboxes).map(cb => cb.dataset.asin);
+            if (asins.length === 0) return;
+
+            const confirmed = await showConfirmDialog(
+                ${js('crm.graveyard_purge_confirm')},
+                ${js('crm.confirm_btn_confirm')},
+                ${js('crm.confirm_btn_cancel')}
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetchAPI('/paused/bulk-delete', 'POST', { asins });
+                if (res.error) {
+                    throw new Error(res.error || 'Bulk delete failed');
+                }
+
+                if (typeof showToast === 'function') {
+                    showToast(${js('crm.graveyard_deleted')}.replace('{count}', asins.length));
+                }
+                closeGlobalDrawer();
+                refreshData();
+            } catch (e) {
+                if (typeof showToast === 'function') {
+                    showToast(e.message, 'error');
+                }
+            }
+        }
+
+        async function untrackGlobalProduct(asin, btn) {
+            const ok = await showConfirmDialog(${js('crm.confirm_untrack')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
+            if (!ok) return;
+            
+            // The auto-removal IIFE in performAction triggers the 'Tracking turned OFF' branch 
+            // only if tracking was previously ON (indicated by the 'bg-emerald' class).
+            btn.classList.add('bg-emerald');
+            await performAction('toggle_keep_alive', 'global', { asin }, btn);
+        }
+
+        function extractAsinsFromText(text) {
+            const tokens = text.split(/[\\s,;\\n]+/).filter(Boolean);
+            const valid = new Set();
+            const invalid = [];
+            
+            function extractAsin(token) {
+                if (/^https?:\\/\\/(?:www\\.)?(?:amazon\\.[a-z\\.]+|amzn\\.(?:to|eu)|a\\.co)/i.test(token)) {
+                    return token;
+                }
+                const direct = token.match(/^([a-zA-Z0-9]{10})$/);
+                if (direct) return direct[1].toUpperCase();
+                const fromUrl = token.match(/\\/(?:dp|gp\\/product|product)\\/([a-zA-Z0-9]{10})/i);
+                if (fromUrl) return fromUrl[1].toUpperCase();
+                const fallback = token.match(/([a-zA-Z0-9]{10})/);
+                if (fallback) return fallback[1].toUpperCase();
+                return null;
+            }
+
+            tokens.forEach(token => {
+                const extracted = extractAsin(token.trim());
+                if (extracted && (/^[A-Z0-9]{10}$/.test(extracted) || /^https?:\\/\\//i.test(extracted))) {
+                    valid.add(extracted);
+                } else {
+                    invalid.push(token);
+                }
+            });
+            return { valid: Array.from(valid), invalid };
+        }
+
+        let bulkAddState = 'input';
+        let bulkAddFinalAsins = [];
+
+        function resetBulkAddModal() {
+            bulkAddState = 'input';
+            bulkAddFinalAsins = [];
+            
+            const btn = document.getElementById('bulk-add-submit-btn');
+            if (btn) {
+                btn.innerHTML = '<span id="bulk-add-btn-text">' + ${js('crm.bulk_add_preview')} + '</span>';
+                btn.disabled = false;
+            }
+
+            const inputEl = document.getElementById('bulk-add-input');
+            if (inputEl) {
+                inputEl.disabled = false;
+                inputEl.classList.remove('opacity-50');
+                inputEl.removeAttribute('dir');
+            }
+            document.getElementById('bulk-add-preview').classList.add('hidden');
+        }
+
+        function openBulkAddModal() {
+            document.getElementById('bulk-add-modal').classList.remove('hidden');
+            setTimeout(() => { document.getElementById('bulk-add-modal-content').style.transform = 'translateY(0)'; }, 10);
+            document.getElementById('bulk-add-input').value = '';
+            resetBulkAddModal();
+        }
+
+        let bulkAddController = null;
+        function closeBulkAddModal() {
+            if (bulkAddController) {
+                bulkAddController.abort();
+                bulkAddController = null;
+            }
+            document.getElementById('bulk-add-modal-content').style.transform = 'translateY(100%)';
+            setTimeout(() => { 
+                document.getElementById('bulk-add-modal').classList.add('hidden'); 
+                resetBulkAddModal();
+            }, 300);
+        }
+
+        async function submitBulkAdd() {
+            const inputEl = document.getElementById('bulk-add-input');
+            const btn = document.getElementById('bulk-add-submit-btn');
+            const originalHtml = btn.innerHTML;
+
+            if (bulkAddState === 'input') {
+                const input = inputEl.value;
+                const { valid, invalid } = extractAsinsFromText(input);
+                
+                if (valid.length === 0) {
+                    showToast(${js('crm.bulk_add_no_valid')}, "error");
+                    return;
+                }
+                if (invalid.length > 0) {
+                    showToast(${js('crm.bulk_add_invalid_list')}.replace('{invalid}', invalid.length), "error");
+                }
+
+                btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+                btn.disabled = true;
+                inputEl.disabled = true;
+                inputEl.classList.add('opacity-50');
+
+                bulkAddController = new AbortController();
+                try {
+                    const data = await fetchAPI('/bulk-add-products', 'POST', { asins: valid, preview: true }, { signal: bulkAddController.signal });
+                    bulkAddController = null;
+
+                    if (data.invalid > 0) {
+                        showToast(${js('crm.bulk_add_invalid_list')}.replace('{invalid}', data.invalid), "warning");
+                    }
+
+                    document.getElementById('bulk-add-preview').classList.remove('hidden');
+                    document.getElementById('bulk-add-summary-text').innerText = 
+                        ${js('crm.bulk_summary')}
+                        .replace('{added}', data.added)
+                        .replace('{upgraded}', data.upgraded)
+                        .replace('{skipped}', data.already_global);
+                    
+                    bulkAddFinalAsins = data.valid_asins || [];
+                    
+                    if (data.details && data.details.length > 0) {
+                        const lang = document.documentElement.lang || 'masry';
+                        const formattedText = data.details.map(item => {
+                            let icon = '❌';
+                            if (item.status === 'added') icon = '🆕';
+                            else if (item.status === 'upgraded') icon = '♻️';
+                            else if (item.status === 'already_global') icon = '⚠️';
+                            
+                            let name = '...';
+                            if (item.asin) {
+                                name = (lang === 'masry' && item.name_ar) ? item.name_ar : (item.name || 'Fetching name...');
+                            } else {
+                                name = 'N/A';
+                            }
+                            
+                            return icon + ' ' + item.input + ' | ' + (item.asin || 'N/A') + ' | ' + name;
+                        }).join('\\n');
+                        inputEl.value = formattedText;
+                        inputEl.setAttribute('dir', 'ltr');
+                    }
+                    
+                    bulkAddState = 'confirm';
+                    btn.innerHTML = '<span id="bulk-add-btn-text">' + ${js('crm.btn_add_products')} + '</span>';
+                } catch (err) {
+                    bulkAddController = null;
+                    inputEl.disabled = false;
+                    inputEl.classList.remove('opacity-50');
+                    if (err.name === 'AbortError') return; // Cancelled by user
+                    let msg = err.message;
+                    if (msg === 'bulk_add_no_valid') msg = ${js('crm.bulk_add_no_valid')};
+                    else if (msg === 'invalid_input') msg = ${js('crm.toast_network_error')};
+                    showToast(msg || ${js('crm.toast_network_error')}, "error");
+                    btn.innerHTML = originalHtml;
+                } finally {
+                    btn.disabled = false;
+                }
+            } else if (bulkAddState === 'confirm') {
+                if (!bulkAddFinalAsins || bulkAddFinalAsins.length === 0) return;
+                
+                btn.innerHTML = '<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+                btn.disabled = true;
+
+                bulkAddController = new AbortController();
+                try {
+                    const data = await fetchAPI('/bulk-add-products', 'POST', { asins: bulkAddFinalAsins, preview: false }, { signal: bulkAddController.signal });
+                    bulkAddController = null;
+
+                    const summaryHtml = ${js('crm.bulk_summary')}
+                        .replace('{added}', data.added)
+                        .replace('{upgraded}', data.upgraded)
+                        .replace('{skipped}', data.already_global);
+                    showToast(summaryHtml, "success");
+                    
+                    refreshData();
+                    const globalDrawer = document.getElementById('drawer-global');
+                    if (globalDrawer && !globalDrawer.classList.contains('hidden')) {
+                        openGlobalDrawer();
+                    }
+                    
+                    setTimeout(() => {
+                        closeBulkAddModal();
+                    }, 1500); // Wait 1.5s then auto-close
+                } catch (err) {
+                    bulkAddController = null;
+                    if (err.name === 'AbortError') return; // Cancelled by user
+                    showToast(err.message || ${js('crm.toast_network_error')}, "error");
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }
+            }
+        }
+
 
         async function openProductSubsDrawer(asin) {
             const drawer = document.getElementById('drawer-product-subs');
@@ -2633,7 +3200,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <img src="\${item.image_url || 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin))}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
                                 \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">${t('crm.user_paused', lang)}</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>'}
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
@@ -2670,11 +3237,22 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function toggleGraveyardSelectAll() {
             const checked = document.getElementById('graveyard-select-all').checked;
             document.querySelectorAll('.graveyard-checkbox').forEach(cb => { cb.checked = checked; });
+            updateGraveyardToolbar();
+        }
+
+        function updateGraveyardToolbar() {
+            const checkboxes = document.querySelectorAll('.graveyard-checkbox:checked');
+            const toolbar = document.getElementById('drawer-graveyard-toolbar');
+            if (checkboxes.length > 0) {
+                toolbar.style.display = 'flex';
+            } else {
+                toolbar.style.display = 'none';
+            }
         }
 
         async function purgeSelectedGhosts() {
             const checkboxes = document.querySelectorAll('.graveyard-checkbox:checked');
-            if (checkboxes.length === 0) return showToast('Select at least one product to purge', 'error');
+            if (checkboxes.length === 0) return showToast(${js('crm.graveyard_select_purge')}, 'error');
 
             const asins = Array.from(checkboxes).map(cb => cb.dataset.asin);
 
@@ -2689,7 +3267,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 closeGraveyardDrawer();
                 refreshData();
             } else {
-                showToast('Purge failed: ' + (res?.error || 'Unknown error'), 'error');
+                showToast(${js('crm.graveyard_purge_failed')}.replace('{err}', ((res && res.error) || 'Unknown error')), 'error');
             }
         }
 
@@ -2923,10 +3501,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 if (json.error) {
                     showToast(json.error, 'error');
                 } else {
-                    showToast(json.message || 'Sync started successfully', 'success');
+                    showToast(${js('crm.toast_sync_started')}, 'success');
                 }
             } catch (err) {
-                showToast('Failed to trigger sync: ' + err.message, 'error');
+                showToast(${js('crm.toast_sync_failed')}.replace('{err}', err.message), 'error');
             } finally {
                 btn.innerHTML = originalContent;
                 btn.disabled = false;
@@ -2938,7 +3516,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             if (action === 'delete_product') {
                 // DEPRECATED: Delete product buttons removed from all card UIs
-                showToast('This action is no longer available.', 'error');
+                showToast(${js('crm.action_unavailable')}, 'error');
                 return;
             }
 
@@ -3013,6 +3591,62 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                             btn.innerHTML = isOn ? ('🟢 ' + ${js('crm.btn_tracking_global')}) 
                                                  : ('📡 ' + ${js('crm.btn_track_global')});
                             btn.dataset.origHtml = btn.innerHTML;
+
+                            // Auto-remove card from drawers where the product no longer belongs
+                            (function(cardBtn) {
+                                var card = null;
+                                var drawerId = null;
+                                var countId = null;
+                                var itemsId = null;
+                                var emptyMsg = null;
+
+                                if (isOn) {
+                                    // Tracking turned ON: remove from Paused drawer
+                                    card = cardBtn.closest('.paused-card');
+                                    if (card) {
+                                        drawerId = 'drawer-paused';
+                                        countId = 'drawer-paused-count';
+                                        itemsId = 'drawer-paused-items';
+                                        emptyMsg = '✅ ' + ${js('crm.empty_paused')};
+                                    }
+                                } else {
+                                    // Tracking turned OFF: remove from Globally Tracked drawer
+                                    card = cardBtn.closest('[id^="global-item-"]');
+                                    if (card) {
+                                        drawerId = 'drawer-global';
+                                        countId = 'drawer-global-count';
+                                        itemsId = 'drawer-global-items';
+                                        emptyMsg = '✅ ' + ${js('crm.global_empty')};
+                                    }
+                                }
+
+                                if (card) {
+                                    card.style.transition = 'opacity 0.3s, transform 0.3s, max-height 0.3s, margin 0.3s, padding 0.3s';
+                                    card.style.opacity = '0';
+                                    card.style.transform = 'translateX(-20px)';
+                                    card.style.maxHeight = '0';
+                                    card.style.margin = '0';
+                                    card.style.padding = '0';
+                                    card.style.overflow = 'hidden';
+                                    setTimeout(function() {
+                                        card.remove();
+                                        // Decrement drawer count
+                                        var countEl = document.getElementById(countId);
+                                        if (countEl) {
+                                            var m = countEl.innerText.match(/^(\d+)/);
+                                            if (m) {
+                                                var newCount = Math.max(0, parseInt(m[1]) - 1);
+                                                countEl.innerText = newCount + ' ' + ${js('crm.items_label')};
+                                            }
+                                        }
+                                        // Show empty state if no items left
+                                        var itemsCont = document.getElementById(itemsId);
+                                        if (itemsCont && itemsCont.children.length === 0) {
+                                            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + emptyMsg + '</div>';
+                                        }
+                                    }, 300);
+                                }
+                            })(btn);
                         }
                     } else if (action.includes('_product') && !btn) {
                         openDrawer(targetId); // legacy refresh
@@ -3284,8 +3918,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const body = document.getElementById('broadcast-deals-body').value.trim();
             if (!title || !body) return;
             const fullText = title + '\\n\\n' + body;
-            const asin = broadcastDealsData?.selectedOption?.asin || broadcastDealsData?.product?.asin || '';
-            const inlineKeyboard = broadcastDealsData?.inline_keyboard;
+            const asin = (broadcastDealsData && broadcastDealsData.selectedOption && broadcastDealsData.selectedOption.asin) || (broadcastDealsData && broadcastDealsData.product && broadcastDealsData.product.asin) || '';
+            const inlineKeyboard = broadcastDealsData && broadcastDealsData.inline_keyboard;
             const lang = document.documentElement.lang || 'masry';
             if (!await showConfirmDialog(${js('crm.confirm_broadcast_send')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) return;
             const btn = document.getElementById('broadcast-deals-confirm-btn');
@@ -3440,8 +4074,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const body = document.getElementById('broadcast-modal-body').value.trim();
             if (!title || !body) return;
             const fullText = title + '\\n\\n' + body;
-            const asin = broadcastModalData?.selectedOption?.asin || broadcastModalData?.product?.asin || broadcastModalAsin || '';
-            const inlineKeyboard = broadcastModalData?.inline_keyboard;
+            const asin = (broadcastModalData && broadcastModalData.selectedOption && broadcastModalData.selectedOption.asin) || (broadcastModalData && broadcastModalData.product && broadcastModalData.product.asin) || broadcastModalAsin || '';
+            const inlineKeyboard = broadcastModalData && broadcastModalData.inline_keyboard;
             const lang = document.documentElement.lang || 'masry';
             if (!await showConfirmDialog(${js('crm.confirm_broadcast_send')}, ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')})) return;
             const btn = document.getElementById('broadcast-modal-confirm-btn');
