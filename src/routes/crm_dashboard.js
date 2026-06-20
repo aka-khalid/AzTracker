@@ -1991,6 +1991,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             // Bottleneck Selection
             const maxRuns = Math.min(cfMaxRuns, amazonMaxRuns);
             const activeBottleneck = cfMaxRuns < amazonMaxRuns ? 'Cloudflare' : 'Amazon';
+            const bottleneckLabel = cfMaxRuns < amazonMaxRuns ? ${js('crm.limit_cloudflare')} : ${js('crm.limit_amazon')};
 
             const intervalMs = Math.floor(86400000 / maxRuns);
 
@@ -2003,7 +2004,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             document.getElementById('engine-interval').innerHTML = intervalMin + ' ' + ${js('crm.minutes_short')};
             
             if (badge) {
-                badge.innerText = activeBottleneck + ' Limit';
+                badge.innerText = bottleneckLabel;
                 badge.classList.remove('hidden');
             }
 

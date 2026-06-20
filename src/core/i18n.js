@@ -376,7 +376,7 @@ const dict = {
     en: "🆔 <code>{asin}</code>",
     masry: "\u200F🆔 \u200E<code>{asin}</code>\u200E"
   },
-  
+
 
 
   // ── Admin: Confirm Revocation ─────────────────────────────────────────────
@@ -1125,7 +1125,7 @@ const dict = {
     masry: "اضغط عشان تشوف التفاصيل"
   },
 
-  
+
   "crm.audit_target": {
     en: "Target:",
     masry: "الهدف:"
@@ -1167,13 +1167,21 @@ const dict = {
     en: "Batches/Run",
     masry: "دفعات/تشغيل"
   },
+  "crm.limit_cloudflare": {
+    en: "CF Limit",
+    masry: "ليميت كلاودفلير"
+  },
+  "crm.limit_amazon": {
+    en: "Amazon Limit",
+    masry: "ليميت أمازون"
+  },
   "crm.engine_status_ok": {
     en: "Healthy",
     masry: "سليم"
   },
   "crm.engine_status_warn": {
     en: "Approaching Limit",
-    masry: "قربت من الحد"
+    masry: "قربت من الليميت"
   },
   "crm.engine_status_critical": {
     en: "Critical",
