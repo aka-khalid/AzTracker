@@ -1697,6 +1697,90 @@ const dict = {
   "crm.subscriptions_text": {
     en: "subscriptions",
     masry: "اشتراك"
+  },
+  "crm.tooltip_pool": {
+    en: "Global Pool",
+    masry: "البركة العامة"
+  },
+  "crm.tooltip_paused": {
+    en: "Paused Subscriptions",
+    masry: "الاشتراكات المتوقفة"
+  },
+  "crm.tooltip_ghost": {
+    en: "Ghost Items",
+    masry: "المنتجات المهجورة"
+  },
+  "crm.tooltip_global": {
+    en: "Global Tracked",
+    masry: "تتبع عام"
+  },
+  "crm.global_products": {
+    en: "Global Products",
+    masry: "منتجات عامة"
+  },
+  "crm.btn_add_products": {
+    en: "Add Products",
+    masry: "ضيف منتجات"
+  },
+  "crm.bulk_add_title": {
+    en: "Bulk Add",
+    masry: "إضافة جماعية"
+  },
+  "crm.bulk_add_placeholder": {
+    en: "Paste ASINs or URLs here...",
+    masry: "حط ASINs أو لينكات هنا..."
+  },
+  "crm.bulk_add_preview": {
+    en: "Preview Items",
+    masry: "معاينة المنتجات"
+  },
+  "crm.graveyard_deleted": {
+    en: "Deleted by Users",
+    masry: "اتمسحت من المستخدمين"
+  },
+  "crm.global_empty": {
+    en: "No global products currently tracked.",
+    masry: "مفيش منتجات متتبعة عامة حالياً."
+  },
+  "crm.btn_untrack": {
+    en: "Untrack",
+    masry: "إلغاء التتبع"
+  },
+  "crm.confirm_untrack": {
+    en: "Are you sure you want to untrack this product globally?",
+    masry: "متأكد إنك عايز تلغي تتبع المنتج ده عام؟"
+  },
+  "crm.bulk_add_no_valid": {
+    en: "No valid products found.",
+    masry: "مفيش منتجات صالحة."
+  },
+  "crm.bulk_add_invalid_list": {
+    en: "Invalid ASINs:",
+    masry: "منتجات غير صالحة:"
+  },
+  "crm.bulk_summary": {
+    en: "Bulk Add Summary",
+    masry: "ملخص الإضافة"
+  },
+  "crm.graveyard_select_purge": {
+    en: "Select Items to Purge",
+    masry: "اختار منتجات عشان تمسحها"
+  },
+  "crm.graveyard_purge_failed": {
+    en: "Purge Failed",
+    masry: "فشل المسح"
+  },
+  "crm.toast_sync_started": {
+    en: "Sync Started...",
+    masry: "بدأ المزامنة..."
+  },
+  "crm.toast_sync_failed": {
+    en: "Sync Failed",
+    masry: "المزامنة فشلت"
+  },
+  "crm.action_unavailable": {
+    en: "Action Unavailable",
+    masry: "الإجراء مش متاح"
   }
 };
 
