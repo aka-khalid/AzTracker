@@ -1703,8 +1703,8 @@ const dict = {
     masry: "عرض كل اشتراكات المستخدمين النشطة"
   },
   "crm.tooltip_paused": {
-    en: "View orphaned products with no active subscribers",
-    masry: "عرض المنتجات المهجورة اللي مفيش مستخدمين نشطين بيتابعوها"
+    en: "View products currently with zero active subscriptions",
+    masry: "عرض المنتجات اللي مفيش ليها أي اشتراكات نشطة حالياً"
   },
   "crm.tooltip_ghost": {
     en: "View and purge delisted or out-of-stock products",

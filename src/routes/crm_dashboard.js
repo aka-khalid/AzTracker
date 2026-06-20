@@ -2080,9 +2080,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const date = new Date(log.ts);
                 const timeStr = date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-                const adminDisplay = log.adminHandle ? escapeHtml(log.adminHandle) + ' <span class="text-[10px] opacity-60">(' + escapeHtml(log.adminId) + ')</span>' : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.adminId) + '</code>';
+                const adminDisplay = log.adminHandle ? escapeHtml(log.adminHandle) : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.adminId) + '</code>';
                 let targetDisplay = '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.target) + '</code>';
-                if (log.targetHandle) targetDisplay = escapeHtml(log.targetHandle) + ' <span class="text-[10px] opacity-60">(' + escapeHtml(log.target) + ')</span>';
+                if (log.targetHandle) targetDisplay = escapeHtml(log.targetHandle);
                 const actionEsc = escapeHtml(log.action);
 
                 let detailsStr = log.details || '';
