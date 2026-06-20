@@ -51,7 +51,7 @@ export async function scheduled(event, env, ctx) {
             }
         }
 
-        // 2. AIMD Daily Probe (TCP Slow Start & Congestion Avoidance)
+        // 2. Fetch Dynamic Limits
         const todayStr = new Date().toISOString().split('T')[0];
         const lastProbeStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'amazon_last_probe_date'").first('value');
         
@@ -64,21 +64,7 @@ export async function scheduled(event, env, ctx) {
         let currentLimit = parseInt(currentLimitStr || (env.AMAZON_DAILY_LIMIT || '8640'), 10);
         const ssthresh = ssthreshStr ? parseInt(ssthreshStr, 10) : Infinity;
 
-        if (lastProbeStr !== todayStr && env.AZTRACKER_DB) {
-            if (currentLimit < ssthresh) {
-                // Safe Territory: Slow Start (+50%)
-                currentLimit = Math.floor(currentLimit * 1.50);
-                console.log(`[GOVERNOR] 📈 Daily Probe (Slow Start): Limit increased to ${currentLimit}`);
-            } else {
-                // Danger Zone: Congestion Avoidance (+5%)
-                currentLimit = Math.floor(currentLimit * 1.05);
-                console.log(`[GOVERNOR] 🐢 Daily Probe (Cruising): Limit increased to ${currentLimit}`);
-            }
-            await env.AZTRACKER_DB.put('amazon_dynamic_limit', currentLimit.toString());
-            await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('amazon_last_probe_date', ?, ?)").bind(todayStr, now + 86400000 * 30).run();
-        }
-
-        // 3. Dynamic Governor Logic
+        // 3. Dynamic Governor Logic & Bottleneck Selection
         const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');
         const lastRunMs = lastRunStr ? parseInt(lastRunStr, 10) : 0;
         
@@ -109,6 +95,26 @@ export async function scheduled(event, env, ctx) {
         // Bottleneck selection
         const maxRuns = Math.min(cfMaxRuns, amazonMaxRuns);
         const activeBottleneck = cfMaxRuns < amazonMaxRuns ? 'CLOUDFLARE' : 'AMAZON';
+
+        // 4. AIMD Daily Probe (TCP Slow Start & Congestion Avoidance)
+        if (lastProbeStr !== todayStr && env.AZTRACKER_DB) {
+            if (activeBottleneck === 'AMAZON') {
+                if (currentLimit < ssthresh) {
+                    // Safe Territory: Slow Start (+50%)
+                    currentLimit = Math.floor(currentLimit * 1.50);
+                    console.log(`[GOVERNOR] 🚀 Daily Probe (Slow Start): Limit increased to ${currentLimit}`);
+                } else {
+                    // Danger Zone: Congestion Avoidance (+5%)
+                    currentLimit = Math.floor(currentLimit * 1.05);
+                    console.log(`[GOVERNOR] 🛸 Daily Probe (Cruising): Limit increased to ${currentLimit}`);
+                }
+                await env.AZTRACKER_DB.put('amazon_dynamic_limit', currentLimit.toString());
+            } else {
+                console.log(`[GOVERNOR] 🛡️ Daily Probe Skipped: Engine is safely bottlenecked by Cloudflare. Amazon limit was not tested.`);
+            }
+            await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('amazon_last_probe_date', ?, ?)").bind(todayStr, now + 86400000 * 30).run();
+        }
+
         const intervalMs = Math.floor(86400000 / maxRuns);
 
         console.log(`[GOVERNOR] Bottleneck: ${activeBottleneck} | Max Runs: ${maxRuns} | Calc -> intervalMs: ${intervalMs} | Time since last run: ${now - lastRunMs}`);
