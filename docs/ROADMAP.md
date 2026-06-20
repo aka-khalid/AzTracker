@@ -14,7 +14,7 @@ This document tracks the technical debt, security fortifications, feature expans
 
   **Execution Highlights:**
   - **Dual-Governor Throttle:** Replaced static calculation with `Math.min(cloudflareLimit, amazonLimit)` to perfectly space batched executions across the strictest bottleneck.
-  - **AIMD Night Probes:** Configured the bot to run a daily probe at Midnight UTC. In safe territory, it scales aggressively (+50% Slow Start); near the threshold (`ssthresh`), it crawls gently (+5% Congestion Avoidance).
+  - **AIMD Night Probes:** Configured the bot to run a daily probe at Midnight UTC. In safe territory, it scales aggressively (+50% Slow Start); near the threshold (`ssthresh`), it crawls gently (+5% Congestion Avoidance). *Crucially, to prevent untested exponential growth, this probe only triggers if Amazon is actively bottlenecking the engine.*
   - **Hibernation State:** Decoupled 429 quota exhaustion from generic 503 circuit-breaker trips. A proven 429 triggers a 10% penalty slap and sends the scraper engine into a `cooldownMs` deep sleep exactly until the next Midnight UTC.
   - **50% API Cost Reduction:** Shifted Arabic title enrichment to a strictly `name_ar` missing database filter, preventing wasteful requests for static titles and instantly halving API consumption per cycle.
   - **IP-Based Rate Limiting:** Implemented CF-edge IP extraction (`cf-connecting-ip`) across all `user_dashboard` endpoints and wildcard routers to thwart malicious scanning and rapid-fire API abuse.
