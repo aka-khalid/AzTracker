@@ -25,5 +25,8 @@
     "@cloudflare/workers-types": "^4.20260606.1",
     "puppeteer": "^25.1.0",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0"
   }
 }
