@@ -427,7 +427,7 @@ export async function fetchAPI(request, env, ctx) {
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
       try {
-        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes, globalRes, hardwareCronRes] = await Promise.all([
+        const [usersRes, totalProductsRes, lastUpdatedRes, pausedRes, ghostRes, globalRes, hardwareCronRes, amazonLimitRes] = await Promise.all([
           env.DB.prepare(`
             SELECT u.*, COUNT(s.asin) as active_items
             FROM Users u
@@ -440,7 +440,8 @@ export async function fetchAPI(request, env, ctx) {
           env.DB.prepare("SELECT COUNT(*) as pausedCount FROM (SELECT g.asin FROM Global_Products g LEFT JOIN User_Subscriptions s ON g.asin = s.asin WHERE g.always_track = 0 AND g.delisted = 0 AND (g.last_updated = 0 OR g.new_price IS NOT NULL OR g.used_price IS NOT NULL OR g.amazon_price IS NOT NULL) GROUP BY g.asin HAVING SUM(CASE WHEN s.is_paused = 0 THEN 1 ELSE 0 END) = 0)").first(),
           env.DB.prepare("SELECT COUNT(*) as ghostCount FROM Global_Products WHERE delisted = 1 OR (last_updated > 0 AND new_price IS NULL AND used_price IS NULL AND amazon_price IS NULL)").first(),
           env.DB.prepare("SELECT COUNT(*) as globalCount FROM Global_Products WHERE always_track = 1 AND delisted = 0 AND (last_updated = 0 OR new_price IS NOT NULL OR used_price IS NOT NULL OR amazon_price IS NOT NULL) AND asin NOT IN (SELECT DISTINCT asin FROM User_Subscriptions WHERE is_paused = 0)").first(),
-          env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value')
+          env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'hardware_cron_interval'").first('value'),
+          env.AZTRACKER_DB ? env.AZTRACKER_DB.get('amazon_dynamic_limit') : null
         ]);
         
         const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || "";
@@ -494,6 +495,7 @@ export async function fetchAPI(request, env, ctx) {
             ghostProducts: ghostRes ? ghostRes.ghostCount : 0,
             globalProducts: globalRes ? globalRes.globalCount : 0,
             hardwareIntervalMs: hardwareCronRes || "300000",
+            amazonLimit: amazonLimitRes || "2000",
             queueLimit: env.DAILY_QUEUE_LIMIT || "10000"
           },
           joinQueue: joinQueueRes || [],
@@ -1968,11 +1970,22 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 return;
             }
 
-            // Exact same math as cron_trigger.js
+            // Dual Governor Math (Exact replication of cron_trigger.js)
             const batches = Math.ceil(poolSize / 10);
-            const opsLimit = parseInt(appData.systemStats.queueLimit || '10000', 10);
-            const dailyMessageBudget = Math.floor((opsLimit * 0.9) / 3);
-            const maxRuns = Math.floor(dailyMessageBudget / batches);
+            
+            // 1. CF Budget
+            const cfOpsLimit = parseInt(appData.systemStats.queueLimit || '10000', 10);
+            const dailyMessageBudget = Math.floor((cfOpsLimit * 0.9) / 3);
+            const cfMaxRuns = Math.max(1, Math.floor(dailyMessageBudget / batches));
+            
+            // 2. Amazon Budget
+            const amazonOpsLimit = parseInt(appData.systemStats.amazonLimit || '2000', 10);
+            const amazonMaxRuns = Math.max(1, Math.floor(amazonOpsLimit / batches));
+
+            // Bottleneck Selection
+            const maxRuns = Math.min(cfMaxRuns, amazonMaxRuns);
+            const activeBottleneck = cfMaxRuns < amazonMaxRuns ? 'Cloudflare' : 'Amazon';
+
             const intervalMs = Math.floor(86400000 / maxRuns);
 
             // Fetch dynamic hardware cron interval from systemStats (default 5 mins)
@@ -1981,10 +1994,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             // Format interval for display, clamping to actual hardware cron limit
             const intervalMin = Math.max(hardwareIntervalMin, Math.round(intervalMs / 60000));
-            document.getElementById('engine-interval').innerText = intervalMin + ' ' + ${js('crm.minutes_short')};
+            document.getElementById('engine-interval').innerHTML = intervalMin + ' ' + ${js('crm.minutes_short')} + '<span class="block text-[9px] text-gray-500 font-normal mt-0.5">' + activeBottleneck + ' Limit</span>';
 
             // Actual engine runs per day are strictly bounded by the dynamic hardware cron trigger
-            // 86,400,000 ms per day / hardwareIntervalMs = max hardware wake-ups per day.
             const actualRunsPerDay = Math.floor(86400000 / Math.max(hardwareIntervalMs, intervalMs));
 
             // Daily Queue Operations = actual runs * batches * 3 (1 message = write + read + delete)
@@ -1994,7 +2006,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             document.getElementById('engine-batches').innerText = batches;
 
             // Status: color-code based on how close to daily ops limit
-            const opsRatio = dailyOps / opsLimit;
+            const opsRatio = dailyOps / cfOpsLimit;
             const dot = document.getElementById('engine-status-dot');
             const text = document.getElementById('engine-status-text');
 
