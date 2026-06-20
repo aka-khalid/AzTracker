@@ -1759,8 +1759,8 @@ const dict = {
     masry: "{invalid} منتج مش صالح:"
   },
   "crm.bulk_summary": {
-    en: "Bulk Add Summary",
-    masry: "ملخص الإضافة"
+    en: "{added} New | {upgraded} Upgraded | {skipped} Skipped",
+    masry: "{added} جديد | {upgraded} اترقى | {skipped} تم تخطيه"
   },
   "crm.graveyard_select_purge": {
     en: "Select at least one product to purge",
