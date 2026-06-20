@@ -495,7 +495,7 @@ export async function fetchAPI(request, env, ctx) {
             ghostProducts: ghostRes ? ghostRes.ghostCount : 0,
             globalProducts: globalRes ? globalRes.globalCount : 0,
             hardwareIntervalMs: hardwareCronRes || "300000",
-            amazonLimit: amazonLimitRes || "2000",
+            amazonLimit: amazonLimitRes || "8640",
             queueLimit: env.DAILY_QUEUE_LIMIT || "10000"
           },
           joinQueue: joinQueueRes || [],
@@ -1979,7 +1979,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const cfMaxRuns = Math.max(1, Math.floor(dailyMessageBudget / batches));
             
             // 2. Amazon Budget
-            const amazonOpsLimit = parseInt(appData.systemStats.amazonLimit || '2000', 10);
+            const amazonOpsLimit = parseInt(appData.systemStats.amazonLimit || '8640', 10);
             const amazonMaxRuns = Math.max(1, Math.floor(amazonOpsLimit / batches));
 
             // Bottleneck Selection
