@@ -1699,20 +1699,20 @@ const dict = {
     masry: "اشتراك"
   },
   "crm.tooltip_pool": {
-    en: "Global Pool",
-    masry: "البركة العامة"
+    en: "View all active user subscriptions",
+    masry: "عرض كل اشتراكات المستخدمين النشطة"
   },
   "crm.tooltip_paused": {
-    en: "Paused Subscriptions",
-    masry: "الاشتراكات المتوقفة"
+    en: "View orphaned products with no active subscribers",
+    masry: "عرض المنتجات المهجورة اللي مفيش مستخدمين نشطين بيتابعوها"
   },
   "crm.tooltip_ghost": {
-    en: "Ghost Items",
-    masry: "المنتجات المهجورة"
+    en: "View and purge delisted or out-of-stock products",
+    masry: "عرض ومسح المنتجات اللي اتشالت أو خلصت من المخزن"
   },
   "crm.tooltip_global": {
-    en: "Global Tracked",
-    masry: "تتبع عام"
+    en: "Manage globally tracked system products",
+    masry: "إدارة المنتجات اللي بتتتبع بشكل عام في النظام"
   },
   "crm.global_products": {
     en: "Global Products",
@@ -1720,27 +1720,27 @@ const dict = {
   },
   "crm.btn_add_products": {
     en: "Add Products",
-    masry: "ضيف منتجات"
+    masry: "إضافة منتجات"
   },
   "crm.bulk_add_title": {
     en: "Bulk Add",
-    masry: "إضافة جماعية"
+    masry: "إضافة مجموعة منتجات"
   },
   "crm.bulk_add_placeholder": {
     en: "Paste ASINs or URLs here...",
-    masry: "حط ASINs أو لينكات هنا..."
+    masry: "حط الـ ASINs أو لينكات أمازون هنا..."
   },
   "crm.bulk_add_preview": {
     en: "Preview Items",
     masry: "معاينة المنتجات"
   },
   "crm.graveyard_deleted": {
-    en: "Deleted by Users",
-    masry: "اتمسحت من المستخدمين"
+    en: "{count} product(s) deleted",
+    masry: "{count} منتج اتمسح"
   },
   "crm.global_empty": {
     en: "No global products currently tracked.",
-    masry: "مفيش منتجات متتبعة عامة حالياً."
+    masry: "مفيش منتجات عامة بتتتبع دلوقتي."
   },
   "crm.btn_untrack": {
     en: "Untrack",
@@ -1748,39 +1748,39 @@ const dict = {
   },
   "crm.confirm_untrack": {
     en: "Are you sure you want to untrack this product globally?",
-    masry: "متأكد إنك عايز تلغي تتبع المنتج ده عام؟"
+    masry: "متأكد إنك عايز تلغي التتبع العام للمنتج ده؟"
   },
   "crm.bulk_add_no_valid": {
     en: "No valid products found.",
-    masry: "مفيش منتجات صالحة."
+    masry: "ملقيناش منتجات صالحة."
   },
   "crm.bulk_add_invalid_list": {
-    en: "Invalid ASINs:",
-    masry: "منتجات غير صالحة:"
+    en: "{invalid} invalid ASIN(s):",
+    masry: "{invalid} منتج مش صالح:"
   },
   "crm.bulk_summary": {
     en: "Bulk Add Summary",
     masry: "ملخص الإضافة"
   },
   "crm.graveyard_select_purge": {
-    en: "Select Items to Purge",
-    masry: "اختار منتجات عشان تمسحها"
+    en: "Select at least one product to purge",
+    masry: "اختار منتج واحد على الأقل عشان تمسحه"
   },
   "crm.graveyard_purge_failed": {
-    en: "Purge Failed",
-    masry: "فشل المسح"
+    en: "Purge failed: {err}",
+    masry: "المسح فشل: {err}"
   },
   "crm.toast_sync_started": {
-    en: "Sync Started...",
-    masry: "بدأ المزامنة..."
+    en: "Sync started successfully",
+    masry: "عملية المزامنة بدأت بنجاح"
   },
   "crm.toast_sync_failed": {
-    en: "Sync Failed",
-    masry: "المزامنة فشلت"
+    en: "Failed to trigger sync: {err}",
+    masry: "فشل بدأ المزامنة: {err}"
   },
   "crm.action_unavailable": {
-    en: "Action Unavailable",
-    masry: "الإجراء مش متاح"
+    en: "This action is no longer available.",
+    masry: "الإجراء ده مبقاش متاح."
   }
 };
 
