@@ -4,6 +4,24 @@ This document tracks the technical debt, security fortifications, feature expans
 
 ## 🚀 Active Architecture: Core Engine Modernization (Phase 6)
 
+- [x] **Phase 6.17: True Dynamic Governor, AIMD Probing & Edge Hardening**
+  <details>
+  <summary><b>View Execution Brief</b></summary>
+
+  **The Goal:** Eliminate rigid Cloudflare-bound limits, prevent sustained Amazon 429 blackouts through intelligent self-throttling, protect user endpoints from DDoS abuse, and optimize legacy codebase remnants.
+
+  **The Strategy:** Deployed a True Dynamic Dual-Governor inside `cron_trigger.js` that balances Cloudflare Queue capacity against the Amazon daily API quota. Integrated a TCP AIMD (Additive Increase, Multiplicative Decrease) probing algorithm to auto-tune API limits. Added a deep-sleep `exhausted` hibernation state upon confirmed quota depletion. Secured all API routes with strict IP-based Rate Limiting, simplified broadcasting logic, and finalized the eradication of dead product URL mapping code.
+
+  **Execution Highlights:**
+  - **Dual-Governor Throttle:** Replaced static calculation with `Math.min(cloudflareLimit, amazonLimit)` to perfectly space batched executions across the strictest bottleneck.
+  - **AIMD Night Probes:** Configured the bot to run a daily probe at Midnight UTC. In safe territory, it scales aggressively (+50% Slow Start); near the threshold (`ssthresh`), it crawls gently (+5% Congestion Avoidance).
+  - **Hibernation State:** Decoupled 429 quota exhaustion from generic 503 circuit-breaker trips. A proven 429 triggers a 10% penalty slap and sends the scraper engine into a `cooldownMs` deep sleep exactly until the next Midnight UTC.
+  - **50% API Cost Reduction:** Shifted Arabic title enrichment to a strictly `name_ar` missing database filter, preventing wasteful requests for static titles and instantly halving API consumption per cycle.
+  - **IP-Based Rate Limiting:** Implemented CF-edge IP extraction (`cf-connecting-ip`) across all `user_dashboard` endpoints and wildcard routers to thwart malicious scanning and rapid-fire API abuse.
+  - **CRM Animation Polish:** Injected smooth CSS transitions into the CRM dashboard to auto-hide cards dynamically when admins toggle the `always_track` Keep-Alive switch.
+  - **Broadcast Simplification:** Scrapped the bloated analytical broadcast header in favor of a punchy, affiliate-optimized two-tier system (`🔥 الحق 🔥` vs `⚡ عرض ⚡`). Added promo channel buttons natively to private target-hit alerts.
+  </details>
+
 - [x] **Phase 6.14: Statistical Engine Overhaul & Global Abandoned Tracking**
   <details>
   <summary><b>View Execution Brief</b></summary>
