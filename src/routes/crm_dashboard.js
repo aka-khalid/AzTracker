@@ -376,19 +376,46 @@ export async function fetchAPI(request, env, ctx) {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });
 
-      const { results } = await env.DB.prepare("SELECT * FROM Audit_Logs ORDER BY timestamp DESC LIMIT 50").all();
+      const query = `
+        SELECT a.*, 
+               u1.first_name as actor_first, u1.username as actor_user,
+               u2.first_name as target_first, u2.username as target_user
+        FROM Audit_Logs a
+        LEFT JOIN Users u1 ON a.actor_id = u1.chat_id
+        LEFT JOIN Users u2 ON a.target_id = u2.chat_id
+        ORDER BY a.timestamp DESC 
+        LIMIT 50
+      `;
+
+      const { results } = await env.DB.prepare(query).all();
       const logs = results.map(row => {
         const payload = row.details ? JSON.parse(row.details) : {};
+        
+        let adminHandle = row.actor_id;
+        if (row.actor_first || row.actor_user) {
+          const fn = row.actor_first || '';
+          const un = row.actor_user ? `@${row.actor_user}` : null;
+          adminHandle = un ? `${fn} (${un})`.trim() : fn;
+        }
+
+        let targetHandle = payload.targetHandle || row.target_id;
+        if (row.target_first || row.target_user) {
+          const fn = row.target_first || '';
+          const un = row.target_user ? `@${row.target_user}` : null;
+          targetHandle = un ? `${fn} (${un})`.trim() : fn;
+        }
+
         return {
           ts: row.timestamp,
           adminId: row.actor_id,
-          adminHandle: row.actor_name,
+          adminHandle: adminHandle || row.actor_name || row.actor_id,
           action: row.action,
           target: row.target_id,
-          targetHandle: payload.targetHandle,
-          details: payload.details
+          targetHandle: targetHandle,
+          details: payload.details !== undefined ? payload.details : payload
         };
       });
+      
       return new Response(JSON.stringify(logs), {
         status: 200,
         headers: { "Content-Type": "application/json" }

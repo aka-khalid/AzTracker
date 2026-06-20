@@ -77,39 +77,16 @@ export async function resolveUserProfile(env, id, ctx) {
 
 export async function logAudit(env, adminId, action, target, details) {
   try {
-    let adminHandle = adminId.toString();
-    const { results: adminRows } = await env.DB.prepare(
-      "SELECT first_name, username FROM Users WHERE chat_id = ?"
-    ).bind(adminId.toString()).all();
-    if (adminRows && adminRows.length > 0) {
-      const admin = adminRows[0];
-      const fullName = admin.first_name || '';
-      const handle = admin.username ? `@${admin.username}` : null;
-      adminHandle = handle ? `${fullName} (${handle})` : fullName || adminId.toString();
-    }
-
-    let targetHandle = null;
-    if (/^\d{6,15}$/.test(target)) {
-      const { results: targetRows } = await env.DB.prepare(
-        "SELECT first_name, username FROM Users WHERE chat_id = ?"
-      ).bind(target.toString()).all();
-      if (targetRows && targetRows.length > 0) {
-        const tUser = targetRows[0];
-        const fullName = tUser.first_name || '';
-        const handle = tUser.username ? `@${tUser.username}` : null;
-        targetHandle = handle ? `${fullName} (${handle})` : fullName || null;
-      }
-    }
-
     const timestamp = Date.now();
     const auditValues = [
       timestamp,
       adminId.toString(),
-      adminHandle,
+      null, // actor_name is no longer explicitly resolved here; handled by JOINs
       action,
       target ? target.toString() : null,
-      JSON.stringify({ targetHandle, details })
+      details ? JSON.stringify(details) : null
     ];
+    
     // Retry up to 3 times with exponential backoff
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
