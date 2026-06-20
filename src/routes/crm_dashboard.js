@@ -1405,7 +1405,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 <!-- Engine Health Widget -->
                 <div class="mt-3 glass rounded-xl p-4" id="engine-health-widget">
                     <div class="flex items-center justify-between mb-2">
-                        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider">${t('crm.engine_health', lang)}</div>
+                        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                            ${t('crm.engine_health', lang)}
+                            <span id="engine-bottleneck-badge" class="px-1.5 py-0.5 rounded text-[9px] font-medium bg-gray-800 text-gray-400 hidden border border-gray-700"></span>
+                        </div>
                         <div class="flex items-center gap-1.5">
                             <div class="w-2 h-2 rounded-full bg-green-500" id="engine-status-dot"></div>
                             <span class="text-xs font-medium text-green-400" id="engine-status-text">--</span>
@@ -1958,8 +1961,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         // Engine Health: replicates cron_trigger.js governor math in-browser
-        // Reuses poolSize from systemStats — zero extra D1 reads
+        // Reuses poolSize from systemStats - zero extra D1 reads
         function renderEngineHealth(poolSize) {
+            const badge = document.getElementById('engine-bottleneck-badge');
+            if (badge) badge.classList.add('hidden');
+            
             if (poolSize === 0) {
                 document.getElementById('engine-interval').innerText = 'N/A';
                 document.getElementById('engine-daily-ops').innerText = '0';
@@ -1994,7 +2000,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             // Format interval for display, clamping to actual hardware cron limit
             const intervalMin = Math.max(hardwareIntervalMin, Math.round(intervalMs / 60000));
-            document.getElementById('engine-interval').innerHTML = intervalMin + ' ' + ${js('crm.minutes_short')} + '<span class="block text-[9px] text-gray-500 font-normal mt-0.5">' + activeBottleneck + ' Limit</span>';
+            document.getElementById('engine-interval').innerHTML = intervalMin + ' ' + ${js('crm.minutes_short')};
+            
+            if (badge) {
+                badge.innerText = activeBottleneck + ' Limit';
+                badge.classList.remove('hidden');
+            }
 
             // Actual engine runs per day are strictly bounded by the dynamic hardware cron trigger
             const actualRunsPerDay = Math.floor(86400000 / Math.max(hardwareIntervalMs, intervalMs));
