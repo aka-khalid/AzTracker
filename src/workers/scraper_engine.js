@@ -7,7 +7,7 @@ const AMAZON_RESALE_MERCHANT_ID = "A2N2MP47XAP1MK";
 const TELEGRAM_MSG_LIMIT = 4096;
 
 // ── Amazon API Circuit Breaker ──────────────────────────────────────────────
-// States: "closed" (normal) | "open" (failing, reject fast) | "half_open" (testing)
+// States: "closed" (normal) | "open" (failing, reject fast) | "half_open" (testing) | "exhausted" (hibernating)
 const CB_KEY = "amazon_api_circuit_breaker";
 const CB_FAILURE_THRESHOLD = 5;   // consecutive failures before opening
 const CB_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown before half-open
@@ -15,13 +15,16 @@ const CB_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown before half-open
 export async function checkCircuitBreaker(env) {
   try {
     const state = JSON.parse(await env.AZTRACKER_DB.get(CB_KEY) || '{"state":"closed","failures":0}');
-    if (state.state === "open") {
-      if (Date.now() - (state.openedAt || 0) > CB_COOLDOWN_MS) {
+    if (state.state === "open" || state.state === "exhausted") {
+      let cooldown = CB_COOLDOWN_MS;
+      if (state.state === "exhausted" && state.cooldownMs) cooldown = state.cooldownMs;
+      
+      if (Date.now() - (state.openedAt || 0) > cooldown) {
         state.state = "half_open";
         await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify(state));
         return "half_open";
       }
-      return "open";
+      return state.state;
     }
     return state.state; // "closed" or "half_open"
   } catch (e) {
@@ -35,17 +38,50 @@ export async function recordCircuitSuccess(env) {
   } catch (e) { /* non-blocking */ }
 }
 
-export async function recordCircuitFailure(env) {
+export async function recordCircuitFailure(env, error = null) {
   try {
     const state = JSON.parse(await env.AZTRACKER_DB.get(CB_KEY) || '{"state":"closed","failures":0}');
+    const is429 = error && (error.status === 429 || (error.message && error.message.includes('429')));
+    const now = Date.now();
+
+    if (state.state === "half_open" && is429) {
+      // True Quota Exhaustion
+      const lastSlap = await env.AZTRACKER_DB.get('amazon_last_slap_date') || "0";
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      if (lastSlap !== todayStr) {
+        const currentLimitStr = await env.AZTRACKER_DB.get('amazon_dynamic_limit');
+        const currentLimit = parseInt(currentLimitStr || '8640', 10);
+        const newLimit = Math.max(10, Math.floor(currentLimit * 0.90)); // 10% Slap
+        
+        await env.AZTRACKER_DB.put('amazon_dynamic_limit', newLimit.toString());
+        await env.AZTRACKER_DB.put('amazon_ssthresh', newLimit.toString());
+        await env.AZTRACKER_DB.put('amazon_last_slap_date', todayStr);
+        console.warn(`[GOVERNOR] 🚨 True 429 Exhaustion proven! Slapped dynamic limit to ${newLimit}. ssthresh set to ${newLimit}.`);
+      }
+
+      // Hibernate until Midnight UTC
+      const d = new Date();
+      d.setUTCHours(24, 0, 0, 0); // Next Midnight UTC
+      const msUntilMidnight = d.getTime() - now;
+
+      state.state = "exhausted";
+      state.openedAt = now;
+      state.cooldownMs = msUntilMidnight;
+      state.failures = 0;
+      console.warn(`[CircuitBreaker] 💤 Hibernating until midnight UTC (${Math.floor(msUntilMidnight / 60000)} minutes remaining).`);
+      await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify(state));
+      return;
+    }
+
     state.failures = (state.failures || 0) + 1;
     if (state.failures >= CB_FAILURE_THRESHOLD) {
       state.state = "open";
-      state.openedAt = Date.now();
+      state.openedAt = now;
       console.error(`[CircuitBreaker] Amazon API circuit OPENED after ${state.failures} failures`);
     }
     await env.AZTRACKER_DB.put(CB_KEY, JSON.stringify(state));
-  } catch (e) { /* non-blocking */ }
+  } catch (e) { console.error("[CircuitBreaker] Record error failed:", e); }
 }
 
 /**
@@ -69,8 +105,8 @@ export async function executeScrapeEngine(env, offset = 0) {
 
   // Check circuit breaker before any Amazon API calls
   const cbState = await checkCircuitBreaker(env);
-  if (cbState === "open") {
-    console.warn("[CircuitBreaker] Amazon API circuit is OPEN — skipping scrape batch");
+  if (cbState === "open" || cbState === "exhausted") {
+    console.warn(`[CircuitBreaker] Amazon API circuit is ${cbState.toUpperCase()} — skipping scrape batch`);
     return false;
   }
 
@@ -84,7 +120,7 @@ export async function executeScrapeEngine(env, offset = 0) {
       await env.AZTRACKER_DB.put('amazon_access_token', accessToken, { expirationTtl: 3300 }); // 55 minutes
     } catch (e) {
       console.error("Failed to acquire Amazon Access Token:", e);
-      await recordCircuitFailure(env);
+      await recordCircuitFailure(env, e);
       return false; // Abort chain on auth failure
     }
   }
@@ -101,13 +137,14 @@ export async function executeScrapeEngine(env, offset = 0) {
     }
   } catch (error) {
     console.error("Creators API error in executeScrapeEngine:", error);
-    await recordCircuitFailure(env);
+    await recordCircuitFailure(env, error);
     throw error; // Throw so the queue retries this specific offset
   }
 
   // Fetch Arabic product names (Creators API with languagesOfPreference: ar_AE)
   try {
-    const arabicNames = await parser.getItemsWithArabic(asins);
+    const asinsMissingArabic = staleProducts.filter(p => !p.name_ar).map(p => p.asin);
+    const arabicNames = asinsMissingArabic.length > 0 ? await parser.getItemsWithArabic(asinsMissingArabic) : new Map();
     for (const item of liveItems) {
       if (arabicNames.has(item.asin)) {
         item.name_ar = arabicNames.get(item.asin);

@@ -51,7 +51,34 @@ export async function scheduled(event, env, ctx) {
             }
         }
 
-        // 2. Dynamic Governor Logic
+        // 2. AIMD Daily Probe (TCP Slow Start & Congestion Avoidance)
+        const todayStr = new Date().toISOString().split('T')[0];
+        const lastProbeStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'amazon_last_probe_date'").first('value');
+        
+        let currentLimitStr = null;
+        let ssthreshStr = null;
+        if (env.AZTRACKER_DB) {
+            currentLimitStr = await env.AZTRACKER_DB.get('amazon_dynamic_limit');
+            ssthreshStr = await env.AZTRACKER_DB.get('amazon_ssthresh');
+        }
+        let currentLimit = parseInt(currentLimitStr || (env.AMAZON_DAILY_LIMIT || '8640'), 10);
+        const ssthresh = ssthreshStr ? parseInt(ssthreshStr, 10) : Infinity;
+
+        if (lastProbeStr !== todayStr && env.AZTRACKER_DB) {
+            if (currentLimit < ssthresh) {
+                // Safe Territory: Slow Start (+50%)
+                currentLimit = Math.floor(currentLimit * 1.50);
+                console.log(`[GOVERNOR] 📈 Daily Probe (Slow Start): Limit increased to ${currentLimit}`);
+            } else {
+                // Danger Zone: Congestion Avoidance (+5%)
+                currentLimit = Math.floor(currentLimit * 1.05);
+                console.log(`[GOVERNOR] 🐢 Daily Probe (Cruising): Limit increased to ${currentLimit}`);
+            }
+            await env.AZTRACKER_DB.put('amazon_dynamic_limit', currentLimit.toString());
+            await env.DB.prepare("INSERT OR REPLACE INTO Bot_States (key, value, expires_at) VALUES ('amazon_last_probe_date', ?, ?)").bind(todayStr, now + 86400000 * 30).run();
+        }
+
+        // 3. Dynamic Governor Logic
         const lastRunStr = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = 'last_run_time'").first('value');
         const lastRunMs = lastRunStr ? parseInt(lastRunStr, 10) : 0;
         
@@ -64,20 +91,27 @@ export async function scheduled(event, env, ctx) {
         `).first();
         const poolSize = poolSizeRes ? poolSizeRes.c : 0;
         
-        console.log(`[GOVERNOR] Pool Size: ${poolSize} | lastRunMs: ${lastRunMs} | Now: ${now}`);
         if (poolSize === 0) {
           console.log(`[GOVERNOR] Aborting: Pool size is 0`);
           return;
         }
         
         const batches = Math.ceil(poolSize / 10);
+        
+        // CF Budget
         const opsLimit = parseInt(env.DAILY_QUEUE_LIMIT || '10000', 10);
-        // Reserve 10% for telegram alerts. 1 CF Queue Message = 3 Operations.
         const dailyMessageBudget = Math.floor((opsLimit * 0.9) / 3);
-        const maxRuns = Math.floor(dailyMessageBudget / batches);
+        const cfMaxRuns = Math.max(1, Math.floor(dailyMessageBudget / batches));
+        
+        // Amazon Budget (1 batch = 1 API request approx due to caching)
+        const amazonMaxRuns = Math.max(1, Math.floor(currentLimit / batches));
+        
+        // Bottleneck selection
+        const maxRuns = Math.min(cfMaxRuns, amazonMaxRuns);
+        const activeBottleneck = cfMaxRuns < amazonMaxRuns ? 'CLOUDFLARE' : 'AMAZON';
         const intervalMs = Math.floor(86400000 / maxRuns);
 
-        console.log(`[GOVERNOR] Calc -> intervalMs: ${intervalMs} | Time since last run: ${now - lastRunMs}`);
+        console.log(`[GOVERNOR] Bottleneck: ${activeBottleneck} | Max Runs: ${maxRuns} | Calc -> intervalMs: ${intervalMs} | Time since last run: ${now - lastRunMs}`);
 
         if ((now - lastRunMs) >= intervalMs) {
           console.log(`[GOVERNOR] Dispatching queue offset 0`);
