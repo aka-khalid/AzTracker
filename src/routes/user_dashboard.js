@@ -976,7 +976,8 @@ function renderUserHTML(lang, partnerTag) {
           headers: { 'Authorization': 'Bearer ' + initData }
         });
         const dbLang = res.headers.get("X-User-Lang");
-        if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry')) {
+        const urlLang = new URLSearchParams(window.location.search).get('lang');
+        if (dbLang && !urlLang && window.location.search === '') {
             window.location.replace(window.location.pathname + '?lang=' + dbLang + window.location.hash);
             return;
         }

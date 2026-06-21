@@ -1976,7 +1976,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 if (res.status === 202) return { status: 'queued' };
                 const json = await res.json();
                 const dbLang = res.headers.get("X-User-Lang") || json.lang;
-                if (dbLang && dbLang !== (new URLSearchParams(window.location.search).get('lang') || 'masry')) {
+                const urlLang = new URLSearchParams(window.location.search).get('lang');
+                if (dbLang && !urlLang && window.location.search === '') {
                     window.location.replace(window.location.pathname + '?lang=' + dbLang + window.location.hash);
                     return null;
                 }
