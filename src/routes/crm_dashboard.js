@@ -129,7 +129,52 @@ export async function fetchAPI(request, env, ctx) {
 
 
 
-    // Live price fetch + broadcast preview for CRM (with circuit breaker)
+    // Test ASIN ΓÇö direct proxy for Amazon Creators API (key-only auth)
+    // Accepts GET ?asin=B0XXXXXX&key=SECRET or POST {"asin":"B0XXXXXX","key":"SECRET"}
+    // Returns the raw Creators API JSON response, identical to what Amazon returns.
+    if (url.pathname === "/api/test-asin") {
+      let asin, access_key;
+      if (request.method === "GET") {
+        asin = url.searchParams.get("asin");
+        access_key = url.searchParams.get("key") || url.searchParams.get("access_key");
+      } else if (request.method === "POST") {
+        let body;
+        try { body = await request.json(); } catch (e) { return new Response("Invalid JSON", { status: 400 }); }
+        asin = body.asin;
+        access_key = body.access_key || body.key;
+      } else {
+        return new Response("Method not allowed", { status: 405 });
+      }
+      if (!asin) return new Response("Missing ASIN", { status: 400 });
+      if (!env.TEST_ASIN_KEY || access_key !== env.TEST_ASIN_KEY) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      // Support comma-separated ASINs (max 10, matching API limit)
+      const asins = asin.split(",").map(s => s.trim().toUpperCase()).filter(s => /^[A-Z0-9]{10}$/.test(s));
+      if (asins.length === 0) {
+        return new Response(JSON.stringify({ error: "invalid_asin" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      if (asins.length > 10) {
+        return new Response(JSON.stringify({ error: "too_many_asins", max: 10 }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      try {
+        let accessToken = await env.AZTRACKER_DB.get("amazon_access_token");
+        if (!accessToken) {
+          const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
+          const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
+          accessToken = await getAmazonAccessToken(clientId, clientSecret);
+        }
+        const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, "www.amazon.eg", env);
+        // Call the Creators API directly ΓÇö return raw response
+        const raw = await parser.getRawItems(asins, "en_AE");
+        return new Response(JSON.stringify(raw, null, 2), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }    // Live price fetch + broadcast preview for CRM (with circuit breaker)
     if (url.pathname === "/api/crm/live-price" && request.method === "POST") {
       const auth = await authAdmin(request, env);
       if (!auth) return new Response("Unauthorized", { status: 401 });

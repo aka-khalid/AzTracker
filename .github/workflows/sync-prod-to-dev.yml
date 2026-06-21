@@ -23,7 +23,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           # Export the data only (no schema)
-          npx wrangler d1 export DB --env production --remote --output=prod_data.sql --no-schema
+          # stdout has the R2 presigned URL — redirect to /dev/null to keep it out of logs
+          # stderr has progress info — keep it visible
+          npx wrangler d1 export DB --env production --remote --output=prod_data.sql --no-schema 1>/dev/null
 
       - name: Transform INSERT to INSERT OR REPLACE
         run: |

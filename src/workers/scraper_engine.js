@@ -150,7 +150,8 @@ export async function executeScrapeEngine(env, offset = 0) {
       const dbProduct = staleProducts.find(p => p.asin === item.asin);
       if (dbProduct) {
         if (!item.name_ar && dbProduct.name_ar) item.name_ar = dbProduct.name_ar;
-        if (!item.name && dbProduct.name) item.name = dbProduct.name;
+        // Inherit DB name only if it's not the ASIN (ASIN-as-name means it was never resolved)
+        if (!item.name && dbProduct.name && dbProduct.name !== dbProduct.asin) item.name = dbProduct.name;
       }
       
       if (arabicNames.has(item.asin)) {
