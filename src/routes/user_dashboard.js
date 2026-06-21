@@ -902,7 +902,7 @@ function renderUserHTML(lang, partnerTag) {
       let html = '';
       hotDeals.forEach(p => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
-        if(!name) name = ui.unknown_product;
+        if(!name || name === p.asin) name = ui.unknown_product;
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
 
@@ -1013,7 +1013,7 @@ function renderUserHTML(lang, partnerTag) {
       let html = '';
       allProducts.forEach((p, idx) => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
-        if(!name) name = ui.unknown_product;
+        if(!name || name === p.asin) name = ui.unknown_product;
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
 
