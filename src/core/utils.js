@@ -44,10 +44,10 @@ export async function expandAmazonUrl(url) {
  */
 export function getAsinFromUrl(url) {
   if (!url) return null;
-  // Require at least one letter to reject garbage like "1231231233"
-  const dpMatch = url.match(/\/dp\/((?=[A-Z0-9]{10})(?=[A-Z0-9]*[A-Z])[A-Z0-9]{10})(?=[/?#]|$)/i);
+  // Product ASINs start with B — reject all-numeric (ISBN) and garbage
+  const dpMatch = url.match(/\/dp\/(B[A-Z0-9]{9})(?=[/?#]|$)/i);
   if (dpMatch) return dpMatch[1].toUpperCase();
-  const gpMatch = url.match(/\/gp\/product\/((?=[A-Z0-9]{10})(?=[A-Z0-9]*[A-Z])[A-Z0-9]{10})(?=[/?#]|$)/i);
+  const gpMatch = url.match(/\/gp\/product\/(B[A-Z0-9]{9})(?=[/?#]|$)/i);
   if (gpMatch) return gpMatch[1].toUpperCase();
   return null;
 }
