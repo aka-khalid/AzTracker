@@ -99,6 +99,80 @@ export class AmazonEdgeParser {
    * passing languagesOfPreference: ["ar_AE"] in the request body.
    * Returns a Map<asin, arabicTitle> for ASINs where Arabic title was found.
    */
+
+  /**
+   * Fetch raw Creators API response (unparsed) for debugging.
+   * Returns the full JSON body from the API with all requested resources.
+   */
+  async getRawItems(asins, lang = 'en_AE') {
+    if (asins.length === 0) return null;
+    if (asins.length > 10) throw new Error('Batch size exceeds 10 ASINs limit.');
+
+    const payload = {
+      itemIds: asins,
+      itemIdType: 'ASIN',
+      resources: [
+        'itemInfo.title',
+        'itemInfo.byLineInfo',
+        'itemInfo.classifications',
+        'itemInfo.contentRating',
+        'itemInfo.externalIds',
+        'itemInfo.features',
+        'itemInfo.manufactureInfo',
+        'itemInfo.productInfo',
+        'itemInfo.tradeInInfo',
+        'itemInfo.contentInfo',
+        'itemInfo.technicalInfo',
+        'offersV2.listings.price',
+        'offersV2.listings.condition',
+        'offersV2.listings.merchantInfo',
+        'offersV2.listings.isBuyBoxWinner',
+        'offersV2.listings.availability',
+        'offersV2.listings.type',
+        'offersV2.listings.loyaltyPoints',
+        'offersV2.listings.dealDetails',
+        'images.primary.large',
+        'images.primary.medium',
+        'images.primary.small',
+        'images.primary.highRes',
+        'images.variants.large',
+        'images.variants.medium',
+        'images.variants.small',
+        'images.variants.highRes',
+        'customerReviews.starRating',
+        'customerReviews.count',
+        'parentASIN',
+        'browseNodeInfo.browseNodes',
+        'browseNodeInfo.browseNodes.salesRank',
+        'browseNodeInfo.browseNodes.ancestor',
+        'browseNodeInfo.websiteSalesRank'
+      ],
+      partnerTag: this.partnerTag,
+      condition: 'Any',
+      languagesOfPreference: [lang]
+    };
+
+    const response = await fetch(this.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json, text/javascript',
+        'Authorization': 'Bearer ' + this.accessToken,
+        'X-Marketplace': this.endpointHost
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('[AmazonEdgeParser] Creators API HTTP Error: ' + response.status, errorBody);
+      return { error: response.status, body: errorBody };
+    }
+
+    return await response.json();
+  }
+
   async getItemsWithArabic(asins) {
     if (asins.length === 0) return new Map();
     if (asins.length > 10) throw new Error("Batch size exceeds 10 ASINs limit.");

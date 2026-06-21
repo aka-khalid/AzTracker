@@ -146,6 +146,14 @@ export async function executeScrapeEngine(env, offset = 0) {
     const asinsMissingArabic = staleProducts.filter(p => !p.name_ar).map(p => p.asin);
     const arabicNames = asinsMissingArabic.length > 0 ? await parser.getItemsWithArabic(asinsMissingArabic) : new Map();
     for (const item of liveItems) {
+      // Inherit existing names from the database so they are available for broadcasting
+      const dbProduct = staleProducts.find(p => p.asin === item.asin);
+      if (dbProduct) {
+        if (!item.name_ar && dbProduct.name_ar) item.name_ar = dbProduct.name_ar;
+        // Inherit DB name only if it's not the ASIN (ASIN-as-name means it was never resolved)
+        if (!item.name && dbProduct.name && dbProduct.name !== dbProduct.asin) item.name = dbProduct.name;
+      }
+      
       if (arabicNames.has(item.asin)) {
         item.name_ar = arabicNames.get(item.asin);
       }

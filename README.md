@@ -39,7 +39,7 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 </table>
 
 👉 **[View Full Screenshot Gallery](docs/GALLERY.md)**  
-*(Contains side-by-side LTR/RTL comparisons of all 20 interactive views, drawers, and charts!)*
+*(Contains side-by-side LTR/RTL comparisons of all 23 interactive views, drawers, and charts!)*
 
 ---
 
@@ -49,7 +49,7 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 AzTracker strictly separates relational state from time-series telemetry. **Cloudflare D1 (SQLite)** handles all user tracking, subscriptions, concurrency locks, audit logs, and the Hysteresis Engine. **Cloudflare KV** serves as a NoSQL document store for massive time-series arrays and cached Amazon access tokens, avoiding database read-exhaustion.
 
 ### 🛡️ Edge-Rendered CRM & SIEM Auditing
-The Admin Panel opens an edge-rendered, Tailwind-styled Command Center Web App served directly from the Worker. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. The CRM seamlessly pulls actual database product thumbnails as fallback-aware product cards. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
+The Admin Panel opens an edge-rendered Command Center Web App served directly from the Worker, featuring a Tailwind-styled CRM dashboard and a hand-rolled inline-styled user dashboard. It features full **RTL/LTR dual-localization (English and Egyptian Arabic)**. The CRM seamlessly pulls actual database product thumbnails as fallback-aware product cards. Authentication uses Telegram Web App `initData` verified via HMAC-SHA256. The `/audit` route serves a forensic SIEM ledger page for all admin actions.
 
 ### ⚛️ Decoupled Async Message Delivery
 Telegram alerts are decoupled from the main scraper engine using Cloudflare Queues (`telegram-outbox`). The queue worker implements a Two-Phase Commit (2PC) that prevents duplicate alerts by updating D1 flags only upon a successful HTTP 200 Telegram delivery. Failed deliveries trigger automatic retry with exponential backoff.
@@ -133,7 +133,7 @@ State-agnostic libraries used universally:
 - `amazon.js`: Native JS execution for Amazon's Creators API token management, schema parsing, and a fallback HTTP scraper (`scrapeArabicTitle`) for extracting native Arabic titles from `amazon.eg` pages.
 - `db.js`: Contains shared D1 operations like role verification and audit logging, backed by Cloudflare's in-memory Cache API (`caches.default`) to prevent D1 read exhaustion.
 - `telegram.js`: Native REST wrapper over Telegram's Bot API.
-- `i18n.js`: Comprehensive string resolution dictionaries supporting English (en) and Egyptian Arabic (masry), complete with emoji layout adjustments.
+- `i18n.js`: Comprehensive string resolution dictionaries supporting English (en) and Egyptian Arabic (masry), using SVG icons (no emoji) for consistent cross-platform rendering.
 - `utils.js`: Helpers for EGP currency formatting, HTML escaping, and time manipulation.
 
 ### 🔄 Background Jobs (`src/workers/`)

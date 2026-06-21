@@ -145,5 +145,33 @@ Here is a side-by-side comparison of the entire interface in both languages.
       <td width="50%" align="center"><img src="assets/19_hot_deals_en.png" width="100%"></td>
       <td width="50%" align="center"><img src="assets/19_hot_deals_ar.png" width="100%"></td>
     </tr>
+    <tr>
+      <td colspan="2"><b>20. Global Tracked Drawer</b><br>Admin drawer showing all globally tracked products with bulk management controls.</td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><img src="assets/20_global_drawer_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/20_global_drawer_ar.png" width="100%"></td>
+    </tr>
+    <tr>
+      <td colspan="2"><b>21. Bulk Add Modal</b><br>Admin tool to ingest massive lists of Amazon URLs, shortlinks, and raw ASINs.</td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><img src="assets/21_bulk_add_modal_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/21_bulk_add_modal_ar.png" width="100%"></td>
+    </tr>
+    <tr>
+      <td colspan="2"><b>22. Confirm Dialog</b><br>Destructive action confirmation overlay used throughout the user dashboard.</td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><img src="assets/20_confirm_dialog_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/20_confirm_dialog_ar.png" width="100%"></td>
+    </tr>
+    <tr>
+      <td colspan="2"><b>23. Toast Notification</b><br>Ephemeral success/error feedback toast with opacity-fade dismissal.</td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><img src="assets/21_toast_notification_en.png" width="100%"></td>
+      <td width="50%" align="center"><img src="assets/21_toast_notification_ar.png" width="100%"></td>
+    </tr>
   </tbody>
 </table>
