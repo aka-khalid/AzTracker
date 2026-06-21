@@ -44,9 +44,10 @@ export async function expandAmazonUrl(url) {
  */
 export function getAsinFromUrl(url) {
   if (!url) return null;
-  const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})(?=[/?#]|$)/i);
+  // Require at least one letter to reject garbage like "1231231233"
+  const dpMatch = url.match(/\/dp\/((?=[A-Z0-9]{10})(?=[A-Z0-9]*[A-Z])[A-Z0-9]{10})(?=[/?#]|$)/i);
   if (dpMatch) return dpMatch[1].toUpperCase();
-  const gpMatch = url.match(/\/gp\/product\/([A-Z0-9]{10})(?=[/?#]|$)/i);
+  const gpMatch = url.match(/\/gp\/product\/((?=[A-Z0-9]{10})(?=[A-Z0-9]*[A-Z])[A-Z0-9]{10})(?=[/?#]|$)/i);
   if (gpMatch) return gpMatch[1].toUpperCase();
   return null;
 }
