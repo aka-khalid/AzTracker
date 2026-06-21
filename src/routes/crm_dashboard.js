@@ -6,19 +6,6 @@ import { sendTelegramMessage as sendTelegram, editTelegramMessage } from '../cor
 import { escapeHtml, buildBroadcastMessage, expandAmazonUrl, getAsinFromUrl } from '../core/utils.js';
 import { setChatMenuButton } from './telegram_webhook.js';
 
-async function generateSignature(secret, asin, exp) {
-  const enc = new TextEncoder();
-  if (!secret) throw new Error("Unauthorized: Missing key");
-  const key = await crypto.subtle.importKey(
-    "raw", 
-    enc.encode(secret), 
-    { name: "HMAC", hash: "SHA-256" }, 
-    false, 
-    ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, enc.encode(`${asin}:${exp}`));
-  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 async function verifyInitData(telegramInitData, botToken) {
   if (!telegramInitData || !botToken) return null;
   try {
@@ -277,99 +264,6 @@ export async function fetchAPI(request, env, ctx) {
         broadcast_text: broadcast.text,
         inline_keyboard: broadcast.inline_keyboard
       }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }
-
-    if (url.pathname === "/api/test-asin") {
-      // Protected by shared secret (set via `wrangler secret put TEST_ASIN_KEY`)
-      const providedKey = url.searchParams.get("key");
-      if (!providedKey || providedKey !== env.TEST_ASIN_KEY) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
-      }
-      try {
-        const asin = url.searchParams.get("asin") || "B094HJ4JSH";
-        let accessToken = await env.AZTRACKER_DB.get('amazon_access_token');
-        if (!accessToken) {
-          const clientId = env.AMAZON_CLIENT_ID || env.AMZN_CREATORS_ACCESS_KEY || env.AWS_ACCESS_KEY_ID;
-          const clientSecret = env.AMAZON_CLIENT_SECRET || env.AMZN_CREATORS_SECRET_KEY || env.AWS_SECRET_ACCESS_KEY;
-          accessToken = await getAmazonAccessToken(clientId, clientSecret);
-        }
-        const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, 'www.amazon.eg', env);
-        const items = await parser.getItems([asin]);
-        const arabicNames = await parser.getItemsWithArabic([asin]);
-        return new Response(JSON.stringify({ parsed: items, arabicName: arabicNames.get(asin) || null }, null, 2), { headers: { "Content-Type": "application/json" } });
-      } catch (e) {
-        return new Response(e.message, { status: 500 });
-      }
-    }
-
-    if (url.pathname === "/api/migrate-kv" && request.method === "GET") {
-      const auth = await authAdmin(request, env);
-      if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
-      if (!auth.isRootAdmin) return new Response(JSON.stringify({ error: "Forbidden: Root Admin only" }), { status: 403, headers: { "Content-Type": "application/json" } });
-      
-      try {
-        let migratedCount = 0;
-        let cursor = null;
-        const stmts = [];
-        const now = Date.now();
-        
-        const adminIds = (await env.AZTRACKER_DB.get("global:admins", "json")) || [];
-        const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || env.TELEGRAM_ADMIN_IDS || "";
-        const rootAdminIds = rootAdminsRaw.split(",").filter(Boolean).map(s => s.trim());
-        
-        const approvedIds = (await env.AZTRACKER_DB.get("global:approved_users", "json")) || [];
-        const bannedIds = (await env.AZTRACKER_DB.get("global:banned_users", "json")) || [];
-        
-        const allValidUsers = Array.from(new Set([...approvedIds, ...adminIds, ...rootAdminIds]));
-
-        const userStmts = [];
-        const productStmts = [];
-        const subStmts = [];
-
-        for (const uid of allValidUsers) {
-          const uidStr = uid.toString();
-          const role = (adminIds.includes(uid) || rootAdminIds.includes(uidStr)) ? 'admin' : 'approved';
-          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, ?, 5, ?)").bind(uidStr, role, now));
-        }
-        for (const uid of bannedIds) {
-          userStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Users (chat_id, role, item_limit, created_at) VALUES (?, 'rejected', 5, ?)").bind(uid.toString(), now));
-        }
-        
-        do {
-          const list = await env.AZTRACKER_DB.list({ prefix: "user:", cursor });
-          cursor = list.list_complete ? null : list.cursor;
-          
-          for (const key of list.keys) {
-            if (key.name.endsWith(":products")) {
-              const chatIdStr = key.name.split(":")[1];
-              const chatId = parseInt(chatIdStr, 10);
-              
-              if (!allValidUsers.includes(chatId) && !allValidUsers.includes(chatIdStr)) continue;
-              const products = await env.AZTRACKER_DB.get(key.name, "json");
-              if (products) {
-                for (const p of products) {
-                  const asinMatch = p.url.match(/\/dp\/([A-Z0-9]{10})/);
-                  if (!asinMatch) continue;
-                  const asin = asinMatch[1];
-                  productStmts.push(env.DB.prepare("INSERT OR IGNORE INTO Global_Products (asin, name, last_updated) VALUES (?, ?, ?)").bind(asin, p.name, now));
-                  subStmts.push(env.DB.prepare("INSERT OR IGNORE INTO User_Subscriptions (chat_id, asin, target_price, is_paused, added_at) VALUES (?, ?, ?, ?, ?)").bind(chatIdStr, asin, p.target_price || null, p.paused ? 1 : 0, now));
-                  migratedCount++;
-                }
-              }
-            }
-          }
-        } while (cursor);
-        
-        const allStmts = [...userStmts, ...productStmts, ...subStmts];
-        if (allStmts.length > 0) {
-          for (let i = 0; i < allStmts.length; i += 50) {
-             await env.DB.batch(allStmts.slice(i, i + 50));
-          }
-        }
-        return new Response(t('crm.migrate_success', 'en', { subscriptions: migratedCount, users: allValidUsers.length }), { status: 200 });
-      } catch (err) {
-        return new Response(`Migration failed: ${err.message}\n${err.stack}`, { status: 500 });
-      }
     }
 
     if (url.pathname === "/api/crm/audit" && request.method === "GET") {
@@ -724,7 +618,7 @@ export async function fetchAPI(request, env, ctx) {
                p.name, p.name_ar, p.amazon_price, p.new_price, p.used_price, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller, p.always_track,
                p.detail_page_url
         FROM User_Subscriptions s
-        JOIN Global_Products p ON s.asin = p.asin
+        LEFT JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
         ORDER BY s.added_at DESC, s.asin ASC
       `).bind(targetId).all();
@@ -1103,9 +997,6 @@ export async function fetchAPI(request, env, ctx) {
         await env.DB.prepare("UPDATE Users SET item_limit = ? WHERE chat_id = ?").bind(newLimit, targetId).run();
         ctx.waitUntil((async () => { const tl = await resolveTargetLang(targetId); await sendTelegram(env, targetId, t('crm.notify_limit_updated', tl, { limit: newLimit })); })());
         ctx.waitUntil(logAudit(env, adminId, "SET_LIMIT", targetId, { limit: newLimit }));
-      } else if (action === "delete_product") {
-        // DEPRECATED: Delete product action removed from UI. Kept for API compatibility.
-        return new Response(JSON.stringify({ error: 'deprecated', message: 'This action is no longer available.' }), { status: 410 });
       } else if (action === "toggle_keep_alive") {
         const asin = data.asin;
         const currentTracker = await env.DB.prepare("SELECT always_track FROM Global_Products WHERE asin = ?").bind(asin).first('always_track');
@@ -1194,6 +1085,215 @@ export async function fetchAPI(request, env, ctx) {
 
   return new Response("Not Found", { status: 404 });
 }
+const CRM_STYLES = `
+:root {
+  /* Surfaces */
+  --surface: #0f1419;
+  --surface-raised: #1a1f26;
+  --surface-sunken: #0a0e12;
+  --surface-overlay: rgba(0, 0, 0, 0.6);
+  --surface-glass: rgba(26, 31, 38, 0.85);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-glow: rgba(56, 189, 248, 0.30);
+
+  /* Brand accents */
+  --accent: #38bdf8;
+  --accent-dim: #0ea5e9;
+  --accent-glow: rgba(56, 189, 248, 0.15);
+
+  /* Semantic colors */
+  --success: #34d399;
+  --success-dim: #059669;
+  --success-glow: rgba(52, 211, 153, 0.15);
+  --warning: #fbbf24;
+  --warning-dim: #d97706;
+  --warning-glow: rgba(251, 191, 36, 0.15);
+  --danger: #f87171;
+  --danger-dim: #dc2626;
+  --danger-glow: rgba(248, 113, 113, 0.15);
+  --purple: #a78bfa;
+  --purple-dim: #7c3aed;
+  --purple-glow: rgba(167, 139, 250, 0.15);
+
+  /* Text */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-mono: #5eead4;
+  --text-inverse: #0f1419;
+
+  /* Component tokens: cards */
+  --card-radius: 0.75rem;
+  --card-padding: 1rem;
+  --card-gap: 0.75rem;
+
+  /* Component tokens: badges */
+  --badge-radius: 9999px;
+  --badge-font-size: 0.625rem;
+  --badge-padding: 0.125rem 0.375rem;
+
+  /* Component tokens: buttons */
+  --btn-radius: 0.5rem;
+  --btn-padding: 0.5rem 1rem;
+  --btn-font-size: 0.875rem;
+
+  /* Drawer */
+  --drawer-radius: 1rem;
+  --drawer-max-height: 85vh;
+  --drawer-transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Skeleton shimmer */
+  --shimmer-base: rgba(255, 255, 255, 0.04);
+  --shimmer-highlight: rgba(255, 255, 255, 0.08);
+}
+
+body { background-color: var(--surface); color: var(--text-primary); -webkit-tap-highlight-color: transparent; }
+
+/* Glass surface — reduced blur for mobile performance */
+/* .glass removed — replaced by .card pattern */
+
+/* Toast transitions — specific properties only */
+.toast { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.toast-enter { transform: translateY(100%); opacity: 0; }
+.toast-enter-active { transform: translateY(0); opacity: 1; }
+.toast-leave { transform: translateY(0); opacity: 1; }
+.toast-leave-active { transform: translateY(100%); opacity: 0; }
+
+/* Spinner */
+.loader { border-top-color: var(--accent); -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+@keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* Status badge component - pill indicator for user states */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: var(--badge-padding);
+  border-radius: var(--badge-radius);
+  font-size: var(--badge-font-size);
+  font-weight: 600;
+  line-height: 1;
+}
+.badge-status--active { background: var(--success-glow); color: var(--success); border: 1px solid rgba(52, 211, 153, 0.2); }
+.badge-status--pending { background: var(--warning-glow); color: var(--warning); border: 1px solid rgba(251, 191, 36, 0.2); }
+.badge-status--banned { background: var(--danger-glow); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.2); }
+.badge-status--admin { background: var(--purple-glow); color: var(--purple); border: 1px solid rgba(167, 139, 250, 0.2); }
+.badge-status--new { background: rgba(148, 163, 184, 0.1); color: var(--text-tertiary); border: 1px solid rgba(148, 163, 184, 0.2); }
+.activity-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.badge-status__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Skeleton loading shimmer */
+.skeleton {
+  background: var(--shimmer-base);
+  border-radius: 0.375rem;
+  position: relative;
+  overflow: hidden;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--shimmer-highlight), transparent);
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.skeleton--text { height: 0.75rem; width: 100%; }
+.skeleton--text-sm { height: 0.625rem; width: 60%; }
+.skeleton--text-lg { height: 1rem; width: 40%; }
+.skeleton--card { height: 4rem; width: 100%; }
+.skeleton--stat { height: 2rem; width: 50%; }
+
+/* Drawer transitions */
+.drawer-panel {
+  transform: translateY(100%);
+  transition: var(--drawer-transition);
+}
+.drawer-panel.open {
+  transform: translateY(0);
+}
+
+/* ═══ Command Center Component Styles ═══ */
+
+/* Card with status strip */
+.card { position: relative; border-radius: var(--radius-lg, 0.75rem); background: var(--surface-raised); border: 1px solid var(--border-subtle); }
+.card-status-active { border-left: 3px solid var(--success); }
+.card-status-paused { border-left: 3px solid var(--warning); }
+.card-status-danger { border-left: 3px solid var(--danger); }
+.card-status-global { border-left: 3px solid var(--purple); }
+
+/* Buttons — specific transition properties, NOT "all" */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius-md, 0.5rem); font-size: 13px; font-weight: 600; border: 1px solid var(--border-default); transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease; cursor: pointer; white-space: nowrap; }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; pointer-events: none; }
+.btn-primary { background: var(--accent); color: #0f1419; border-color: var(--accent); }
+.btn-primary:active { background: var(--accent-dim); }
+.btn-secondary { background: var(--surface-raised); color: var(--text-secondary); }
+.btn-secondary:active { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+.btn-success { background: rgba(52, 211, 153, 0.1); color: var(--success); border-color: rgba(52, 211, 153, 0.2); }
+.btn-success:active { background: rgba(52, 211, 153, 0.2); }
+.btn-danger { background: rgba(248, 113, 113, 0.1); color: var(--danger); border-color: rgba(248, 113, 113, 0.2); }
+.btn-danger:active { background: rgba(248, 113, 113, 0.2); }
+.btn-sm { padding: 6px 10px; font-size: 11px; border-radius: var(--radius-sm, 0.375rem); }
+
+/* Status pills / badges — text labels + SVG icons */
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.pill-active { background: rgba(52, 211, 153, 0.12); color: var(--success); border: 1px solid rgba(52, 211, 153, 0.2); }
+.pill-active::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--success); border-radius: 50%; }
+.pill-paused { background: rgba(251, 191, 36, 0.12); color: var(--warning); border: 1px solid rgba(251, 191, 36, 0.2); }
+.pill-paused::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--warning); border-radius: 2px; }
+.pill-danger { background: rgba(248, 113, 113, 0.12); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.2); }
+.pill-danger::before { content: ''; display: inline-block; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 7px solid var(--danger); }
+.pill-global { background: rgba(167, 139, 250, 0.12); color: var(--purple); border: 1px solid rgba(167, 139, 250, 0.2); }
+.pill-global::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--purple); border-radius: 50%; box-shadow: 0 0 6px var(--purple); }
+.pill-sm { padding: 1px 6px; font-size: 9px; }
+.pill-sm::before { width: 6px; height: 6px; }
+
+/* Data display */
+.price-primary { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.price-secondary { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--text-tertiary); }
+
+/* Drawer pattern */
+.drawer-overlay { position: fixed; inset: 0; z-index: 50; }
+.drawer-bg { position: absolute; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); transition: opacity 200ms ease; }
+.drawer-panel { position: absolute; bottom: 0; left: 0; right: 0; max-height: 85vh; background: var(--surface-sunken); border-top: 1px solid var(--border-strong); border-radius: 1rem 1rem 0 0; transform: translateY(100%); transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1); overflow-y: auto; }
+.drawer-panel.open { transform: translateY(0); }
+.drawer-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 12px auto; }
+
+/* Tab navigation — NO hover states (mobile only), use :active */
+.tab-group { display: flex; gap: 2px; padding: 3px; background: var(--surface-sunken); border-radius: var(--radius-md, 0.5rem); }
+.tab { flex: 1; padding: 8px 12px; border-radius: var(--radius-sm, 0.375rem); font-size: 13px; font-weight: 600; text-align: center; color: var(--text-tertiary); transition: background-color 150ms ease, color 150ms ease; cursor: pointer; white-space: nowrap; }
+.tab.active { background: var(--surface-raised); color: var(--text-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+
+/* List items — NO hover states (mobile only) */
+.list-item { padding: 12px; border-radius: var(--radius-md, 0.5rem); border: 1px solid transparent; transition: background-color 150ms ease, border-color 150ms ease; }
+
+/* Search input */
+.search-wrapper { position: relative; }
+.search-wrapper svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); pointer-events: none; }
+.search-input { width: 100%; padding: 10px 14px 10px 38px; border-radius: 9999px; border: 1px solid var(--border-default); background: var(--surface-sunken); color: var(--text-primary); font-size: 14px; outline: none; transition: border-color 150ms ease; }
+.search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56,189,248,0.12); }
+`;
+
 export function renderCrmHTML(lang = 'en', isProd = false) {
   // Escape a translated string for safe injection into a JS double-quoted string literal.
   // JSON.stringify handles quotes, backslashes, newlines, and all special chars.
@@ -1214,7 +1314,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
-        darkMode: 'class',
+        darkMode: false,
         theme: {
           extend: {
             fontFamily: { sans: ['Inter', 'Cairo', 'sans-serif'], arabic: ['Cairo', 'sans-serif'] },
@@ -1226,35 +1326,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
       }
     </script>
-    <style>
-      body { background-color: #030712; color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
-      .glass { background: rgba(31, 41, 55, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
-      .toast { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-      .toast-enter { transform: translateY(100%); opacity: 0; }
-      .toast-enter-active { transform: translateY(0); opacity: 1; }
-      .toast-leave { transform: translateY(0); opacity: 1; }
-      .toast-leave-active { transform: translateY(100%); opacity: 0; }
-      
-      .loader { border-top-color: #38bdf8; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
-      @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-      
-      .tab-active { border-bottom: 2px solid #38bdf8; color: #f3f4f6; }
-      .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
-    </style>
+    <style>${CRM_STYLES}</style>
 </head>
-<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic' : 'font-sans'} bg-gray-900 text-gray-100">
-  <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
-  <div id="init-loader" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background-color: #0f172a;">
-    <div style="width: 48px; height: 48px; border: 4px solid #1e293b; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+<body class="min-h-screen flex flex-col ${isMasry ? 'font-arabic' : 'font-sans'}" style="background-color: var(--surface); color: var(--text-primary);">
+  <div id="init-loader" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background-color: var(--surface-sunken);">
+    <div style="width: 48px; height: 48px; border: 4px solid var(--border-default); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
   </div>
     
-    <header class="glass sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-lg">
+    <header class="sticky top-0 z-40 px-4 py-3 flex justify-between items-center" style="background: var(--surface-raised); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border-subtle);">
         <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center font-bold text-white shadow-lg">A</div>
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-[var(--text-inverse)]" style="background: var(--accent);">A</div>
             <h1 class="font-bold text-lg tracking-tight">${t('crm.hub_title', lang)}</h1>
         </div>
-        <button onclick="refreshData()" class="p-2 rounded-full hover:bg-gray-800 transition text-gray-400 hover:text-white">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');refreshData()" class="btn btn-sm btn-secondary" aria-label="Refresh">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
         </button>
     </header>
 
@@ -1262,90 +1347,77 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         
         <!-- HIGHER LEVEL TAB -->
         <div class="mb-4">
-            <button onclick="window.location.href='/user_app?lang=${lang}&admin=true'" class="w-full py-3 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-brand-400 font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg">
+            <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');window.location.href='/user_app?lang=${lang}&admin=true'" class="btn btn-secondary w-full justify-center font-bold" style="border-color: var(--accent); color: var(--accent);">
                 ${t('dashboard.my_products', lang)}
             </button>
         </div>
 
-        <!-- MAIN TABS -->
-        <div class="flex gap-4 border-b border-gray-800 mb-6" id="main-tabs">
-            <button onclick="switchMainTab('system-view')" id="main-tab-system-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-brand-400 text-white transition">🔧 ${t('crm.tab_system', lang)}</button>
-            <button onclick="switchMainTab('users-view')" id="main-tab-users-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">
-                <span class="relative">
-                    👥 ${t('crm.users_title', lang)}
-                    <span id="dot-users" class="hidden absolute -top-0.5 -end-2.5 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse"></span>
+        <!-- MAIN TABS — Command Center tab-group pattern -->
+        <div class="tab-group mb-6" id="main-tabs">
+            <div onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchMainTab('system-view')" id="main-tab-system-view" class="tab active">${t('crm.tab_system', lang)}</div>
+            <div onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchMainTab('users-view')" id="main-tab-users-view" class="tab">
+                <span class="relative inline-flex items-center gap-1">
+                    ${t('crm.users_title', lang)}
+                    <span id="dot-users" class="hidden w-2 h-2 rounded-full" style="background: var(--danger);"></span>
                 </span>
-            </button>
-            <button onclick="switchMainTab('audit-view')" id="main-tab-audit-view" class="flex-1 pb-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition">${t('crm.security_audit', lang)}</button>
+            </div>
+            <div onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchMainTab('audit-view')" id="main-tab-audit-view" class="tab">${t('crm.security_audit', lang)}</div>
         </div>
 
         <!-- ═══ SYSTEM TAB ═══ -->
         <div id="system-view-container" class="space-y-6">
             <!-- TELEMETRY -->
             <section>
-                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_overview', lang)}</h2>
+                <h2 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color:var(--text-tertiary);">${t('crm.system_overview', lang)}</h2>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition border border-emerald-500/20 h-full" onclick="openActiveDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_pool', lang))}">
-                        <div class="text-gray-400 text-sm mb-1">
-                            <div class="flex items-center justify-between">
-                                <span>${t('crm.products_title', lang)}</span>
-                                <button onclick="event.stopPropagation(); document.getElementById('tooltip-pool').classList.toggle('hidden')" class="p-1 hover:text-white transition">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </button>
-                            </div>
-                            <p id="tooltip-pool" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-2">${t('crm.tooltip_pool', lang)}</p>
+                    <div class="card card-status-active p-3 cursor-pointer" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openActiveDrawer()" role="button" tabindex="0">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">${t('crm.products_title', lang)}</span>
+                            <button onclick="event.stopPropagation(); document.getElementById('tooltip-pool').classList.toggle('hidden')" class="p-1" aria-label="Info">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </button>
                         </div>
-                        <div class="text-2xl font-bold text-brand-400" id="stat-pool">--</div>
+                        <p id="tooltip-pool" class="hidden text-xs text-[var(--text-tertiary)] mt-1 leading-tight mb-2">${t('crm.tooltip_pool', lang)}</p>
+                        <div class="text-2xl font-bold" style="color:var(--success);" id="stat-pool"><span class="skeleton skeleton--stat" id="skeleton-pool"></span></div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition border border-brand-500/20 h-full" onclick="openTopChartsDrawer()" role="button" tabindex="0">
-                        <div class="text-gray-400 text-sm mb-1">${t('crm.top_charts_title', lang)}</div>
-                        <div class="text-sm font-bold text-brand-400 mt-1">${t('crm.btn_view', lang)}</div>
+                    <div class="card p-3 cursor-pointer flex flex-col" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openTopChartsDrawer()" role="button" tabindex="0">
+                        <div class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">${t('crm.top_charts_title', lang)}</div>
+                        <div class="text-2xl font-bold" style="color:var(--accent);" id="stat-top-charts"><span class="skeleton skeleton--stat" id="skeleton-top-charts"></span></div>
+                        <div class="text-sm font-medium mt-auto" style="color:var(--accent);">${t('crm.btn_view', lang)}</div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition border border-amber-500/20 h-full" onclick="openPausedDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_paused', lang))}">
-                        <div class="text-gray-400 text-sm mb-1">
-                            <div class="flex items-center justify-between">
-                                <span>${t('crm.paused_products', lang)}</span>
-                                <button onclick="event.stopPropagation(); document.getElementById('tooltip-paused').classList.toggle('hidden')" class="p-1 hover:text-white transition">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </button>
-                            </div>
-                            <p id="tooltip-paused" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-2">${t('crm.tooltip_paused', lang)}</p>
+                    <div class="card card-status-paused p-3 cursor-pointer" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openPausedDrawer()" role="button" tabindex="0">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">${t('crm.paused_products', lang)}</span>
+                            <button onclick="event.stopPropagation(); document.getElementById('tooltip-paused').classList.toggle('hidden')" class="p-1" aria-label="Info">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </button>
                         </div>
-                        <div class="text-2xl font-bold text-amber-400" id="stat-paused">--</div>
+                        <p id="tooltip-paused" class="hidden text-xs text-[var(--text-tertiary)] mt-1 leading-tight mb-2">${t('crm.tooltip_paused', lang)}</p>
+                        <div class="text-2xl font-bold" style="color:var(--warning);" id="stat-paused"><span class="skeleton skeleton--stat" id="skeleton-paused"></span></div>
                     </div>
-                    <div class="glass rounded-xl p-4 flex flex-col justify-between cursor-pointer hover:bg-gray-800/50 transition h-full" onclick="openGraveyardDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_ghost', lang))}">
-                        <div class="text-gray-400 text-sm mb-1">
-                            <div class="flex items-center justify-between">
-                                <span>${t('crm.ghost_products', lang)}</span>
-                                <button onclick="event.stopPropagation(); document.getElementById('tooltip-ghost').classList.toggle('hidden')" class="p-1 hover:text-white transition">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </button>
-                            </div>
-                            <p id="tooltip-ghost" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-2">${t('crm.tooltip_ghost', lang)}</p>
+                    <div class="card card-status-danger p-3 cursor-pointer" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openGraveyardDrawer()" role="button" tabindex="0">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">${t('crm.ghost_products', lang)}</span>
+                            <button onclick="event.stopPropagation(); document.getElementById('tooltip-ghost').classList.toggle('hidden')" class="p-1" aria-label="Info">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </button>
                         </div>
-                        <div class="text-2xl font-bold text-red-400" id="stat-ghost">--</div>
+                        <p id="tooltip-ghost" class="hidden text-xs text-[var(--text-tertiary)] mt-1 leading-tight mb-2">${t('crm.tooltip_ghost', lang)}</p>
+                        <div class="text-2xl font-bold" style="color:var(--danger);" id="stat-ghost"><span class="skeleton skeleton--stat" id="skeleton-ghost"></span></div>
                     </div>
-                    <!-- Row 3: Globally Tracked (distinct gradient card) -->
-                    <div class="col-span-2 rounded-xl p-[1px] bg-gradient-to-r from-purple-500/40 via-fuchsia-500/40 to-cyan-500/40 cursor-pointer hover:from-purple-500/60 hover:via-fuchsia-500/60 hover:to-cyan-500/60 transition-all" onclick="openGlobalDrawer()" role="button" tabindex="0" title="${escapeHtml(t('crm.tooltip_global', lang))}">
-                        <div class="glass rounded-[11px] p-4 bg-gradient-to-br from-purple-950/40 to-gray-900/60 flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2 sm:gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-purple-500/15 flex shrink-0 items-center justify-center">
-                                    <span class="text-xl">🌐</span>
+                    <!-- Row 3: Globally Tracked -->
+                    <div class="col-span-2 card card-status-global p-3 cursor-pointer" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openGlobalDrawer()" role="button" tabindex="0">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg flex shrink-0 items-center justify-center" style="background:var(--purple-glow);">
+                                    <svg style="width:20px;height:20px;color:var(--purple);" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 </div>
                                 <div>
-                                    <div class="text-gray-400 text-sm mb-0.5">
-                                        <div class="whitespace-nowrap flex items-center gap-1">
-                                            <span class="text-xs sm:text-sm">${t('crm.global_products', lang)}</span>
-                                            <button onclick="event.stopPropagation(); document.getElementById('tooltip-global').classList.toggle('hidden')" class="p-0.5 hover:text-white transition">
-                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                            </button>
-                                        </div>
-                                        <p id="tooltip-global" class="hidden text-[10px] text-gray-500 mt-1 leading-tight mb-1 max-w-[200px] whitespace-normal">${t('crm.tooltip_global', lang)}</p>
-                                    </div>
-                                    <div class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent" id="stat-global">--</div>
+                                    <div class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">${t('crm.global_products', lang)}</div>
+                                    <div class="text-xl font-bold" style="color:var(--purple);" id="stat-global"><span class="skeleton skeleton--stat" id="skeleton-global"></span></div>
                                 </div>
                             </div>
-                            <button onclick="event.stopPropagation(); openBulkAddModal()" class="px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-purple-500/10 text-purple-300 text-[11px] sm:text-sm font-bold hover:bg-purple-500/25 transition-all border border-purple-500/20 hover:border-purple-500/30 whitespace-nowrap shrink-0">
+                            <button onclick="event.stopPropagation(); if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openBulkAddModal()" class="btn btn-sm" style="background:var(--purple-glow);color:var(--purple);border-color:rgba(167,139,250,0.2);">
                                 ${t('crm.btn_add_products', lang)}
                             </button>
                         </div>
@@ -1354,89 +1426,97 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
                 <!-- Broadcast Deals Section -->
                 <section class="mt-3">
-                    <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.broadcast_deals', lang)}</h2>
-                    <div class="glass rounded-xl p-4 border border-gray-800/50">
-                        <p class="text-xs text-gray-500 mb-3">${t('crm.broadcast_deals_desc', lang)}</p>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider mb-3 flex items-center gap-1.5" style="color:var(--text-tertiary);">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                        ${t('crm.broadcast_deals', lang)}
+                    </h2>
+                    <div class="card p-3">
+                        <p class="text-xs mb-3" style="color:var(--text-tertiary);">${t('crm.broadcast_deals_desc', lang)}</p>
                         <div class="flex gap-2 mb-3">
                             <input type="text" id="broadcast-deals-input"
                                 placeholder="${t('crm.broadcast_enter_asin', lang)}"
-                                class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/50">
-                            <button onclick="fetchBroadcastDealsPreview()" id="broadcast-deals-fetch-btn"
-                                class="px-4 py-2 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20 whitespace-nowrap">
+                                class="search-input flex-1" dir="${lang === 'masry' ? 'rtl' : 'ltr'}">
+                            <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');fetchBroadcastDealsPreview()" id="broadcast-deals-fetch-btn"
+                                class="btn btn-sm btn-secondary whitespace-nowrap">
                                 ${t('crm.broadcast_fetch', lang)}
                             </button>
                         </div>
                         <div id="broadcast-deals-loading" class="hidden text-center py-4">
-                            <div class="inline-block animate-spin w-5 h-5 border-2 border-brand-400 border-t-transparent rounded-full mb-2"></div>
-                            <p class="text-xs text-gray-400">${t('crm.broadcast_loading', lang)}</p>
+                            <div class="inline-block animate-spin w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full mb-2"></div>
+                            <p class="text-xs text-[var(--text-tertiary)]">${t('crm.broadcast_loading', lang)}</p>
                         </div>
                         <div id="broadcast-deals-options" class="hidden mb-3">
-                            <p class="text-xs text-brand-400 font-medium mb-2">${t('crm.broadcast_options_found', lang)}</p>
+                            <p class="text-xs text-[var(--accent)] font-medium mb-2">${t('crm.broadcast_options_found', lang)}</p>
                             <div id="broadcast-deals-options-list" class="space-y-1 max-h-48 overflow-y-auto pr-1"></div>
                         </div>
                         <div id="broadcast-deals-composer" class="hidden">
-                            <div class="bg-gray-800/30 rounded-lg p-3 mb-3">
+                            <div class="bg-[var(--surface-sunken)]/30 rounded-lg p-3 mb-3">
                                 <div class="flex justify-between items-center mb-2">
-                                    <label class="text-[10px] text-gray-500 uppercase tracking-wider mb-0">${t('crm.broadcast_editor_label', lang)}</label>
+                                    <label class="text-xs text-[var(--text-tertiary)] uppercase tracking-wider mb-0">${t('crm.broadcast_editor_label', lang)}</label>
                                     <div class="flex gap-2">
-                                        <button onclick="goBackToBroadcastDealsOptions()" id="broadcast-deals-back-btn" class="p-1.5 bg-gray-800 rounded-full text-brand-400 hover:text-brand-300 transition hidden">
+                                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');goBackToBroadcastDealsOptions()" id="broadcast-deals-back-btn" class="p-1.5 bg-[var(--surface-sunken)] rounded-full text-[var(--accent)] hover:text-[var(--accent)] transition hidden">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                                         </button>
-                                        <button onclick="closeBroadcastDealsComposer()" id="broadcast-deals-close-btn" class="p-1.5 bg-gray-800 rounded-full text-gray-400 hover:text-white transition">
+                                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeBroadcastDealsComposer()" id="broadcast-deals-close-btn" class="p-1.5 bg-[var(--surface-sunken)] rounded-full text-[var(--text-secondary)] hover:text-white transition">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                         </button>
                                     </div>
                                 </div>
-                                <input type="text" id="broadcast-deals-title" class="w-full bg-transparent border-b border-gray-700 text-sm font-bold text-white py-1 mb-2 focus:outline-none focus:border-brand-500/50">
-                                <label class="text-[10px] text-gray-500 uppercase tracking-wider">${t('crm.broadcast_desc_label', lang)}</label>
-                                <textarea id="broadcast-deals-body" rows="6" class="w-full bg-transparent text-sm text-gray-300 py-1 focus:outline-none resize-none leading-relaxed"></textarea>
+                                <input type="text" id="broadcast-deals-title" class="w-full bg-transparent border-b border-[var(--border-strong)] text-sm font-bold text-white py-1 mb-2 focus:outline-none focus:border-[var(--accent)]/50">
+                                <label class="text-xs text-[var(--text-tertiary)] uppercase tracking-wider">${t('crm.broadcast_desc_label', lang)}</label>
+                                <textarea id="broadcast-deals-body" rows="6" class="w-full bg-transparent text-sm text-[var(--text-secondary)] py-1 focus:outline-none resize-none leading-relaxed"></textarea>
                             </div>
-                            <button onclick="confirmBroadcastDeals()" id="broadcast-deals-confirm-btn"
-                                class="w-full justify-center bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-sm px-4 py-2.5 rounded-lg font-medium transition border border-brand-500/20 flex items-center gap-2">
+                            <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('medium');confirmBroadcastDeals()" id="broadcast-deals-confirm-btn"
+                                class="w-full justify-center bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent)] text-sm px-4 py-2.5 rounded-lg font-medium transition border border-[var(--accent)]/20 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
                                 ${t('crm.broadcast_confirm_send', lang)}
                             </button>
                         </div>
                         <div id="broadcast-deals-error" class="hidden text-center py-3">
-                            <p class="text-xs text-red-400" id="broadcast-deals-error-text"></p>
+                            <p class="text-xs text-[var(--danger)]" id="broadcast-deals-error-text"></p>
                         </div>
                     </div>
                 </section>
 
                 <!-- Engine Health Widget -->
-                <div class="mt-3 glass rounded-xl p-4" id="engine-health-widget">
+                <div class="mt-3 card p-3" id="engine-health-widget">
                     <div class="flex items-center justify-between mb-2">
-                        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                        <div class="text-xs font-semibold uppercase tracking-wider flex items-center gap-2" style="color:var(--text-tertiary);">
                             ${t('crm.engine_health', lang)}
-                            <span id="engine-bottleneck-badge" class="px-1.5 py-0.5 rounded text-[9px] font-medium bg-gray-800 text-gray-400 hidden border border-gray-700"></span>
+                            <span id="engine-bottleneck-badge" class="pill pill-sm" style="display:none;"></span>
                         </div>
                         <div class="flex items-center gap-1.5">
-                            <div class="w-2 h-2 rounded-full bg-green-500" id="engine-status-dot"></div>
-                            <span class="text-xs font-medium text-green-400" id="engine-status-text">--</span>
+                            <div class="w-2 h-2 rounded-full" id="engine-status-dot" style="background:var(--success);"></div>
+                            <span class="text-xs font-medium" id="engine-status-text" style="color:var(--success);">--</span>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-2 text-center h-full">
-                        <div class="bg-gray-800/50 rounded-lg p-2 flex flex-col justify-between h-full min-h-[60px]">
-                            <div class="text-[10px] text-gray-500 uppercase mb-1">${t('crm.engine_interval', lang)}</div>
-                            <div class="text-sm font-bold text-white" id="engine-interval">--</div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="rounded-lg p-2 flex flex-col justify-between" style="background:var(--surface);min-height:48px;">
+                            <div class="text-xs uppercase" style="color:var(--text-tertiary);">${t('crm.engine_interval', lang)}</div>
+                            <div class="text-sm font-bold mt-auto" style="color:var(--text-primary);" id="engine-interval">--</div>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-2 flex flex-col justify-between h-full min-h-[60px]">
-                            <div class="text-[10px] text-gray-500 uppercase mb-1">${t('crm.engine_daily_ops', lang)}</div>
-                            <div class="text-sm font-bold text-white" id="engine-daily-ops">--</div>
+                        <div class="rounded-lg p-2 flex flex-col justify-between" style="background:var(--surface);min-height:48px;">
+                            <div class="text-xs uppercase" style="color:var(--text-tertiary);">${t('crm.engine_daily_ops', lang)}</div>
+                            <div class="text-sm font-bold mt-auto" style="color:var(--text-primary);" id="engine-daily-ops">--</div>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-2 flex flex-col justify-between h-full min-h-[60px]">
-                            <div class="text-[10px] text-gray-500 uppercase mb-1">${t('crm.engine_batches', lang)}</div>
-                            <div class="text-sm font-bold text-white" id="engine-batches">--</div>
+                        <div class="rounded-lg p-2 flex flex-col justify-between" style="background:var(--surface);min-height:48px;">
+                            <div class="text-xs uppercase" style="color:var(--text-tertiary);">${t('crm.engine_batches', lang)}</div>
+                            <div class="text-sm font-bold mt-auto" style="color:var(--text-primary);" id="engine-batches">--</div>
                         </div>
+                    </div>
+                    <div class="mt-2 flex items-center justify-center gap-2 text-xs" style="color:var(--text-tertiary);">
+                        <span>${t('crm.engine_limit', lang)}:</span>
+                        <span id="engine-bottleneck-text" class="font-semibold" style="color:var(--text-secondary);">--</span>
                     </div>
                 </div>
 
-                <div class="mt-3 glass rounded-xl p-4 flex flex-col gap-3">
+                <div class="mt-3 card rounded-xl p-4 flex flex-col gap-3">
                     <div class="text-center w-full">
-                        <span class="text-gray-400 text-sm">${t('crm.last_sync', lang)}: </span>
-                        <span class="text-sm font-medium" id="stat-sync">--</span>
+                        <span class="text-sm" style="color:var(--text-secondary);">${t('crm.last_sync', lang)}: </span>
+                        <span class="text-sm font-medium" id="stat-sync" style="color:var(--text-primary);">--</span>
                     </div>
                     <div class="w-full">
-                        <button onclick="triggerGlobalScrape()" class="w-full justify-center bg-gray-800 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition shadow border border-gray-700 flex items-center gap-2">
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');triggerGlobalScrape()" class="btn btn-sm btn-secondary w-full justify-center">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> ${t('crm.force_check', lang)}
                         </button>
                     </div>
@@ -1445,20 +1525,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             ${isProd ? '' : `
             <!-- ENV SYNC -->
             <section id="env-sync-section" class="mb-6">
-                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.env_sync_title', lang)}</h2>
-                <div class="glass rounded-xl p-4 border border-gray-800/50 relative overflow-hidden group">
-                    <div class="flex items-center justify-between gap-4 relative z-10">
-                        <div class="w-10 h-10 rounded-lg bg-gray-800 flex shrink-0 items-center justify-center shadow-inner group-hover:bg-brand-500/10 transition-colors">
-                            <span class="text-lg">🔄</span>
+                <h2 class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-3">${t('crm.env_sync_title', lang)}</h2>
+                <div class="card rounded-xl p-4 relative overflow-hidden">
+                    <div class="flex items-center justify-between gap-4">
+                        <div class="w-10 h-10 rounded-lg flex shrink-0 items-center justify-center" style="background:var(--surface-sunken);">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent);"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         </div>
                         <div class="flex-1">
-                            <div class="text-sm font-semibold">${t('crm.env_sync_title', lang)}</div>
-                            <div class="text-[10px] text-gray-500 mt-1">
+                            <div class="text-sm font-semibold" style="color:var(--text-primary);">${t('crm.env_sync_title', lang)}</div>
+                            <div class="text-xs mt-1" style="color:var(--text-tertiary);">
                                 ${t('crm.env_sync_desc', lang)}
                             </div>
                         </div>
-                        <button onclick="triggerSync(this)" class="px-4 py-2 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20 flex items-center gap-2 group-hover:shadow-[0_0_15px_rgba(14,165,233,0.3)] whitespace-nowrap shrink-0">
-                            <span>🔄</span>
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');triggerSync(this)" class="btn btn-sm btn-primary">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                             ${t('crm.btn_sync', lang)}
                         </button>
                     </div>
@@ -1468,11 +1548,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
             <!-- BROADCAST -->
             <section id="broadcast-section">
-                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">${t('crm.system_broadcast', lang)}</h2>
-                <div class="glass rounded-xl p-4">
-                    <textarea id="broadcast-msg" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition" placeholder="${escapeHtml(t('crm.broadcast_placeholder', lang))}"></textarea>
+                <h2 class="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-3">${t('crm.system_broadcast', lang)}</h2>
+                <div class="card rounded-xl p-4">
+                    <textarea id="broadcast-msg" rows="2" class="w-full rounded-lg p-3 text-sm focus:outline-none" placeholder="${escapeHtml(t('crm.broadcast_placeholder', lang))}" style="background:var(--surface-sunken);border:1px solid var(--border-subtle);color:var(--text-primary);"></textarea>
                     <div class="flex justify-end mt-3">
-                        <button onclick="sendBroadcast()" class="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-brand-500/20 flex items-center gap-2">
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');sendBroadcast()" class="btn btn-sm btn-primary">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> ${t('crm.send_broadcast', lang)}
                         </button>
                     </div>
@@ -1482,46 +1562,44 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         <!-- ═══ USERS TAB ═══ -->
         <div id="users-view-container" class="hidden space-y-6">
-            <div class="glass rounded-xl p-4 flex items-center justify-between border-b-2 border-brand-500">
-                <div class="text-gray-400 text-sm font-medium">${t('crm.users_title', lang)}</div>
-                <div class="text-2xl font-bold text-white" id="stat-users">--</div>
+            <div class="card card-status-active p-3 flex items-center justify-between mb-3">
+                <div class="text-xs font-semibold uppercase tracking-wider" style="color:var(--text-tertiary);">${t('crm.users_title', lang)}</div>
+                <div class="text-2xl font-bold" style="color:var(--success);" id="stat-users">--</div>
             </div>
             <!-- DIRECTORY NAVIGATION -->
             <section>
-                <div class="flex border-b border-gray-800 mb-4 overflow-x-auto" style="scrollbar-width: none;">
-                    <button onclick="switchTab('users')" id="tab-users" class="px-4 pb-3 text-sm font-medium tab-active transition whitespace-nowrap relative">
-                        ${t('crm.tab_approved', lang)}
+                <div class="tab-group mb-4" id="user-sub-tabs">
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchTab('users')" id="tab-users" class="tab active">${t('crm.tab_approved', lang)}</button>
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchTab('queue')" id="tab-queue" class="tab">
+                        ${t('crm.tab_pending', lang)} <span id="badge-queue" class="hidden pill pill-active pill-sm"></span>
                     </button>
-                    <button onclick="switchTab('queue')" id="tab-queue" class="px-4 pb-3 text-sm font-medium tab-inactive transition flex items-center gap-1.5 whitespace-nowrap">
-                        ${t('crm.tab_pending', lang)} <span id="badge-queue" class="hidden bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
-                    </button>
-                    <button onclick="switchTab('banned')" id="tab-banned" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap text-red-400/80">${t('crm.tab_banned', lang)}</button>
-                    <button onclick="switchTab('admins')" id="tab-admins" class="px-4 pb-3 text-sm font-medium tab-inactive transition whitespace-nowrap">${t('crm.tab_admins', lang)}</button>
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchTab('banned')" id="tab-banned" class="tab" style="color:var(--danger);">${t('crm.tab_banned', lang)}</button>
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');switchTab('admins')" id="tab-admins" class="tab">${t('crm.tab_admins', lang)}</button>
                 </div>
 
                 <!-- Queue View -->
                 <div id="view-queue" class="hidden space-y-3">
                     
-                <div class="flex items-center justify-between bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 mb-2">
+                <div class="flex items-center justify-between card p-3 mb-2">
                     <div>
-                        <span class="text-sm font-bold text-gray-200 block">${t('crm.mute_queue_title', lang) || 'Mute Join Queue Notifications'}</span>
-                        <span class="text-[10px] text-gray-500 block leading-tight mt-0.5">${t('crm.mute_queue_desc', lang) || 'Stop receiving Telegram messages when a new user requests access'}</span>
+                        <span class="text-sm font-bold block" style="color:var(--text-primary);">${t('crm.mute_queue_title', lang) || 'Mute Join Queue Notifications'}</span>
+                        <span class="text-xs block leading-tight mt-0.5" style="color:var(--text-tertiary);">${t('crm.mute_queue_desc', lang) || 'Stop receiving Telegram messages when a new user requests access'}</span>
                     </div>
-                    <button id="toggle-mute-queue" onclick="performAction('toggle_mute_queue', null, null, this)" class="w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none">
+                    <button id="toggle-mute-queue" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');performAction('toggle_mute_queue', null, null, this)" class="w-12 h-6 rounded-full relative transition-colors duration-200 focus:outline-none">
                         <div class="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 transition-transform duration-200 shadow-md"></div>
                     </button>
                 </div>
-                <div id="queue-list" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div id="queue-list" class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_items', lang)}</div>
                 </div>
 
                 <!-- Users View -->
                 <div id="view-users" class="space-y-3">
-                    <div class="relative">
-                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${escapeHtml(t('crm.search_users_placeholder', lang))}" class="w-full bg-gray-900 border border-gray-800 rounded-lg ps-10 pe-4 py-2.5 text-sm focus:outline-none focus:border-gray-700 transition">
-                        <svg class="w-4 h-4 text-gray-500 absolute start-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <div class="search-wrapper">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" id="search-users" onkeyup="filterUsers()" placeholder="${escapeHtml(t('crm.search_users_placeholder', lang))}" class="search-input">
                     </div>
                     <div id="users-list" class="space-y-3">
-                        <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                        <div class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_items', lang)}</div>
                     </div>
                 </div>
             </section>
@@ -1530,55 +1608,55 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         <!-- ═══ SECURITY AUDIT TAB ═══ -->
         <div id="audit-view-container" class="hidden space-y-3">
             <div id="audit-list" class="space-y-3">
-                <div class="glass rounded-xl p-6 text-center text-gray-400">${t('crm.compiling_ledger', lang)}</div>
+                <div class="card p-6 text-center" style="color:var(--text-tertiary);">${t('crm.compiling_ledger', lang)}</div>
             </div>
         </div>
     </main>
 
     <!-- Overlay Loader -->
-    <div id="overlay" class="fixed inset-0 bg-gray-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
-        <div class="glass rounded-2xl p-6 flex flex-col items-center shadow-2xl border-gray-700">
-            <div class="w-10 h-10 border-4 border-gray-700 border-t-brand-500 rounded-full animate-spin mb-4"></div>
-            <p class="text-sm font-medium" id="overlay-text">${t('crm.toast_processing', lang)}</p>
+    <div id="overlay" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
+        <div class="card p-6 flex flex-col items-center shadow-2xl" style="border-color:var(--border-subtle);">
+            <div class="w-10 h-10 border-4 rounded-full animate-spin mb-4" style="border-color:var(--border-subtle);border-top-color:var(--accent);"></div>
+            <p class="text-sm font-medium" id="overlay-text" style="color:var(--text-primary);">${t('crm.toast_processing', lang)}</p>
         </div>
     </div>
 
     <!-- Product Drawer -->
     <div id="drawer" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg" id="drawer-title">${t('crm.user_products', lang)}</h3>
-                    <p class="text-xs text-gray-400" id="drawer-subtitle">${t('crm.user_id_label', lang)} --</p>
+                    <h3 class="font-bold text-lg" id="drawer-title" style="color:var(--text-primary);">${t('crm.user_products', lang)}</h3>
+                    <p class="text-xs" id="drawer-subtitle" style="color:var(--text-tertiary);">${t('crm.user_id_label', lang)} --</p>
                 </div>
-                <button onclick="closeDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50"><input type="text" id="search-drawer-users" oninput="filterDrawer(this.value, 'drawer-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"></div>
+            <div class="px-4 py-2" style="border-bottom:1px solid var(--border-subtle);background:var(--surface-sunken);"><input type="text" id="search-drawer-users" oninput="filterDrawer(this.value, 'drawer-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="search-input" style="padding-left:14px;"></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-items">
-                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div class="text-center py-8 text-sm" style="color:var(--text-tertiary);">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
 
     <!-- Active Products Drawer -->
     <div id="drawer-active" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeActiveDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-active-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeActiveDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-active-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg">${t('crm.products_title', lang)}</h3>
-                    <p class="text-xs text-emerald-400" id="drawer-active-count">0 ${t('crm.items_label', lang)}</p>
+                    <h3 class="font-bold text-lg" style="color:var(--text-primary);">${t('crm.products_title', lang)}</h3>
+                    <p class="text-xs" id="drawer-active-count" style="color:var(--success);">0 ${t('crm.items_label', lang)}</p>
                 </div>
-                <button onclick="closeActiveDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeActiveDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-active" oninput="filterDrawer(this.value, 'drawer-active-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-active" onclick="toggleSortDropdown('active')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-active">${t('crm.sort_by', lang)}</span><span id="sort-dir-active" class="text-[10px]">↕</span></button><div id="sort-dropdown-active" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('active', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('active', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('active', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
+            <div class="px-4 py-2 flex gap-2 items-center" style="border-bottom:1px solid var(--border-subtle);background:var(--surface-sunken);"><input type="text" id="search-drawer-active" oninput="filterDrawer(this.value, 'drawer-active-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="search-input flex-1 min-w-0" style="padding-left:14px;"><div class="relative shrink-0"><button id="sort-btn-active" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleSortDropdown('active')" class="btn btn-sm btn-secondary whitespace-nowrap"><span id="sort-label-active">${t('crm.sort_by', lang)}</span><span id="sort-dir-active" class="text-xs">↕</span></button><div id="sort-dropdown-active" class="hidden absolute top-full mt-1 end-0 rounded-lg shadow-xl z-50 overflow-hidden min-w-[130px]" style="background:var(--surface-raised);border:1px solid var(--border-subtle);"><button data-sort="date" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('active', 'date')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('active', 'price')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('active', 'name')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_name', lang)}</button></div></div></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-active-items" onscroll="handleActiveScroll()">
             </div>
         </div>
@@ -1586,147 +1664,153 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
     <!-- Top Charts Drawer -->
     <div id="drawer-top-charts" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeTopChartsDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-top-charts-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeTopChartsDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-top-charts-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg">${t('crm.top_charts_title', lang)}</h3>
-                    <p class="text-xs text-gray-400" id="drawer-top-charts-subtitle">${t('crm.click_to_expand', lang)}</p>
+                    <h3 class="font-bold text-lg" style="color:var(--text-primary);">${t('crm.top_charts_title', lang)}</h3>
+                    <p class="text-xs" id="drawer-top-charts-subtitle" style="color:var(--text-secondary);">${t('crm.click_to_expand', lang)}</p>
                 </div>
-                <button onclick="closeTopChartsDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeTopChartsDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-top-charts" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-top-charts" onclick="toggleSortDropdown('top-charts')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-top-charts">${t('crm.sort_by', lang)}</span><span id="sort-dir-top-charts" class="text-[10px]">↕</span></button><div id="sort-dropdown-top-charts" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('top-charts', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('top-charts', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('top-charts', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
+            <div class="px-4 py-2 flex gap-2 items-center" style="border-bottom:1px solid var(--border-subtle);background:var(--surface-sunken);"><input type="text" id="search-drawer-top-charts" oninput="filterDrawer(this.value, 'drawer-top-charts-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="search-input flex-1 min-w-0" style="padding-left:14px;"><div class="relative shrink-0"><button id="sort-btn-top-charts" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleSortDropdown('top-charts')" class="btn btn-sm btn-secondary whitespace-nowrap"><span id="sort-label-top-charts">${t('crm.sort_by', lang)}</span><span id="sort-dir-top-charts" class="text-xs">↕</span></button><div id="sort-dropdown-top-charts" class="hidden absolute top-full mt-1 end-0 rounded-lg shadow-xl z-50 overflow-hidden min-w-[130px]" style="background:var(--surface-raised);border:1px solid var(--border-subtle);"><button data-sort="date" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('top-charts', 'date')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('top-charts', 'price')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('top-charts', 'name')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_name', lang)}</button></div></div></div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-top-charts-items">
-                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
 
     <!-- Paused Products Drawer -->
     <div id="drawer-paused" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closePausedDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-paused-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closePausedDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-paused-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg">${t('crm.paused_products', lang)}</h3>
-                    <p class="text-xs text-gray-400" id="drawer-paused-subtitle">${t('crm.click_to_expand', lang)}</p>
+                    <h3 class="font-bold text-lg" style="color:var(--text-primary);">${t('crm.paused_products', lang)}</h3>
+                    <p class="text-xs" id="drawer-paused-subtitle" style="color:var(--text-secondary);">${t('crm.click_to_expand', lang)}</p>
                 </div>
-                <button onclick="closePausedDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closePausedDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-paused" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-paused" onclick="toggleSortDropdown('paused')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-paused">${t('crm.sort_by', lang)}</span><span id="sort-dir-paused" class="text-[10px]">↕</span></button><div id="sort-dropdown-paused" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('paused', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('paused', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('paused', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-red-900/10 flex items-center justify-between" id="drawer-paused-toolbar" style="display: none;">
+            <div class="px-4 py-2 flex gap-2 items-center" style="border-bottom:1px solid var(--border-subtle);background:var(--surface-sunken);"><input type="text" id="search-drawer-paused" oninput="filterDrawer(this.value, 'drawer-paused-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="search-input flex-1 min-w-0" style="padding-left:14px;"><div class="relative shrink-0"><button id="sort-btn-paused" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleSortDropdown('paused')" class="btn btn-sm btn-secondary whitespace-nowrap"><span id="sort-label-paused">${t('crm.sort_by', lang)}</span><span id="sort-dir-paused" class="text-xs">↕</span></button><div id="sort-dropdown-paused" class="hidden absolute top-full mt-1 end-0 rounded-lg shadow-xl z-50 overflow-hidden min-w-[130px]" style="background:var(--surface-raised);border:1px solid var(--border-subtle);"><button data-sort="date" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('paused', 'date')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('paused', 'price')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('paused', 'name')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_name', lang)}</button></div></div></div>
+            <div class="px-4 py-2 flex items-center justify-between" id="drawer-paused-toolbar" style="display:none;border-bottom:1px solid var(--border-subtle);background:rgba(248,113,113,0.06);">
                 <label class="flex items-center gap-2 cursor-pointer select-none">
-                    <input type="checkbox" id="paused-select-all" onchange="togglePausedSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
-                    <span class="text-xs text-gray-400">${t('crm.select_all', lang)}</span>
+                    <input type="checkbox" id="paused-select-all" onchange="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');togglePausedSelectAll()">
+                    <span class="text-xs" style="color:var(--text-secondary);">${t('crm.select_all', lang)}</span>
                 </label>
-                <button onclick="deleteSelectedPaused()" id="paused-delete-selected-btn" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');deleteSelectedPaused()" id="paused-delete-selected-btn" class="btn btn-sm btn-danger">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     <span>${t('crm.bulk_delete', lang)}</span>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-paused-items">
-                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
 
     <!-- Graveyard Drawer -->
     <div id="drawer-graveyard" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeGraveyardDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-graveyard-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeGraveyardDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-graveyard-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg">${t('crm.graveyard_title', lang)}</h3>
-                    <p class="text-xs text-gray-400" id="drawer-graveyard-count">--</p>
+                    <h3 class="font-bold text-lg" style="color:var(--text-primary);">${t('crm.graveyard_title', lang)}</h3>
+                    <p class="text-xs" id="drawer-graveyard-count" style="color:var(--text-secondary);">--</p>
                 </div>
-                <button onclick="closeGraveyardDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeGraveyardDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-graveyard" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-graveyard" onclick="toggleSortDropdown('graveyard')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-graveyard">${t('crm.sort_by', lang)}</span><span id="sort-dir-graveyard" class="text-[10px]">↕</span></button><div id="sort-dropdown-graveyard" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('graveyard', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('graveyard', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('graveyard', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
-            <div class="px-4 py-2 border-b border-gray-800 flex justify-between items-center bg-red-900/10" id="drawer-graveyard-toolbar" style="display: none;">
+            <div class="px-4 py-2 flex gap-2 items-center" style="border-bottom:1px solid var(--border-subtle);background:var(--surface-sunken);"><input type="text" id="search-drawer-graveyard" oninput="filterDrawer(this.value, 'drawer-graveyard-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="search-input flex-1 min-w-0" style="padding-left:14px;"><div class="relative shrink-0"><button id="sort-btn-graveyard" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleSortDropdown('graveyard')" class="btn btn-sm btn-secondary whitespace-nowrap"><span id="sort-label-graveyard">${t('crm.sort_by', lang)}</span><span id="sort-dir-graveyard" class="text-xs">↕</span></button><div id="sort-dropdown-graveyard" class="hidden absolute top-full mt-1 end-0 rounded-lg shadow-xl z-50 overflow-hidden min-w-[130px]" style="background:var(--surface-raised);border:1px solid var(--border-subtle);"><button data-sort="date" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('graveyard', 'date')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('graveyard', 'price')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('graveyard', 'name')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_name', lang)}</button></div></div></div>
+            <div class="px-4 py-2 flex justify-between items-center" id="drawer-graveyard-toolbar" style="display:none;border-bottom:1px solid var(--border-subtle);background:rgba(248,113,113,0.06);">
                 <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" id="graveyard-select-all" onchange="toggleGraveyardSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
-                    <span class="text-xs text-gray-400" id="graveyard-select-all-label">${t('crm.select_all', lang)}</span>
+                    <input type="checkbox" id="graveyard-select-all" onchange="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleGraveyardSelectAll()">
+                    <span class="text-xs" id="graveyard-select-all-label" style="color:var(--text-secondary);">${t('crm.select_all', lang)}</span>
                 </label>
-                <button onclick="purgeSelectedGhosts()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');purgeSelectedGhosts()" class="btn btn-sm btn-danger">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     <span>${t('crm.graveyard_purge_btn', lang)}</span>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-graveyard-items">
-                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
 
     <!-- Globally Tracked Drawer -->
     <div id="drawer-global" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeGlobalDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-global-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeGlobalDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-global-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg flex items-center gap-2">🌐 ${t('crm.global_products', lang)}</h3>
-                    <p class="text-xs text-gray-400" id="drawer-global-count">--</p>
+                    <h3 class="font-bold text-lg flex items-center gap-2" style="color:var(--text-primary);">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        ${t('crm.global_products', lang)}
+                    </h3>
+                    <p class="text-xs" id="drawer-global-count" style="color:var(--text-secondary);">--</p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button onclick="openBulkAddModal()" class="px-3 py-1.5 bg-purple-500/10 text-purple-300 rounded-lg text-xs font-bold hover:bg-purple-500/25 transition border border-purple-500/20 whitespace-nowrap">
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openBulkAddModal()" class="btn btn-sm btn-secondary">
                         ${t('crm.btn_add_products', lang)}
                     </button>
-                    <button onclick="closeGlobalDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeGlobalDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
             </div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex gap-2 items-center"><input type="text" id="search-drawer-global" oninput="filterDrawer(this.value, 'drawer-global-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500 transition"><div class="relative shrink-0"><button id="sort-btn-global" onclick="toggleSortDropdown('global')" class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs font-medium hover:bg-gray-700 transition whitespace-nowrap"><span id="sort-label-global">${t('crm.sort_by', lang)}</span><span id="sort-dir-global" class="text-[10px]">↕</span></button><div id="sort-dropdown-global" class="hidden absolute bottom-full mb-1 end-0 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden min-w-[130px]"><button data-sort="date" onclick="applySort('global', 'date')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="applySort('global', 'price')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="applySort('global', 'name')" class="w-full text-center px-3 py-2 text-xs hover:bg-gray-700 transition">${t('crm.sort_name', lang)}</button></div></div></div>
-            <div class="px-4 py-2 border-b border-gray-800 bg-red-900/10 flex items-center justify-between" id="drawer-global-toolbar" style="display: none;">
+            <div class="px-4 py-2 flex gap-2 items-center" style="border-bottom:1px solid var(--border-subtle);background:var(--surface-sunken);"><input type="text" id="search-drawer-global" oninput="filterDrawer(this.value, 'drawer-global-items')" placeholder="${escapeHtml(t('crm.search_placeholder', lang))}" class="search-input flex-1 min-w-0" style="padding-left:14px;"><div class="relative shrink-0"><button id="sort-btn-global" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleSortDropdown('global')" class="btn btn-sm btn-secondary whitespace-nowrap"><span id="sort-label-global">${t('crm.sort_by', lang)}</span><span id="sort-dir-global" class="text-xs">↕</span></button><div id="sort-dropdown-global" class="hidden absolute top-full mt-1 end-0 rounded-lg shadow-xl z-50 overflow-hidden min-w-[130px]" style="background:var(--surface-raised);border:1px solid var(--border-subtle);"><button data-sort="date" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('global', 'date')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_date', lang)}</button><button data-sort="price" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('global', 'price')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_price', lang)}</button><button data-sort="name" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');applySort('global', 'name')" class="w-full text-center px-3 py-2 text-xs" style="color:var(--text-secondary);">${t('crm.sort_name', lang)}</button></div></div></div>
+            <div class="px-4 py-2 flex items-center justify-between" id="drawer-global-toolbar" style="display:none;border-bottom:1px solid var(--border-subtle);background:rgba(248,113,113,0.06);">
                 <label class="flex items-center gap-2 cursor-pointer select-none">
-                    <input type="checkbox" id="global-select-all" onchange="toggleGlobalSelectAll()" class="rounded bg-gray-800 border-gray-600 text-red-500 focus:ring-red-500">
-                    <span class="text-xs text-gray-400">${t('crm.select_all', lang)}</span>
+                    <input type="checkbox" id="global-select-all" onchange="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');toggleGlobalSelectAll()">
+                    <span class="text-xs" style="color:var(--text-secondary);">${t('crm.select_all', lang)}</span>
                 </label>
-                <button onclick="deleteSelectedGlobal()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs px-3 py-1.5 rounded-lg font-medium transition border border-red-500/20 flex items-center gap-1.5">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');deleteSelectedGlobal()" class="btn btn-sm btn-danger">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     <span>${t('crm.graveyard_purge_btn', lang)}</span>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-global-items">
-                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
 
     <!-- Bulk Add Modal -->
     <div id="bulk-add-modal" class="fixed inset-0 z-[60] hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBulkAddModal()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col" id="bulk-add-modal-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
-                <h3 class="font-bold text-lg flex items-center gap-2">📦 ${t('crm.bulk_add_title', lang)}</h3>
-                <button onclick="closeBulkAddModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeBulkAddModal()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col" id="bulk-add-modal-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
+                <h3 class="font-bold text-lg flex items-center gap-2" style="color:var(--text-primary);">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent);"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                    ${t('crm.bulk_add_title', lang)}
+                </h3>
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeBulkAddModal()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             <div class="p-4 flex flex-col gap-4">
-                <textarea id="bulk-add-input" rows="8" placeholder="${escapeHtml(t('crm.bulk_add_placeholder', lang))}" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition resize-none"></textarea>
-                
-                <div id="bulk-add-preview" class="hidden glass rounded-xl p-3 border border-purple-500/20">
-                    <p class="text-xs font-bold text-purple-400 mb-2">${t('crm.bulk_add_preview', lang)}</p>
-                    <div id="bulk-add-summary-text" class="text-sm font-medium"></div>
+                <textarea id="bulk-add-input" rows="8" placeholder="${escapeHtml(t('crm.bulk_add_placeholder', lang))}" class="w-full rounded-xl p-3 text-sm focus:outline-none resize-none" style="background:var(--surface-sunken);border:1px solid var(--border-subtle);color:var(--text-primary);"></textarea>
+
+                <div id="bulk-add-preview" class="hidden card rounded-xl p-3" style="border-color:rgba(168,85,247,0.2);">
+                    <p class="text-xs font-bold mb-2" style="color:rgba(168,85,247,0.8);">${t('crm.bulk_add_preview', lang)}</p>
+                    <div id="bulk-add-summary-text" class="text-sm font-medium" style="color:var(--text-primary);"></div>
                 </div>
 
                 <div class="flex gap-2 justify-end mt-2">
-                    <button onclick="closeBulkAddModal()" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-700 transition">
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeBulkAddModal()" class="btn btn-sm btn-secondary">
                         ${t('crm.confirm_btn_cancel', lang)}
                     </button>
-                    <button onclick="submitBulkAdd()" id="bulk-add-submit-btn" class="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-500 transition shadow-lg shadow-purple-500/20 flex items-center gap-2">
+                    <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');submitBulkAdd()" id="bulk-add-submit-btn" class="btn btn-sm btn-primary">
                         <span id="bulk-add-btn-text">${t('crm.bulk_add_preview', lang)}</span>
                     </button>
                 </div>
@@ -1736,58 +1820,58 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
     <!-- Product Subs Drawer -->
     <div id="drawer-product-subs" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeProductSubsDrawer()"></div>
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh]" id="drawer-product-subs-content">
-            <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mt-3 mb-2"></div>
-            <div class="px-4 pb-3 border-b border-gray-800 flex justify-between items-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeProductSubsDrawer()"></div>
+        <div class="absolute bottom-0 left-0 right-0 drawer-panel flex flex-col max-h-[85vh]" id="drawer-product-subs-content">
+            <div class="drawer-handle"></div>
+            <div class="px-4 pb-3 flex justify-between items-center" style="border-bottom:1px solid var(--border-subtle);">
                 <div>
-                    <h3 class="font-bold text-lg" id="drawer-product-subs-title">Subscribers</h3>
-                    <p class="text-xs text-gray-400" id="drawer-product-subs-count">--</p>
+                    <h3 class="font-bold text-lg" id="drawer-product-subs-title" style="color:var(--text-primary);">${t('crm.subscribers', lang)}</h3>
+                    <p class="text-xs" id="drawer-product-subs-count" style="color:var(--text-secondary);">--</p>
                 </div>
-                <button onclick="closeProductSubsDrawer()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <button onclick="closeProductSubsDrawer()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             <div class="p-4 overflow-y-auto flex-1 space-y-3" id="drawer-product-subs-items">
-                <div class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_items', lang)}</div>
+                <div class="text-center py-8 text-sm" style="color:var(--text-tertiary);">${t('crm.loading_items', lang)}</div>
             </div>
         </div>
     </div>
 
     <!-- Chart Modal -->
     <div id="chart-modal" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeChartModal()"></div>
-        <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh]">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeChartModal()"></div>
+        <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh]" style="background:var(--surface-raised);border:1px solid var(--border-subtle);">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg">${t('crm.price_history', lang)}</h3>
-                <button onclick="closeChartModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                <h3 class="font-bold text-lg" style="color:var(--text-primary);">${t('crm.price_history', lang)}</h3>
+                <button onclick="closeChartModal()" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            
+
             <div class="flex gap-4 mb-4" id="chart-metrics" style="display: none;">
-                <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
-                    <div class="text-[10px] text-gray-400 uppercase">${t('crm.ath', lang)}</div>
-                    <div class="font-bold text-red-400 text-sm" id="chart-ath">--</div>
+                <div class="flex-1 rounded-lg p-2 text-center" style="background:var(--surface-sunken);">
+                    <div class="text-xs uppercase" style="color:var(--text-tertiary);">${t('crm.ath', lang)}</div>
+                    <div class="font-bold text-sm" id="chart-ath" style="color:var(--danger);">--</div>
                 </div>
-                <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
-                    <div class="text-[10px] text-gray-400 uppercase">${t('crm.avg', lang)}</div>
-                    <div class="font-bold text-gray-200 text-sm" id="chart-avg">--</div>
+                <div class="flex-1 rounded-lg p-2 text-center" style="background:var(--surface-sunken);">
+                    <div class="text-xs uppercase" style="color:var(--text-tertiary);">${t('crm.avg', lang)}</div>
+                    <div class="font-bold text-sm" id="chart-avg" style="color:var(--text-primary);">--</div>
                 </div>
-                <div class="flex-1 bg-gray-800 rounded-lg p-2 text-center">
-                    <div class="text-[10px] text-gray-400 uppercase">${t('crm.atl', lang)}</div>
-                    <div class="font-bold text-green-400 text-sm" id="chart-atl">--</div>
+                <div class="flex-1 rounded-lg p-2 text-center" style="background:var(--surface-sunken);">
+                    <div class="text-xs uppercase" style="color:var(--text-tertiary);">${t('crm.atl', lang)}</div>
+                    <div class="font-bold text-sm" id="chart-atl" style="color:var(--success);">--</div>
                 </div>
             </div>
             <div class="flex gap-2 mb-4 overflow-x-auto pb-1" id="chart-intervals" style="display: none;">
-                <button data-interval="1W" onclick="renderChartInterval('1W')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_1w', lang)}</button>
-                <button data-interval="1M" onclick="renderChartInterval('1M')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_1m', lang)}</button>
-                <button data-interval="3M" onclick="renderChartInterval('3M')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_3m', lang)}</button>
-                <button data-interval="6M" onclick="renderChartInterval('6M')" class="flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap">${t('crm.chart_6m', lang)}</button>
-                <button data-interval="ALL" onclick="renderChartInterval('ALL')" class="flex-1 py-1 bg-brand-500/20 text-brand-400 text-xs rounded-full border border-brand-500/50 hover:text-brand-300 transition whitespace-nowrap">${t('crm.chart_all', lang)}</button>
+                <button data-interval="1W" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');renderChartInterval('1W')" class="flex-1 py-1 text-xs rounded-full whitespace-nowrap" style="background:var(--surface-sunken);color:var(--text-secondary);border:1px solid var(--border-subtle);">${t('crm.chart_1w', lang)}</button>
+                <button data-interval="1M" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');renderChartInterval('1M')" class="flex-1 py-1 text-xs rounded-full whitespace-nowrap" style="background:var(--surface-sunken);color:var(--text-secondary);border:1px solid var(--border-subtle);">${t('crm.chart_1m', lang)}</button>
+                <button data-interval="3M" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');renderChartInterval('3M')" class="flex-1 py-1 text-xs rounded-full whitespace-nowrap" style="background:var(--surface-sunken);color:var(--text-secondary);border:1px solid var(--border-subtle);">${t('crm.chart_3m', lang)}</button>
+                <button data-interval="6M" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');renderChartInterval('6M')" class="flex-1 py-1 text-xs rounded-full whitespace-nowrap" style="background:var(--surface-sunken);color:var(--text-secondary);border:1px solid var(--border-subtle);">${t('crm.chart_6m', lang)}</button>
+                <button data-interval="ALL" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');renderChartInterval('ALL')" class="flex-1 py-1 text-xs rounded-full whitespace-nowrap" style="background:var(--surface-sunken);color:var(--text-secondary);border:1px solid var(--border-subtle);">${t('crm.chart_all', lang)}</button>
             </div>
 
-            <div id="chart-loading" class="text-center py-8 text-gray-500 text-sm">${t('crm.loading_chart', lang)}</div>
+            <div id="chart-loading" class="text-center py-8 text-[var(--text-tertiary)] text-sm">${t('crm.loading_chart', lang)}</div>
             <div class="w-full relative flex-1 min-h-[300px]">
                 <canvas id="crmPriceChart" style="display: none;"></canvas>
             </div>
@@ -1796,41 +1880,42 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
     <!-- Broadcast Modal -->
     <div id="broadcast-modal" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBroadcastModal()"></div>
-        <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh] overflow-y-auto">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');closeBroadcastModal()"></div>
+        <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[85vh] overflow-y-auto" style="background:var(--surface-raised);border:1px solid var(--border-subtle);">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg">${t('crm.broadcast_composer', lang)}</h3>
+                <h3 class="font-bold text-lg" style="color:var(--text-primary);">${t('crm.broadcast_composer', lang)}</h3>
                 <div class="flex gap-2">
-                    <button onclick="goBackToBroadcastModalOptions()" id="broadcast-modal-back-btn" class="p-2 bg-gray-800 rounded-full text-brand-400 hover:text-brand-300 hidden transition">
+                    <button onclick="goBackToBroadcastModalOptions()" id="broadcast-modal-back-btn" class="btn btn-sm btn-secondary hidden" style="width:36px;height:36px;border-radius:50%;padding:0;">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                     </button>
-                    <button onclick="closeBroadcastModal()" id="broadcast-modal-close-btn" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white transition">
+                    <button onclick="closeBroadcastModal()" id="broadcast-modal-close-btn" class="btn btn-sm btn-secondary" style="width:36px;height:36px;border-radius:50%;padding:0;">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
             </div>
             <div id="broadcast-modal-loading" class="text-center py-8">
-                <div class="inline-block animate-spin w-6 h-6 border-2 border-brand-400 border-t-transparent rounded-full mb-2"></div>
-                <p class="text-xs text-gray-400">${t('crm.broadcast_loading', lang)}</p>
+                <div class="inline-block animate-spin w-6 h-6 border-2 border-t-transparent rounded-full mb-2" style="border-color:var(--accent);border-top-color:transparent;"></div>
+                <p class="text-xs" style="color:var(--text-secondary);">${t('crm.broadcast_loading', lang)}</p>
             </div>
             <div id="broadcast-modal-options" class="hidden mb-4">
-                <p class="text-xs text-brand-400 font-medium mb-2">${t('crm.broadcast_options_found', lang)}</p>
+                <p class="text-xs font-medium mb-2" style="color:var(--accent);">${t('crm.broadcast_options_found', lang)}</p>
                 <div id="broadcast-modal-options-list" class="space-y-1 max-h-40 overflow-y-auto pr-1"></div>
             </div>
             <div id="broadcast-modal-composer" class="hidden">
-                <div class="bg-gray-800/30 rounded-lg p-3 mb-3">
-                    <label class="text-[10px] text-gray-500 uppercase tracking-wider">${t('crm.broadcast_editor_label', lang)}</label>
-                    <input type="text" id="broadcast-modal-title" class="w-full bg-transparent border-b border-gray-700 text-sm font-bold text-white py-1 mb-2 focus:outline-none focus:border-brand-500/50">
-                    <label class="text-[10px] text-gray-500 uppercase tracking-wider">${t('crm.broadcast_desc_label', lang)}</label>
-                    <textarea id="broadcast-modal-body" rows="6" class="w-full bg-transparent text-sm text-gray-300 py-1 focus:outline-none resize-none leading-relaxed"></textarea>
+                <div class="rounded-lg p-3 mb-3" style="background:var(--surface-sunken);">
+                    <label class="text-xs uppercase tracking-wider" style="color:var(--text-tertiary);">${t('crm.broadcast_editor_label', lang)}</label>
+                    <input type="text" id="broadcast-modal-title" class="w-full bg-transparent text-sm font-bold py-1 mb-2 focus:outline-none" style="border-bottom:1px solid var(--border-subtle);color:var(--text-primary);">
+                    <label class="text-xs uppercase tracking-wider" style="color:var(--text-tertiary);">${t('crm.broadcast_desc_label', lang)}</label>
+                    <textarea id="broadcast-modal-body" rows="6" class="w-full bg-transparent text-sm py-1 focus:outline-none resize-none leading-relaxed" style="color:var(--text-secondary);"></textarea>
                 </div>
-                <button onclick="confirmBroadcastModal()" id="broadcast-modal-confirm-btn"
-                    class="w-full justify-center bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-sm px-4 py-2.5 rounded-lg font-medium transition border border-brand-500/20 flex items-center gap-2">
+                <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');confirmBroadcastModal()" id="broadcast-modal-confirm-btn"
+                    class="btn btn-sm btn-primary w-full justify-center flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
                     ${t('crm.broadcast_confirm_send', lang)}
                 </button>
             </div>
             <div id="broadcast-modal-error" class="hidden text-center py-3">
-                <p class="text-xs text-red-400" id="broadcast-modal-error-text"></p>
+                <p class="text-xs" id="broadcast-modal-error-text" style="color:var(--danger);"></p>
             </div>
         </div>
     </div>
@@ -1921,6 +2006,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         function renderTelemetry() {
             const activeLength = appData.systemStats.activeWatchPool || 0;
+            // Hide skeletons once data arrives
+            document.querySelectorAll('[id^="skeleton-"]').forEach(el => el.style.display = 'none');
             document.getElementById('stat-users').innerText = appData.systemStats.totalUsers || 0;
             document.getElementById('stat-pool').innerText = activeLength;
             document.getElementById('stat-paused').innerText = appData.systemStats.pausedProducts || 0;
@@ -1948,12 +2035,12 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const btn = document.getElementById('toggle-mute-queue');
                 if (btn) {
                     if (me.mute_join_queue === 1) {
-                        btn.classList.add('bg-brand-500');
-                        btn.classList.remove('bg-gray-600');
+                        btn.classList.add('bg-[var(--accent)]');
+                        btn.classList.remove('bg-[var(--surface-sunken)]');
                         btn.firstElementChild.style.transform = 'translateX(1.5rem)';
                     } else {
-                        btn.classList.add('bg-gray-600');
-                        btn.classList.remove('bg-brand-500');
+                        btn.classList.add('bg-[var(--surface-sunken)]');
+                        btn.classList.remove('bg-[var(--accent)]');
                         btn.firstElementChild.style.transform = 'translateX(0)';
                     }
                 }
@@ -1970,9 +2057,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 document.getElementById('engine-interval').innerText = 'N/A';
                 document.getElementById('engine-daily-ops').innerText = '0';
                 document.getElementById('engine-batches').innerText = '0';
-                document.getElementById('engine-status-dot').className = 'w-2 h-2 rounded-full bg-gray-500';
+                document.getElementById('engine-status-dot').className = 'w-2 h-2 rounded-full bg-[var(--text-tertiary)]';
                 document.getElementById('engine-status-text').innerText = 'Idle';
-                document.getElementById('engine-status-text').className = 'text-xs font-medium text-gray-400';
+                document.getElementById('engine-status-text').className = 'text-xs font-medium text-[var(--text-secondary)]';
                 return;
             }
 
@@ -2007,6 +2094,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 badge.innerText = bottleneckLabel;
                 badge.classList.remove('hidden');
             }
+            const bottleneckText = document.getElementById('engine-bottleneck-text');
+            if (bottleneckText) bottleneckText.innerText = bottleneckLabel;
 
             // Actual engine runs per day are strictly bounded by the dynamic hardware cron trigger
             const actualRunsPerDay = Math.floor(86400000 / Math.max(hardwareIntervalMs, intervalMs));
@@ -2023,17 +2112,23 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const text = document.getElementById('engine-status-text');
 
             if (opsRatio < 0.5) {
-                dot.className = 'w-2 h-2 rounded-full bg-green-500';
+                dot.className = 'w-2 h-2 rounded-full';
+                dot.style.background = 'var(--success)';
                 text.innerText = ${js('crm.engine_status_ok')};
-                text.className = 'text-xs font-medium text-green-400';
+                text.className = 'text-xs font-medium';
+                text.style.color = 'var(--success)';
             } else if (opsRatio < 0.8) {
-                dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+                dot.className = 'w-2 h-2 rounded-full';
+                dot.style.background = 'var(--warning)';
                 text.innerText = ${js('crm.engine_status_warn')};
-                text.className = 'text-xs font-medium text-amber-400';
+                text.className = 'text-xs font-medium';
+                text.style.color = 'var(--warning)';
             } else {
-                dot.className = 'w-2 h-2 rounded-full bg-red-500';
+                dot.className = 'w-2 h-2 rounded-full';
+                dot.style.background = 'var(--danger)';
                 text.innerText = ${js('crm.engine_status_critical')};
-                text.className = 'text-xs font-medium text-red-400';
+                text.className = 'text-xs font-medium';
+                text.style.color = 'var(--danger)';
             }
         }
 
@@ -2041,15 +2136,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const tabs = ['system-view', 'users-view', 'audit-view'];
             tabs.forEach(t => {
                 const el = document.getElementById('main-tab-' + t);
-                if (el) {
-                    if (t === tabId) {
-                        el.classList.add('border-brand-400', 'text-white');
-                        el.classList.remove('border-transparent', 'text-gray-400');
-                    } else {
-                        el.classList.add('border-transparent', 'text-gray-400');
-                        el.classList.remove('border-brand-400', 'text-white');
-                    }
-                }
+                if (el) el.classList.toggle('active', t === tabId);
                 document.getElementById(t + '-container').classList.toggle('hidden', t !== tabId);
             });
 
@@ -2060,17 +2147,17 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         
         async function loadAuditTab() {
             const container = document.getElementById('audit-list');
-            container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-400">' + ${js('crm.loading_audit')} + '</div>';
+            container.innerHTML = '<div class="card p-6 text-center" style="color:var(--text-tertiary);">' + ${js('crm.loading_audit')} + '</div>';
             
             const logs = await fetchAPI('/audit');
             if (!logs) {
-                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-red-400">' + ${js('crm.toast_network_error')} + '</div>';
+                container.innerHTML = '<div class="card p-6 text-center" style="color:var(--danger);">' + ${js('crm.toast_network_error')} + '</div>';
                 return;
             }
             appData.auditLoaded = true;
             
             if (logs.length === 0) {
-                container.innerHTML = '<div class="glass rounded-xl p-6 text-center text-gray-500 border border-gray-800 border-dashed">' + ${js('crm.no_audit')} + '</div>';
+                container.innerHTML = '<div class="card p-6 text-center" style="color:var(--text-tertiary);border-style:dashed;">' + ${js('crm.no_audit')} + '</div>';
                 return;
             }
             
@@ -2104,8 +2191,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const date = new Date(log.ts);
                 const timeStr = date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-                const adminDisplay = log.adminHandle ? escapeHtml(log.adminHandle) : '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.adminId) + '</code>';
-                let targetDisplay = '<code class="bg-gray-800 px-1 py-0.5 rounded">' + escapeHtml(log.target) + '</code>';
+                const adminDisplay = log.adminHandle ? escapeHtml(log.adminHandle) : '<code class="bg-[var(--surface-sunken)] px-1 py-0.5 rounded">' + escapeHtml(log.adminId) + '</code>';
+                let targetDisplay = '<code class="bg-[var(--surface-sunken)] px-1 py-0.5 rounded">' + escapeHtml(log.target) + '</code>';
                 if (log.targetHandle) targetDisplay = escapeHtml(log.targetHandle);
                 const actionEsc = escapeHtml(log.action);
 
@@ -2122,13 +2209,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 }
                 const detailsEsc = typeof log.details === 'string' ? escapeHtml(log.details) : detailsStr;
 
-                return '<div class="glass rounded-xl p-4">' +
-                    '<div class="flex justify-between items-center text-xs opacity-80 border-b border-gray-700/50 pb-2 mb-2">' +
+                return '<div class="card p-3">' +
+                    '<div class="flex justify-between items-center text-xs pb-2 mb-2" style="color:var(--text-tertiary);border-bottom:1px solid var(--border-subtle);">' +
                         '<span>' + adminDisplay + '</span>' +
-                        '<span>\u{1F552} ' + timeStr + '</span>' +
+                        '<span style="display:inline-flex;align-items:center;gap:4px;"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ' + timeStr + '</span>' +
                     '</div>' +
-                    '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold opacity-80 w-16">' + ${js('crm.audit_target')} + '</span><span class="break-all">' + targetDisplay + '</span></div>' +
-                    '<div class="text-sm flex gap-2"><span class="font-semibold opacity-80 w-16">' + ${js('crm.audit_details')} + '</span><span class="break-all">' + detailsEsc + '</span></div>' +
+                    '<div class="text-sm flex gap-2 mb-1"><span class="font-semibold w-16" style="color:var(--text-tertiary);">' + ${js('crm.audit_target')} + '</span><span class="break-all">' + targetDisplay + '</span></div>' +
+                    '<div class="text-sm flex gap-2"><span class="font-semibold w-16" style="color:var(--text-tertiary);">' + ${js('crm.audit_details')} + '</span><span class="break-all">' + detailsEsc + '</span></div>' +
                 '</div>';
             }).join('');
         }
@@ -2136,18 +2223,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function switchTab(tab) {
             activeTab = tab;
             const tabs = ['users', 'queue', 'banned', 'admins'];
-            const baseClasses = {
-                'users': 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap relative',
-                'queue': 'px-4 pb-3 text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap',
-                'banned': 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap text-red-400/80',
-                'admins': 'px-4 pb-3 text-sm font-medium transition whitespace-nowrap'
-            };
             tabs.forEach(t => {
                 const el = document.getElementById('tab-' + t);
-                if (el) {
-                    const cls = t === tab ? 'tab-active' : 'tab-inactive';
-                    el.className = baseClasses[t] + ' ' + cls;
-                }
+                if (el) el.classList.toggle('active', t === tab);
             });
             
             document.getElementById('view-queue').style.display = tab === 'queue' ? 'block' : 'none';
@@ -2160,7 +2238,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             if (activeTab === 'queue') {
                 const list = document.getElementById('queue-list');
                 if (!appData.joinQueue || appData.joinQueue.length === 0) {
-                    list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_pending')} + '</div>';
+                    list.innerHTML = '<div class="text-center py-10 text-sm card" style="color:var(--text-tertiary);border-style:dashed;">' + ${js('crm.no_pending')} + '</div>';
                     return;
                 }
                 
@@ -2168,32 +2246,27 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     const time = new Date(u.requested_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     const isUnban = u.request_type === 'unban';
                     const typeLabel = isUnban ? ${js('crm.queue_type_unban')} : ${js('crm.queue_type_access')};
-                    const typeColor = isUnban ? 'bg-orange-500/15 text-orange-400 border-orange-500/20' : 'bg-brand-500/15 text-brand-400 border-brand-500/20';
+                    const typePill = isUnban ? 'pill pill-paused' : 'pill pill-active';
                     const idEsc = escapeHtml(String(u.id));
                     const firstEsc = escapeHtml(u.first_name) || 'User';
                     const userDisplay = u.username ? '@' + escapeHtml(u.username) : idEsc;
-                    const borderClass = isUnban ? 'border-s-2 border-s-orange-500/40' : '';
+                    const statusClass = isUnban ? 'card-status-paused' : 'card-status-active';
                     const actionApprove = isUnban ? 'unban' : 'approve';
                     const approveTitle = isUnban ? (${js('crm.btn_unban')} || 'Unban') : 'Approve';
-                    const approveInner = isUnban
-                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
-                        : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
-                    const approveAttr = isUnban ? ' title="' + approveTitle + '"' : '';
                     const rejectTitle = isUnban ? (${js('crm.btn_deny')} || 'Deny') : 'Reject';
-                    const rejectAttr = ' title="' + rejectTitle + '"';
-                    return '<div class="glass rounded-xl p-3 flex justify-between items-center ' + borderClass + '">' +
+                    return '<div class="card ' + statusClass + ' p-3 flex justify-between items-center">' +
                         '<div class="min-w-0 flex-1">' +
                             '<div class="flex items-center gap-2 mb-1">' +
-                                '<div class="font-medium text-sm truncate">' + firstEsc + ' <sub class="text-gray-500 font-normal text-[10px] ml-1">' + userDisplay + '</sub></div>' +
+                                '<div class="font-medium text-sm truncate" style="color:var(--text-primary);">' + firstEsc + ' <sub class="font-normal text-xs ml-1" style="color:var(--text-tertiary);">' + userDisplay + '</sub></div>' +
                             '</div>' +
                             '<div class="flex items-center gap-3">' +
-                                '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ' + typeColor + ' border">' + typeLabel + '</span>' +
-                                '<span class="text-xs text-gray-500 shrink-0">' + ${js('crm.requested_label')} + ' ' + time + '</span>' +
+                                '<span class="' + typePill + ' pill-sm">' + typeLabel + '</span>' +
+                                '<span class="text-xs shrink-0" style="color:var(--text-tertiary);">' + ${js('crm.requested_label')} + ' ' + time + '</span>' +
                             '</div>' +
                         '</div>' +
                         '<div class="flex items-center gap-2 ml-3 shrink-0">' +
-                            '<button onclick="performAction(\\'reject\\', \\'' + idEsc + '\\')" class="w-8 h-8 rounded bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500/20 transition"' + rejectAttr + '><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>' +
-                            '<button onclick="performAction(\\'' + actionApprove + '\\', \\'' + idEsc + '\\')" class="w-8 h-8 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center hover:bg-emerald-500/20 transition"' + approveAttr + '>' + approveInner + '</button>' +
+                            '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'reject\\', \\'' + idEsc + '\\')" class="btn btn-sm btn-danger" style="width:32px;height:32px;" title="' + rejectTitle + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>' +
+                            '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'' + actionApprove + '\\', \\'' + idEsc + '\\')" class="btn btn-sm btn-success" style="width:32px;height:32px;" title="' + approveTitle + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></button>' +
                         '</div>' +
                     '</div>';
                 }).join('');
@@ -2232,18 +2305,18 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
 
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_users_found')} + '</div>';
+                list.innerHTML = '<div class="text-center py-10 text-sm card" style="color:var(--text-tertiary);border-style:dashed;">' + ${js('crm.no_users_found')} + '</div>';
                 return;
             }
 
             list.innerHTML = filtered.map(u => {
-                const roleColors = { 'root': 'text-purple-400 border-purple-400/20 bg-purple-400/10', 'admin': 'text-brand-400 border-brand-400/20 bg-brand-400/10', 'approved': 'text-gray-300 border-gray-700 bg-gray-800', 'rejected': 'text-red-400 border-red-400/20 bg-red-400/10' };
+                const roleColors = { 'root': 'text-[var(--purple)] border-[var(--purple)]/20 bg-[var(--purple)]/10', 'admin': 'text-[var(--accent)] border-[var(--accent)]/20 bg-[var(--accent)]/10', 'approved': 'text-[var(--text-secondary)] border-[var(--border-subtle)] bg-[var(--surface-sunken)]', 'rejected': 'text-[var(--danger)] border-[var(--danger)]/20 bg-[var(--danger)]/10' };
                 const roleStyle = roleColors[u.role] || roleColors['rejected'];
                 const firstNameEsc = escapeHtml(u.first_name) || 'User';
                 const usernameEsc = u.username ? '@' + escapeHtml(u.username) : escapeHtml(String(u.chat_id));
                 const chatIdEsc = escapeHtml(String(u.chat_id));
                 const rawRole = u.role ? u.role.toLowerCase() : '';
-                const roleEsc = rawRole === 'root' ? ${js('crm.role_root')} : (rawRole === 'admin' ? ${js('crm.role_admin')} : escapeHtml(u.role).toUpperCase());
+                const roleEsc = rawRole === 'root' ? ${js('crm.role_root')} : (rawRole === 'admin' ? ${js('crm.role_admin')} : (rawRole === 'rejected' ? ${js('crm.role_rejected')} : escapeHtml(u.role).toUpperCase()));
                 const firstNameJsEsc = escapeHtml(u.first_name || '').replace(/'/g, "\\'");
                 const usernameJsEsc = escapeHtml(u.username || '').replace(/'/g, "\\'");
                 const isRoot = u.role === 'root';
@@ -2255,79 +2328,85 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const joinedDate = new Date(u.created_at).toLocaleDateString('en-GB');
 
                 let activeDaysAgo = (u.last_active && u.last_active > 0) ? (Date.now() - u.last_active) / 86400000 : null;
-                let activeColor = activeDaysAgo === null ? 'text-gray-500' : (activeDaysAgo < 7 ? 'text-emerald-500' : (activeDaysAgo < 30 ? 'text-amber-500' : 'text-red-500'));
+                let activeColor = activeDaysAgo === null ? 'text-[var(--text-tertiary)]' : (activeDaysAgo < 7 ? 'text-[var(--success)]' : (activeDaysAgo < 30 ? 'text-[var(--warning)]' : 'text-[var(--danger)]'));
                 let activeDate = (u.last_active && u.last_active > 0) ? new Date(u.last_active).toLocaleDateString('en-GB') : '-';
 
-                let rootGlow = '';
-                if (isRoot) rootGlow = '<div class="absolute -right-2 -top-2 w-10 h-10 bg-purple-500/20 blur-xl rounded-full"></div>';
-
                 let roleBadge = '';
-                if (isPrivileged) {
-                    roleBadge = '<span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold border ' + roleStyle + '">' + roleEsc + '</span>';
+                if (isRoot) {
+                    roleBadge = '<span class="badge-status badge-status--admin"><span class="badge-status__dot"></span>' + roleEsc + '</span>';
+                } else if (isAdmin) {
+                    roleBadge = '<span class="badge-status badge-status--admin"><span class="badge-status__dot"></span>' + roleEsc + '</span>';
+                } else if (isApproved) {
+                    const activityDotColor = activeDaysAgo === null ? 'var(--text-tertiary)' : (activeDaysAgo < 7 ? 'var(--success)' : (activeDaysAgo < 30 ? 'var(--warning)' : 'var(--danger)'));
+                    const activityTitle = activeDaysAgo === null ? 'New' : (activeDaysAgo < 7 ? 'Active' : (activeDaysAgo < 30 ? 'Idle 7+ days' : 'Dormant 30+ days'));
+                    roleBadge = '<span class="activity-dot" style="background:' + activityDotColor + ';" title="' + activityTitle + '"></span>';
+                } else if (isRejected) {
+                    roleBadge = '<span class="badge-status badge-status--banned"><span class="badge-status__dot"></span>' + roleEsc + '</span>';
                 } else {
                     roleBadge = '<div class="w-2 h-2 rounded-full bg-current ' + activeColor + '"></div>';
                 }
 
                 let actionBtns = '';
                 if (isRejected) {
-                    actionBtns += '<button onclick="performAction(\\'unban\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 font-medium transition text-center border border-emerald-500/20">' + ${js('crm.btn_unban')} + '</button>';
+                    actionBtns += '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'unban\\', \\'' + chatIdEsc + '\\')" class="btn btn-sm btn-success flex-1 text-center">' + ${js('crm.btn_unban')} + '</button>';
                 } else {
-                    actionBtns += '<button onclick="messageUser(\\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${js('crm.btn_message')} + '</button>';
-                    if (!isPrivileged) actionBtns += '<button onclick="changeLimit(\\'' + chatIdEsc + '\\', ' + u.item_limit + ', \\'' + firstNameJsEsc + '\\', \\'' + usernameJsEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium transition text-center border border-gray-700/50">' + ${js('crm.btn_edit_limit')} + '</button>';
-                    if (isApproved) actionBtns += '<button onclick="performAction(\\'promote\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-brand-400 font-medium transition text-center border border-brand-500/20">' + ${js('crm.btn_promote')} + '</button>';
-                    if (isAdmin) actionBtns += '<button onclick="performAction(\\'demote\\', \\'' + chatIdEsc + '\\')" class="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-400 font-medium transition text-center border border-orange-500/20">' + ${js('crm.btn_demote_drawer')} + '</button>';
-                    if (!isRoot) actionBtns += '<button onclick="performAction(\\'revoke\\', \\'' + chatIdEsc + '\\')" class="w-10 flex items-center justify-center py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 font-medium transition border border-red-500/20"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
+                    actionBtns += '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');messageUser(\\'' + chatIdEsc + '\\')" class="btn btn-sm btn-secondary flex-1 text-center">' + ${js('crm.btn_message')} + '</button>';
+                    if (!isPrivileged) actionBtns += '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');changeLimit(\\'' + chatIdEsc + '\\', ' + u.item_limit + ', \\'' + firstNameJsEsc + '\\', \\'' + usernameJsEsc + '\\')" class="btn btn-sm flex-1 text-center" style="background:var(--surface);color:var(--text-secondary);border-color:var(--border-subtle);">' + ${js('crm.btn_edit_limit')} + '</button>';
+                    if (isApproved) actionBtns += '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'promote\\', \\'' + chatIdEsc + '\\')" class="btn btn-sm flex-1 text-center" style="background:var(--surface);color:var(--accent);border-color:var(--accent);">' + ${js('crm.btn_promote')} + '</button>';
+                    if (isAdmin) actionBtns += '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'demote\\', \\'' + chatIdEsc + '\\')" class="btn btn-sm flex-1 text-center" style="background:var(--surface);color:var(--warning);border-color:var(--warning);">' + ${js('crm.btn_demote_drawer')} + '</button>';
+                    if (!isRoot) actionBtns += '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'revoke\\', \\'' + chatIdEsc + '\\')" class="btn btn-sm btn-danger" style="width:36px;flex:none;"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
                 }
 
-                return '<div class="glass rounded-xl p-3 border border-gray-800/50 hover:border-gray-700 transition overflow-hidden relative mb-3">' +
-                    rootGlow +
-                    '<div class="flex justify-between items-center mb-2 relative z-10">' +
-                        '<div class="font-medium text-sm font-semibold truncate flex items-center gap-2">' + roleBadge + firstNameEsc + ' <sub class="text-gray-500 font-normal text-[10px]">' + usernameEsc + '</sub></div>' +
-                        '<button onclick="openDrawer(\\'' + chatIdEsc + '\\')" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs font-medium text-brand-400 hover:bg-gray-700 transition shadow">' + ${js('crm.btn_view_items')} + '</button>' +
+                const statusClass = isRejected ? 'card-status-danger' : (isPrivileged ? 'card-status-global' : '');
+                return '<div class="card ' + statusClass + ' p-3 mb-3">' +
+                    '<div class="flex justify-between items-center mb-2">' +
+                        '<div class="font-semibold text-sm truncate flex items-center gap-2" style="color:var(--text-primary);">' + roleBadge + firstNameEsc + ' <sub class="font-normal text-xs" style="color:var(--text-tertiary);">' + usernameEsc + '</sub></div>' +
+                        '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');openDrawer(\\'' + chatIdEsc + '\\')" class="btn btn-sm btn-secondary">' + ${js('crm.btn_view_items')} + '</button>' +
                     '</div>' +
-                    '<div class="flex items-center gap-2 mb-3 relative z-10">' +
-                        '<span class="text-xs text-gray-500">' + u.active_items + ' / ' + itemLimit + ' ' + ${js('crm.items_label')} + '</span>' +
-                        '<span class="text-xs text-gray-500">•</span>' +
-                        '<span class="text-xs text-gray-500">' + ${js('crm.joined_date')} + ' ' + joinedDate + '</span>' +
-                        '<span class="text-xs text-gray-500">•</span>' +
-                        '<span class="text-xs font-medium ' + activeColor + '">⚡ ' + activeDate + '</span>' +
+                    '<div class="flex items-center gap-2 mb-3 text-xs" style="color:var(--text-tertiary);">' +
+                        '<span>' + u.active_items + ' / ' + itemLimit + ' ' + ${js('crm.items_label')} + '</span>' +
+                        '<span>•</span>' +
+                        '<span>' + ${js('crm.joined_date')} + ' ' + joinedDate + '</span>' +
+                        '<span>•</span>' +
+                        '<span class="font-medium ' + activeColor + '">' + activeDate + '</span>' +
                     '</div>' +
-                    '<div class="flex gap-2 relative z-10">' + actionBtns + '</div>' +
+                    '<div class="flex gap-2">' + actionBtns + '</div>' +
                 '</div>';
             }).join('');
         }
 
-        function messageUser(userId) {
-            const msg = prompt(${js('crm.btn_message')} + " — " + userId + ":");
+        async function messageUser(userId) {
+            const msg = await showInputDialog(${js('crm.btn_message')} + " — " + userId + ":", '', ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
             if (msg) {
                 performAction('direct_message', userId, { message: msg });
             }
         }
 
         async function openDrawer(userId) {
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
             const drawer = document.getElementById('drawer');
             const content = document.getElementById('drawer-content');
             const itemsCont = document.getElementById('drawer-items');
             
             document.getElementById('drawer-subtitle').innerText = ${js('crm.id_label')} + ' ' + userId;
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--accent)] rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
             
             drawer.classList.remove('hidden');
             setTimeout(() => {
-                content.style.transform = 'translateY(0)';
+                content.classList.add('open');
             }, 10);
             
             const products = await fetchAPI('/user/' + userId + '/products');
 
             if (!products || products.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-10 text-gray-500 text-sm glass rounded-xl border border-gray-800 border-dashed">' + ${js('crm.no_saved_products')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-10 text-sm card rounded-xl" style="border-style:dashed;color:var(--text-tertiary);">' + ${js('crm.no_saved_products')} + '</div>';
                 return;
             }
 
             const isMasry = document.documentElement.lang === 'masry';
             itemsCont.innerHTML = products.map(p => {
                 const isPaused = p.is_paused === 1;
-                const statusColor = isPaused ? 'text-orange-400 bg-orange-400/10' : 'text-emerald-400 bg-emerald-400/10';
+                const statusColor = isPaused ? 'text-[var(--warning)] bg-[var(--warning)]/10' : 'text-[var(--success)] bg-[var(--success)]/10';
                 const statusText = isPaused ? ${js('crm.user_paused')} : ${js('crm.user_active')};
                 const pName = (isMasry && p.name_ar) ? p.name_ar : (p.name || p.asin);
                 const rawName = pName ? (pName.length > 35 ? pName.substring(0, 32) + '...' : pName) : p.asin;
@@ -2336,36 +2415,34 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const price = p.new_price ? p.new_price + ' ' + ${js('chrome.currency_egp')} : (p.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const userIdEsc = escapeHtml(String(userId));
                 const actionType = isPaused ? 'resume_product' : 'pause_product';
-                const pauseIcon = isPaused ? '▶️' : '⏸️';
                 const pauseLabel = isPaused ? ${js('crm.btn_resume')} : ${js('crm.btn_pause_drawer')};
                 const hasTarget = !!p.target_price;
                 const targetBadge = hasTarget
-                    ? '<div class="text-xs text-brand-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> ' + ${js('crm.audit_target')} + ' ' + p.target_price + '</div>'
+                    ? '<div class="text-xs text-[var(--accent)] flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> ' + ${js('crm.audit_target')} + ' ' + p.target_price + '</div>'
                     : '';
 
-                const btnIcon = p.always_track === 1 ? '🟢' : '📡';
                 const btnLabel = p.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
-                const btnClass = p.always_track === 1 
-                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                const trackBtnClass = p.always_track === 1
+                    ? 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20'
+                    : 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20';
 
-                return '<div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden" data-search="' + escapeHtml(p.asin).toLowerCase() + ' ' + escapeHtml(nameEsc).toLowerCase() + '">' +
+                return '<div class="card rounded-xl p-3 relative overflow-hidden" data-search="' + escapeHtml(p.asin).toLowerCase() + ' ' + escapeHtml(nameEsc).toLowerCase() + '">' +
                     '<div class="flex items-start gap-3 mb-2">' +
                         '<img src="' + (p.image_url ? escapeHtml(p.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + asinEsc + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' +
                         '<div class="flex-1 min-w-0 pe-2">' +
-                            '<a href="' + escapeHtml(p.detail_page_url || ('https://www.amazon.eg/dp/' + p.asin)) + '" target="_blank" class="font-medium text-sm text-brand-400 hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
-                            '<div class="text-xs text-gray-500 mt-1 font-mono">' + asinEsc + '</div>' +
+                            '<a href="' + escapeHtml(p.detail_page_url || ('https://www.amazon.eg/dp/' + p.asin)) + '" target="_blank" class="font-medium text-sm text-[var(--accent)] hover:underline block leading-tight truncate">' + nameEsc + '</a>' +
+                            '<div class="text-xs text-[var(--text-tertiary)] mt-1 font-mono">' + asinEsc + '</div>' +
                         '</div>' +
-                        '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap shrink-0">' + statusText + '</span>' +
+                        '<span class="text-xs px-1.5 py-0.5 rounded font-bold uppercase ' + statusColor + ' whitespace-nowrap shrink-0">' + statusText + '</span>' +
                     '</div>' +
                     '<div class="flex justify-between items-end mb-3">' +
                         '<div class="text-sm font-semibold">' + price + '</div>' +
                         targetBadge +
                     '</div>' +
                     '<div class="grid grid-cols-3 gap-2">' +
-                        '<button onclick="performAction(\\'toggle_keep_alive\\', \\'global\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'}, this)" class="py-1.5 rounded text-xs font-medium transition border ' + btnClass + '">' + btnIcon + ' ' + btnLabel + '</button>' +
-                        '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>' +
-                        '<button onclick="openBroadcastModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="py-1.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-medium transition border border-brand-500/20">' + ${js('crm.per_product_broadcast')} + '</button>' +
+                        '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');performAction(\\'toggle_keep_alive\\', \\'global\\', {asin: \\'' + asinEsc.replace(/'/g, "\\'") + '\\'}, this)" class="py-1.5 rounded text-xs font-medium transition border ' + trackBtnClass + '">' + btnLabel + '</button>' +
+                        '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');openChartModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">' + ${js('crm.btn_chart')} + '</button>' +
+                        '<button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');openBroadcastModal(\\'' + asinEsc.replace(/'/g, "\\'") + '\\')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">' + ${js('crm.per_product_broadcast')} + '</button>' +
                     '</div>' +
                 '</div>';
             }).join('');
@@ -2373,7 +2450,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         function closeDrawer() {
             const content = document.getElementById('drawer-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { document.getElementById('drawer').classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-users');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-items'); }
@@ -2384,14 +2461,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-top-charts-content');
             const itemsCont = document.getElementById('drawer-top-charts-items');
 
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--accent)] rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
 
             drawer.classList.remove('hidden');
-            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { content.classList.add('open'); }, 10);
 
             const data = await fetchAPI('/top-charts');
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.top_charts_no_data')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm">' + ${js('crm.top_charts_no_data')} + '</div>';
                 return;
             }
 
@@ -2403,16 +2480,16 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const priceStr = price ? ${js('chrome.currency_egp')} + ' ' + parseFloat(price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--';
                 const sortName = escapeHtml(name).toLowerCase();
                 const sortPrice = price || 0;
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="' + sortPrice + '" data-added="" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
-                html += '<div class="text-lg font-bold text-gray-600 w-8 text-center">#' + (idx + 1) + '</div>';
+                html += '<div class="card rounded-lg p-3 flex items-center gap-3 cursor-pointer" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="' + sortPrice + '" data-added="" onclick="openChartModal(\\'' + escapeHtml(item.asin) + '\\')">';
+                html += '<div class="text-lg font-bold text-[var(--text-tertiary)] w-8 text-center">#' + (idx + 1) + '</div>';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
-                html += '<div class="text-xs text-gray-500">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
+                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-[var(--accent)] hover:text-[var(--accent)] hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-xs text-[var(--text-tertiary)]">' + escapeHtml(item.asin) + ' · ' + priceStr + '</div>';
                 html += '</div>';
                 html += '<div class="text-right">';
-                html += '<div class="text-sm font-bold text-brand-400">' + item.tracker_count + '</div>';
-                html += '<div class="text-[10px] text-gray-500 uppercase">' + ${js('crm.top_charts_trackers')} + '</div>';
+                html += '<div class="text-sm font-bold text-[var(--accent)]">' + item.tracker_count + '</div>';
+                html += '<div class="text-xs text-[var(--text-tertiary)] uppercase">' + ${js('crm.top_charts_trackers')} + '</div>';
                 html += '</div></div>';
             });
             itemsCont.innerHTML = html;
@@ -2421,7 +2498,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function closeTopChartsDrawer() {
             const drawer = document.getElementById('drawer-top-charts');
             const content = document.getElementById('drawer-top-charts-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-top-charts');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-top-charts-items'); }
@@ -2548,7 +2625,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     return searchStr.includes(q);
                 });
                 if (matched.length === 0) {
-                    container.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No matching products found</div>';
+                    container.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm">' + (isMasry ? 'مفيش منتجات مطابقة' : 'No matching products found') + '</div>';
                     activeRenderIndex = activeProductsData.length;
                     return;
                 }
@@ -2585,15 +2662,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-active-content');
             const itemsCont = document.getElementById('drawer-active-items');
             
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-emerald-500 rounded-full animate-spin mx-auto mb-2"></div>Loading...</div>';
+            const isMasry = document.documentElement.lang === 'masry';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--success)] rounded-full animate-spin mx-auto mb-2"></div>' + (isMasry ? 'بنحمل...' : 'Loading...') + '</div>';
             drawer.classList.remove('hidden');
-            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { content.classList.add('open'); }, 10);
 
             const data = await fetchAPI('/active-products');
-            const isMasry = document.documentElement.lang === 'masry';
             const subsText = ${js('crm.subscriptions_text')};
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.no_active_products')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm">' + ${js('crm.no_active_products')} + '</div>';
                 document.getElementById('drawer-active-count').innerText = '0 ' + subsText;
                 return;
             }
@@ -2614,30 +2691,28 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
                 const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const hasTarget = !!item.target_price;
-                const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
-
-                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const targetBadge = hasTarget ? '<div class="text-xs text-[var(--accent)]">Target: ' + item.target_price + '</div>' : '';
                 const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
-                const btnClass = item.always_track === 1
-                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent'
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                const trackBtnClass = item.always_track === 1
+                    ? 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20'
+                    : 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20';
 
                 const sortPrice = item.new_price || item.amazon_price || 0;
                 const sortAdded = item.added_at || '';
                 const sortName = escapeHtml(name).toLowerCase();
 
                 return \`
-                <div class="glass rounded-xl p-3 border border-emerald-500/20 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${sortName}" data-name="\${sortName}" data-price="\${sortPrice}" data-added="\${sortAdded}">
+                <div class="card card-status-active rounded-xl p-3 relative overflow-hidden" id="active-item-\${item.chat_id}-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${sortName}" data-name="\${sortName}" data-price="\${sortPrice}" data-added="\${sortAdded}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>
+                        <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || '')}" target="_blank" class="text-[var(--accent)] hover:text-[var(--accent)] hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <span class="text-xs px-1.5 py-0.5 rounded font-bold uppercase text-[var(--success)] bg-[var(--success)]/10">${t('crm.user_active', lang)}</span>
                     </div>
                     <div class="flex items-center justify-between text-xs mb-3">
-                        <code class="text-gray-400">\${item.asin}</code>
-                        <span class="text-brand-400">\${displayUser}</span>
+                        <code class="text-[var(--text-tertiary)]">\${item.asin}</code>
+                        <span class="text-[var(--accent)]">\${displayUser}</span>
                             </div>
                         </div>
                     </div>
@@ -2646,13 +2721,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         \${targetBadge}
                     </div>
                     <div class="grid grid-cols-3 gap-2">
-                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
-                            \${btnIcon} \${btnLabel}
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded text-xs font-medium transition border \${trackBtnClass}">
+                            \${btnLabel}
                         </button>
-                        <button onclick="openChartModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
-                            📊 ${t('crm.btn_chart', lang)}
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openChartModal('\${item.asin}')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">
+                            ${t('crm.btn_chart', lang)}
                         </button>
-                        <button onclick="openBroadcastModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openBroadcastModal('\${item.asin}')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">
                             ${t('crm.per_product_broadcast', lang)}
                         </button>
                     </div>
@@ -2681,7 +2756,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function closeActiveDrawer() {
             const drawer = document.getElementById('drawer-active');
             const content = document.getElementById('drawer-active-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-active');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-active-items'); }
@@ -2693,15 +2768,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-paused-content');
             const itemsCont = document.getElementById('drawer-paused-items');
 
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-amber-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--warning)] rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
 
             drawer.classList.remove('hidden');
-            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { content.classList.add('open'); }, 10);
 
             const data = await fetchAPI('/paused-products');
             const toolbar = document.getElementById('drawer-paused-toolbar');
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.empty_paused')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm">' + ${js('crm.empty_paused')} + '</div>';
                 if (toolbar) toolbar.style.display = 'none';
                 return;
             }
@@ -2711,32 +2786,30 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const isMasry = lang === 'masry';
                 const name = (isMasry && item.name_ar) ? item.name_ar : (item.name || item.asin);
                 const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
-                const tagColor = item.active_subs === 0 && item.paused_subs > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-400 bg-gray-400/10';
+                const tagColor = item.active_subs === 0 && item.paused_subs > 0 ? 'text-[var(--warning)] bg-[var(--warning)]/10' : 'text-[var(--text-tertiary)] bg-[var(--text-tertiary)]/10';
                 const tagLabel = item.active_subs === 0 && item.paused_subs > 0 ? ${js('crm.tag_asleep')} : ${js('crm.tag_orphaned')};
-                
-                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
                 const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
-                const btnClass = item.always_track === 1 
-                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                const trackBtnClass = item.always_track === 1
+                    ? 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20'
+                    : 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20';
 
                 const sortPrice = item.new_price || item.amazon_price || 0;
                 const sortName = escapeHtml(name).toLowerCase();
 
                 return \`
-                <div class="glass rounded-xl p-3 border border-gray-800/50 relative overflow-hidden paused-card" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${sortName}" data-name="\${sortName}" data-price="\${sortPrice}" data-added="">
+                <div class="card card-status-paused rounded-xl p-3 relative overflow-hidden paused-card" id="paused-item-\${item.asin}" data-search="\${item.asin.toLowerCase()} \${sortName}" data-name="\${sortName}" data-price="\${sortPrice}" data-added="">
                     <div class="flex items-start gap-3 mb-2">
-                        <input type="checkbox" class="paused-checkbox mt-1 w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer shrink-0" data-asin="\${item.asin}" onchange="updatePausedToolbar()">
+                        <input type="checkbox" class="paused-checkbox mt-1 w-4 h-4 rounded border-[var(--border-strong)] bg-[var(--surface-sunken)] text-[var(--accent)] focus:ring-[var(--accent)]/30 accent-[var(--accent)] cursor-pointer shrink-0" data-asin="\${item.asin}" onchange="updatePausedToolbar()">
                         <img src="\${item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src='https://images-na.ssl-images-amazon.com/images/P/\${item.asin}.01.MZZZZZZZ.jpg'; this.onerror=function(){this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'};">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin))}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin))}" target="_blank" class="text-[var(--accent)] hover:text-[var(--accent)] hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                <span class="text-xs px-1.5 py-0.5 rounded font-bold uppercase \${tagColor}">\${tagLabel}</span>
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
-                                <code class="text-gray-400">\${item.asin}</code>
-                                <div class="mt-2 text-[10px] bg-gray-800/50 rounded-lg py-1 px-2 border border-gray-700 inline-block shadow-inner">
-                                    <span class="text-gray-500">0 ${t('crm.user_active', lang)} | \${item.paused_subs} ${t('crm.user_paused', lang)}</span>
+                                <code class="text-[var(--text-tertiary)]">\${item.asin}</code>
+                                <div class="mt-2 text-xs bg-[var(--surface-sunken)]/50 rounded-lg py-1 px-2 border border-[var(--border-subtle)] inline-block shadow-inner">
+                                    <span class="text-[var(--text-tertiary)]">0 ${t('crm.user_active', lang)} | \${item.paused_subs} ${t('crm.user_paused', lang)}</span>
                                 </div>
                             </div>
                         </div>
@@ -2745,13 +2818,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         <div class="text-sm font-semibold">\${price}</div>
                     </div>
                     <div class="grid grid-cols-3 gap-2">
-                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
-                            \${btnIcon} \${btnLabel}
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded text-xs font-medium transition border \${trackBtnClass}">
+                            \${btnLabel}
                         </button>
-                        <button onclick="openChartModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
-                            📊 ${t('crm.btn_chart', lang)}
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openChartModal('\${item.asin}')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">
+                            ${t('crm.btn_chart', lang)}
                         </button>
-                        <button onclick="openBroadcastModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openBroadcastModal('\${item.asin}')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">
                             ${t('crm.per_product_broadcast', lang)}
                         </button>
                     </div>
@@ -2762,7 +2835,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function closePausedDrawer() {
             const drawer = document.getElementById('drawer-paused');
             const content = document.getElementById('drawer-paused-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { drawer.classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-paused');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-paused-items'); }
@@ -2838,14 +2911,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-graveyard-content');
             const itemsCont = document.getElementById('drawer-graveyard-items');
 
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--accent)] rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
 
             drawer.classList.remove('hidden');
-            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { content.classList.add('open'); }, 10);
 
             const data = await fetchAPI('/graveyard');
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">✅ ' + ${js('crm.graveyard_empty')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"> ' + ${js('crm.graveyard_empty')} + '</div>';
                 document.getElementById('drawer-graveyard-count').innerText = '0 ' + ${js('crm.items_label')};
                 return;
             }
@@ -2860,20 +2933,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const allMissing = item.new_price === null && item.used_price === null && item.amazon_price === null;
                 let reasonBadge = '';
                 if (isDelisted) {
-                    reasonBadge = '<span class="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-800/50">' + ${js('crm.graveyard_delisted')} + '</span>';
+                    reasonBadge = '<span class="text-xs px-1.5 py-0.5 rounded" style="background:var(--danger-glow);color:var(--danger);border:1px solid rgba(248,113,113,0.2);">' + ${js('crm.graveyard_delisted')} + '</span>';
                 } else if (allMissing) {
-                    reasonBadge = '<span class="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-800/50">' + ${js('crm.graveyard_all_missing')} + '</span>';
+                    reasonBadge = '<span class="text-xs px-1.5 py-0.5 rounded" style="background:var(--danger-glow);color:var(--danger);border:1px solid rgba(248,113,113,0.2);">' + ${js('crm.graveyard_all_missing')} + '</span>';
                 }
                 const subsText = '<bdi>' + item.active_subs + '</bdi> ' + ${js('crm.graveyard_subs')};
 
                 const sortName = escapeHtml(name).toLowerCase();
                 const sortAdded = item.last_updated || '';
-                html += '<div class="bg-gray-800 rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-gray-700 transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="0" data-added="' + sortAdded + '" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
-                html += '<input type="checkbox" onclick="event.stopPropagation()" onchange="updateGraveyardToolbar()" class="graveyard-checkbox mt-1 rounded bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" data-asin="' + escapeHtml(item.asin) + '">';
+                html += '<div class="card rounded-lg p-3 flex items-start gap-3 cursor-pointer hover:bg-[var(--surface-raised)] transition" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="0" data-added="' + sortAdded + '" onclick="openProductSubsDrawer(\\'' + escapeHtml(item.asin) + '\\')">';
+                html += '<input type="checkbox" onclick="event.stopPropagation()" onchange="updateGraveyardToolbar()" class="graveyard-checkbox mt-1 rounded bg-[var(--surface-sunken)] border-[var(--border-strong)] text-[var(--danger)] focus:ring-[var(--danger)]" data-asin="' + escapeHtml(item.asin) + '">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.style.display=\\'none\\'};">' ;
                 html += '<div class="flex-1 min-w-0">';
-                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
-                html += '<div class="text-xs text-gray-500 mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
+                html += '<div class="text-sm font-medium truncate"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-[var(--accent)] hover:text-[var(--accent)] hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="text-xs text-[var(--text-tertiary)] mt-0.5"><bdi>' + escapeHtml(item.asin) + '</bdi> &bull; ' + subsText + '</div>';
                 html += '<div class="flex gap-1 mt-1">' + reasonBadge + '</div>';
                 html += '</div></div>';
             });
@@ -2882,7 +2955,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         function closeGraveyardDrawer() {
             const content = document.getElementById('drawer-graveyard-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { document.getElementById('drawer-graveyard').classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-graveyard');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-graveyard-items'); }
@@ -2896,14 +2969,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const content = document.getElementById('drawer-global-content');
             const itemsCont = document.getElementById('drawer-global-items');
 
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--accent)] rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
 
             drawer.classList.remove('hidden');
-            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { content.classList.add('open'); }, 10);
 
             const data = await fetchAPI('/global-products');
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">✅ ' + ${js('crm.global_empty')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"> ' + ${js('crm.global_empty')} + '</div>';
                 document.getElementById('drawer-global-count').innerText = '0 ' + ${js('crm.items_label')};
                 return;
             }
@@ -2918,36 +2991,36 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const sortPrice = item.amazon_price || item.new_price || item.used_price || 0;
                 const sortAdded = item.last_updated || '';
                 
-                const btnClass = 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                const untrackBtnClass = 'bg-[var(--danger)]/10 text-[var(--danger)] border-[var(--danger)]/20';
                 const btnLabel = ${js('crm.btn_untrack')};
                 const asinEsc = escapeHtml(item.asin);
 
-                const badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-purple-400 bg-purple-400/10">' + ${js('crm.global_products')} + '</span>';
-                
-                let priceHtml = '<div class="text-sm font-semibold text-gray-500">--</div>';
+                const badgeHtml = '<span class="text-xs px-1.5 py-0.5 rounded font-bold uppercase text-[var(--purple)] bg-[var(--purple)]/10">' + ${js('crm.global_products')} + '</span>';
+
+                let priceHtml = '<div class="text-sm font-semibold text-[var(--text-tertiary)]">--</div>';
                 if (item.amazon_price) {
-                    priceHtml = '<div class="text-sm font-semibold text-emerald-400"><bdi>' + item.amazon_price.toFixed(2) + '</bdi> <span class="text-[10px] text-emerald-500/70">EGP</span></div>';
+                    priceHtml = '<div class="text-sm font-semibold text-[var(--success)]"><bdi>' + item.amazon_price.toFixed(2) + '</bdi> <span class="text-xs text-[var(--success)] opacity-70">EGP</span></div>';
                 }
 
-                html += '<div class="glass rounded-xl p-3 border border-purple-500/20 relative overflow-hidden global-card" id="global-item-' + escapeHtml(item.asin) + '" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="' + sortPrice + '" data-added="' + sortAdded + '">';
+                html += '<div class="card card-status-global rounded-xl p-3 relative overflow-hidden global-card" id="global-item-' + escapeHtml(item.asin) + '" data-search="' + escapeHtml(item.asin).toLowerCase() + ' ' + sortName + '" data-name="' + sortName + '" data-price="' + sortPrice + '" data-added="' + sortAdded + '">';
                 html += '<div class="flex gap-3 mb-2">';
-                html += '<input type="checkbox" class="global-checkbox mt-1 w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500/30 accent-brand-500 cursor-pointer shrink-0" data-asin="' + asinEsc.replace(/'/g, "\\'") + '" onchange="updateGlobalToolbar()">';
+                html += '<input type="checkbox" class="global-checkbox mt-1 w-4 h-4 rounded border-[var(--border-strong)] bg-[var(--surface-sunken)] text-[var(--accent)] focus:ring-[var(--accent)]/30 accent-[var(--accent)] cursor-pointer shrink-0" data-asin="' + asinEsc.replace(/'/g, "\\'") + '" onchange="updateGlobalToolbar()">';
                 html += '<img src="' + (item.image_url ? escapeHtml(item.image_url) : 'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg') + '" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.src=\\'https://images-na.ssl-images-amazon.com/images/P/' + escapeHtml(item.asin) + '.01.MZZZZZZZ.jpg\\'; this.onerror=function(){this.src=\\'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\\'};">';
                 html += '<div class="flex-1 min-w-0">';
                 html += '<div class="flex items-center justify-between mb-1">';
-                html += '<div class="font-medium text-sm truncate max-w-[60%]"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
+                html += '<div class="font-medium text-sm truncate max-w-[60%]"><a href="' + escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin)) + '" target="_blank" class="text-[var(--accent)] hover:text-[var(--accent)] hover:underline transition" onclick="event.stopPropagation()">' + name + '</a></div>';
                 html += badgeHtml;
                 html += '</div>';
                 html += '<div class="flex items-center justify-between text-xs mb-3">';
-                html += '<code class="text-gray-400">' + escapeHtml(item.asin) + '</code>';
+                html += '<code class="text-[var(--text-tertiary)]">' + escapeHtml(item.asin) + '</code>';
                 html += '</div></div></div>';
                 html += '<div class="flex justify-between items-end mb-3">';
                 html += priceHtml;
                 html += '</div>';
                 html += '<div class="grid grid-cols-3 gap-2">';
-                html += '<button onclick="untrackGlobalProduct(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\', this)" class="py-1.5 rounded-lg text-xs font-bold transition border ' + btnClass + '">' + btnLabel + '</button>';
-                html += '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">📊 ' + ${js('crm.btn_chart')} + '</button>';
-                html += '<button onclick="openBroadcastModal(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">' + ${js('crm.per_product_broadcast')} + '</button>';
+                html += '<button onclick="untrackGlobalProduct(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\', this)" class="py-1.5 rounded text-xs font-medium transition border ' + untrackBtnClass + '">' + btnLabel + '</button>';
+                html += '<button onclick="openChartModal(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">' + ${js('crm.btn_chart')} + '</button>';
+                html += '<button onclick="openBroadcastModal(\\'' + asinEsc.replace(/'/g, "\\\\'") + '\\')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">' + ${js('crm.per_product_broadcast')} + '</button>';
                 html += '</div></div>';
             });
             itemsCont.innerHTML = html;
@@ -2955,7 +3028,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         function closeGlobalDrawer() {
             const content = document.getElementById('drawer-global-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { document.getElementById('drawer-global').classList.add('hidden'); }, 300);
             const searchInput = document.getElementById('search-drawer-global');
             if (searchInput) { searchInput.value = ''; filterDrawer('', 'drawer-global-items'); }
@@ -3075,7 +3148,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         function openBulkAddModal() {
             document.getElementById('bulk-add-modal').classList.remove('hidden');
-            setTimeout(() => { document.getElementById('bulk-add-modal-content').style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { document.getElementById('bulk-add-modal-content').classList.add('open'); }, 10);
             document.getElementById('bulk-add-input').value = '';
             resetBulkAddModal();
         }
@@ -3086,7 +3159,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 bulkAddController.abort();
                 bulkAddController = null;
             }
-            document.getElementById('bulk-add-modal-content').style.transform = 'translateY(100%)';
+            document.getElementById('bulk-add-modal-content').classList.remove('open');
             setTimeout(() => { 
                 document.getElementById('bulk-add-modal').classList.add('hidden'); 
                 resetBulkAddModal();
@@ -3136,10 +3209,10 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     if (data.details && data.details.length > 0) {
                         const lang = document.documentElement.lang || 'masry';
                         const formattedText = data.details.map(item => {
-                            let icon = '❌';
-                            if (item.status === 'added') icon = '🆕';
-                            else if (item.status === 'upgraded') icon = '♻️';
-                            else if (item.status === 'already_global') icon = '⚠️';
+                            let icon = '!';
+                            if (item.status === 'added') icon = '+';
+                            else if (item.status === 'upgraded') icon = '↑';
+                            else if (item.status === 'already_global') icon = '!';
                             
                             let name = '...';
                             if (item.asin) {
@@ -3207,6 +3280,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
 
         async function openProductSubsDrawer(asin) {
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
             const drawer = document.getElementById('drawer-product-subs');
             const content = document.getElementById('drawer-product-subs-content');
             const itemsCont = document.getElementById('drawer-product-subs-items');
@@ -3214,14 +3288,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const subsForTemplate = ${js('crm.subscribers_for')};
             document.getElementById('drawer-product-subs-title').innerText = subsForTemplate.replace("{asin}", asin);
             document.getElementById('drawer-product-subs-count').innerText = '--';
-            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm"><div class="w-6 h-6 border-2 border-gray-700 border-t-amber-500 rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
+            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm"><div class="w-6 h-6 border-2 border-[var(--border-strong)] border-t-[var(--warning)] rounded-full animate-spin mx-auto mb-2"></div>' + ${js('crm.loading_items')} + '</div>';
 
             drawer.classList.remove('hidden');
-            setTimeout(() => { content.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => { content.classList.add('open'); }, 10);
 
             const data = await fetchAPI('/product-subs/' + asin);
             if (!data || !data.items || data.items.length === 0) {
-                itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + ${js('crm.no_subscribers')} + '</div>';
+                itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm">' + ${js('crm.no_subscribers')} + '</div>';
                 document.getElementById('drawer-product-subs-count').innerText = '0 ' + ${js('crm.items_label')};
                 return;
             }
@@ -3237,26 +3311,24 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 const displayUser = \`\${userName} <span class="opacity-70">\${userDetails}</span>\`;
                 const price = item.new_price ? item.new_price + ' ' + ${js('chrome.currency_egp')} : (item.used_price ? ${js('crm.user_used_only')} : ${js('crm.user_out_of_stock')});
                 const hasTarget = !!item.target_price;
-                const targetBadge = hasTarget ? '<div class="text-xs text-brand-400">🎯 Target: ' + item.target_price + '</div>' : '';
-                
-                const btnIcon = item.always_track === 1 ? '🟢' : '📡';
+                const targetBadge = hasTarget ? '<div class="text-xs text-[var(--accent)]">Target: ' + item.target_price + '</div>' : '';
                 const btnLabel = item.always_track === 1 ? ${js('crm.btn_tracking_global')} : ${js('crm.btn_track_global')};
-                const btnClass = item.always_track === 1 
-                    ? 'ring-1 ring-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-transparent' 
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700/50';
+                const trackBtnClass = item.always_track === 1
+                    ? 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20'
+                    : 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20';
 
                 return \`
-                <div class="glass rounded-xl p-3 border \${item.is_paused === 1 ? 'border-amber-500/20' : 'border-emerald-500/20'} relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
+                <div class="card \${item.is_paused === 1 ? 'card-status-paused' : 'card-status-active'} rounded-xl p-3 relative overflow-hidden" id="product-sub-item-\${item.chat_id}-\${item.asin}">
                     <div class="flex gap-3 mb-2">
                         <img src="\${item.image_url || 'https://images-na.ssl-images-amazon.com/images/P/' + item.asin + '.01.MZZZZZZZ.jpg'}" class="w-12 h-12 rounded object-cover bg-white shrink-0" onerror="this.style.display=\'none\'">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
-                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin))}" target="_blank" class="text-brand-400 hover:text-brand-300 hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
-                                \${item.is_paused === 1 ? '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-amber-400 bg-amber-400/10">${t('crm.user_paused', lang)}</span>' : '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 bg-emerald-400/10">${t('crm.user_active', lang)}</span>'}
+                                <div class="font-medium text-sm truncate max-w-[60%]"><a href="\${escapeHtml(item.detail_page_url || ('https://www.amazon.eg/dp/' + item.asin))}" target="_blank" class="text-[var(--accent)] hover:text-[var(--accent)] hover:underline transition" onclick="event.stopPropagation()">\${escapeHtml(name)}</a></div>
+                                \${item.is_paused === 1 ? '<span class="text-xs px-1.5 py-0.5 rounded font-bold uppercase text-[var(--warning)] bg-[var(--warning)]/10">${t('crm.user_paused', lang)}</span>' : '<span class="text-xs px-1.5 py-0.5 rounded font-bold uppercase text-[var(--success)] bg-[var(--success)]/10">${t('crm.user_active', lang)}</span>'}
                             </div>
                             <div class="flex items-center justify-between text-xs mb-3">
-                                <code class="text-gray-400">\${item.asin}</code>
-                                <span class="text-brand-400">\${displayUser}</span>
+                                <code class="text-[var(--text-tertiary)]">\${item.asin}</code>
+                                <span class="text-[var(--accent)]">\${displayUser}</span>
                             </div>
                         </div>
                     </div>
@@ -3265,13 +3337,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         \${targetBadge}
                     </div>
                     <div class="grid grid-cols-3 gap-2">
-                        <button onclick="performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded-lg text-xs font-bold transition border \${btnClass}">
-                            \${btnIcon} \${btnLabel}
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');performAction('toggle_keep_alive', 'global', { asin: '\${item.asin}' }, this)" class="py-1.5 rounded text-xs font-medium transition border \${trackBtnClass}">
+                            \${btnLabel}
                         </button>
-                        <button onclick="openChartModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 text-brand-400 rounded-lg text-xs font-bold hover:bg-brand-500/20 transition border border-brand-500/20">
-                            📊 ${t('crm.btn_chart', lang)}
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openChartModal('\${item.asin}')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">
+                            ${t('crm.btn_chart', lang)}
                         </button>
-                        <button onclick="openBroadcastModal('\${item.asin}')" class="py-1.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-medium transition border border-brand-500/20">
+                        <button onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light');openBroadcastModal('\${item.asin}')" class="py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20">
                             ${t('crm.per_product_broadcast', lang)}
                         </button>
                     </div>
@@ -3281,7 +3353,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
         function closeProductSubsDrawer() {
             const content = document.getElementById('drawer-product-subs-content');
-            content.style.transform = 'translateY(100%)';
+            content.classList.remove('open');
             setTimeout(() => { document.getElementById('drawer-product-subs').classList.add('hidden'); }, 300);
         }
 
@@ -3334,6 +3406,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         }
 
         async function openChartModal(asin) {
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
             document.getElementById('chart-modal').classList.remove('hidden');
             document.getElementById('chart-loading').style.display = 'block';
             document.getElementById('crmPriceChart').style.display = 'none';
@@ -3370,9 +3443,13 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const buttons = document.getElementById('chart-intervals').querySelectorAll('button');
             buttons.forEach(btn => {
                 if (btn.dataset.interval === interval) {
-                    btn.className = 'flex-1 py-1 bg-brand-500/20 text-brand-400 text-xs rounded-full border border-brand-500/50 transition whitespace-nowrap';
+                    btn.style.background = 'rgba(56,189,248,0.1)';
+                    btn.style.color = 'var(--accent)';
+                    btn.style.borderColor = 'rgba(56,189,248,0.3)';
                 } else {
-                    btn.className = 'flex-1 py-1 bg-gray-800 text-gray-400 text-xs rounded-full border border-gray-700 hover:text-white hover:border-gray-500 transition whitespace-nowrap';
+                    btn.style.background = 'var(--surface-sunken)';
+                    btn.style.color = 'var(--text-secondary)';
+                    btn.style.borderColor = 'var(--border-subtle)';
                 }
             });
 
@@ -3565,12 +3642,6 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         async function performAction(action, targetId, data = null, btn = null) {
             if (!targetId) targetId = "global";
 
-            if (action === 'delete_product') {
-                // DEPRECATED: Delete product buttons removed from all card UIs
-                showToast(${js('crm.action_unavailable')}, 'error');
-                return;
-            }
-
             // Sensitive actions: require custom confirmation dialog
             const sensitiveActions = ['ban', 'unban', 'revoke', 'approve', 'reject', 'promote', 'demote'];
             if (sensitiveActions.includes(action)) {
@@ -3593,6 +3664,9 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     return;
                 }
             }
+
+            const isSensitive = sensitiveActions.includes(action);
+            if (!isSensitive && tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
 
             if (btn) {
                 btn.disabled = true;
@@ -3622,25 +3696,34 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                     showToast(${js('crm.toast_success')}, "success");
 
                     if (action === 'toggle_mute_queue' && btn) {
-                        const isMuted = btn.classList.contains('bg-brand-500');
+                        const isMuted = btn.classList.contains('bg-[var(--accent)]');
                         if (isMuted) {
-                            btn.classList.add('bg-gray-600');
-                            btn.classList.remove('bg-brand-500');
+                            btn.classList.add('bg-[var(--surface-sunken)]');
+                            btn.classList.remove('bg-[var(--accent)]');
                             btn.firstElementChild.style.transform = 'translateX(0)';
                         } else {
-                            btn.classList.add('bg-brand-500');
-                            btn.classList.remove('bg-gray-600');
+                            btn.classList.add('bg-[var(--accent)]');
+                            btn.classList.remove('bg-[var(--surface-sunken)]');
                             btn.firstElementChild.style.transform = 'translateX(1.5rem)';
                         }
                     } else if (btn && (action === 'pause_product' || action === 'resume_product' || action === 'toggle_keep_alive')) {
                         const isMasry = (document.documentElement.lang || 'masry') === 'masry';
                         if (action === 'toggle_keep_alive') {
-                            const wasOn = btn.className.includes('bg-emerald');
+                            const wasOn = btn.dataset.origHtml.includes(${js('crm.btn_tracking_global')});
                             const isOn = !wasOn;
-                            btn.className = isOn ? 'flex-1 py-1.5 rounded-lg text-xs font-bold transition border bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_10px_rgba(5,150,105,0.5)] border-emerald-500' 
-                                                 : 'flex-1 py-1.5 rounded-lg text-xs font-bold transition border bg-gray-700 hover:bg-gray-600 text-gray-300 border-gray-600';
-                            btn.innerHTML = isOn ? ('🟢 ' + ${js('crm.btn_tracking_global')}) 
-                                                 : ('📡 ' + ${js('crm.btn_track_global')});
+                            if (isOn) {
+                                btn.className = 'py-1.5 rounded text-xs font-medium transition border bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20';
+                                btn.style.background = '';
+                                btn.style.boxShadow = '';
+                                btn.style.borderColor = '';
+                                btn.innerHTML = ${js('crm.btn_tracking_global')};
+                            } else {
+                                btn.className = 'py-1.5 rounded text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20';
+                                btn.style.background = '';
+                                btn.style.boxShadow = '';
+                                btn.style.borderColor = '';
+                                btn.innerHTML = ${js('crm.btn_track_global')};
+                            }
                             btn.dataset.origHtml = btn.innerHTML;
 
                             // Auto-remove card from drawers where the product no longer belongs
@@ -3658,7 +3741,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                                         drawerId = 'drawer-paused';
                                         countId = 'drawer-paused-count';
                                         itemsId = 'drawer-paused-items';
-                                        emptyMsg = '✅ ' + ${js('crm.empty_paused')};
+                                        emptyMsg = ' ' + ${js('crm.empty_paused')};
                                     }
                                 } else {
                                     // Tracking turned OFF: remove from Globally Tracked drawer
@@ -3667,7 +3750,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                                         drawerId = 'drawer-global';
                                         countId = 'drawer-global-count';
                                         itemsId = 'drawer-global-items';
-                                        emptyMsg = '✅ ' + ${js('crm.global_empty')};
+                                        emptyMsg = ' ' + ${js('crm.global_empty')};
                                     }
                                 }
 
@@ -3693,7 +3776,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                                         // Show empty state if no items left
                                         var itemsCont = document.getElementById(itemsId);
                                         if (itemsCont && itemsCont.children.length === 0) {
-                                            itemsCont.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">' + emptyMsg + '</div>';
+                                            itemsCont.innerHTML = '<div class="text-center py-8 text-[var(--text-tertiary)] text-sm">' + emptyMsg + '</div>';
                                         }
                                     }, 300);
                                 }
@@ -3701,10 +3784,6 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                         }
                     } else if (action.includes('_product') && !btn) {
                         openDrawer(targetId); // legacy refresh
-                    }
-
-                    if (action === 'delete_product' && btn) {
-                        // DEPRECATED: No-op — delete buttons removed from UI
                     }
 
                     refreshData();
@@ -3727,14 +3806,14 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
         }
 
-        function changeLimit(userId, currentLimit, firstName, username) {
+        async function changeLimit(userId, currentLimit, firstName, username) {
             // Build a descriptive label: "Firstname (@username)" or fall back to userId
             const userLabel = firstName
                 ? (username ? firstName + ' (@' + username + ')' : firstName)
                 : userId;
             // Static i18n strings baked at render time; dynamic values appended at runtime
             const promptMsg = ${js('crm.edit_limit_prompt')} + " " + userLabel + " (" + ${js('crm.current_label')} + " " + currentLimit + "):";
-            const limit = prompt(promptMsg, currentLimit);
+            const limit = await showInputDialog(promptMsg, String(currentLimit), ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
             if (limit !== null && limit !== "" && !isNaN(limit) && limit > 0) {
                 performAction('set_limit', userId, { limit: parseInt(limit) });
                 // Show confirmation toast using pre-rendered i18n template
@@ -3744,8 +3823,8 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             }
         }
 
-        function changeTarget(userId, asin) {
-            const target = prompt(${js('crm.btn_edit')} + " (" + ${js('crm.new_price')} + ") — " + asin + ":");
+        async function changeTarget(userId, asin) {
+            const target = await showInputDialog(${js('crm.btn_edit')} + " (" + ${js('crm.new_price')} + ") — " + asin + ":", '', ${js('crm.confirm_btn_confirm')}, ${js('crm.confirm_btn_cancel')});
             if (target !== null && target !== "" && !isNaN(target) && target > 0) {
                 performAction('set_target', userId, { asin, target: parseFloat(target) });
             }
@@ -3778,13 +3857,15 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         function showToast(message, type = "info") {
             const container = document.getElementById('toast-container');
             const el = document.createElement('div');
-            const bg = type === 'error' ? 'bg-red-500/90 border-red-500'
-                : type === 'success' ? 'bg-green-500/90 border-green-500'
-                : 'bg-gray-800 border-gray-700';
-            const icon = type === 'error' ? '❌' : '✅';
-            
-            el.className = 'glass rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter ' + bg;
-            el.innerHTML = '<span>' + icon + '</span> <span>' + escapeHtml(message) + '</span>';
+            const bg = type === 'error' ? 'background:rgba(248,113,113,0.9);border-color:var(--danger);'
+                : type === 'success' ? 'background:rgba(52,211,153,0.9);border-color:var(--success);'
+                : 'background:var(--surface-raised);border-color:var(--border-strong);';
+            const icon = type === 'error' ? '!' : type === 'success' ? '✓' : '';
+            const iconColor = type === 'error' ? 'color:var(--danger);' : type === 'success' ? 'color:var(--success);' : '';
+
+            el.className = 'rounded-lg px-4 py-3 flex items-center gap-3 text-sm font-medium shadow-2xl border toast toast-enter';
+            el.style.cssText = bg;
+            el.innerHTML = icon ? '<span style="' + iconColor + '">' + icon + '</span> <span>' + escapeHtml(message) + '</span>' : '<span>' + escapeHtml(message) + '</span>';
             
             container.appendChild(el);
             
@@ -3807,7 +3888,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         // ===== CUSTOM CONFIRM DIALOG =============================================
         // Returns a Promise that resolves to true (confirmed) or false (cancelled).
         // Replaces native confirm() with a styled modal matching the CRM theme.
-        function showConfirmDialog(message, confirmText = '✅ Confirm', cancelText = '❌ Cancel') {
+        function showConfirmDialog(message, confirmText = 'Confirm', cancelText = 'Cancel') {
             if (document.getElementById('custom-confirm-dialog')) return Promise.resolve(false);
             return new Promise((resolve) => {
                 const overlay = document.createElement('div');
@@ -3815,11 +3896,11 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
                 overlay.className = 'fixed inset-0 z-[100] flex items-center justify-center';
                 overlay.innerHTML = \`
                     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="custom-confirm-backdrop"></div>
-                    <div class="relative bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 transform transition-all">
-                        <p class="text-sm text-gray-200 mb-5 leading-relaxed" id="custom-confirm-message"></p>
-                        <div class="flex gap-3 justify-between" id="custom-confirm-buttons">
-                            <button id="custom-confirm-cancel" class="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-medium transition border border-red-500/20"></button>
-                            <button id="custom-confirm-ok" class="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium transition border border-emerald-500/20"></button>
+                    <div class="relative rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4" style="background:var(--surface-raised);border:1px solid var(--border-subtle);">
+                        <p class="text-sm mb-5 leading-relaxed" id="custom-confirm-message" style="color:var(--text-primary);"></p>
+                        <div class="flex gap-3" id="custom-confirm-buttons">
+                            <button id="custom-confirm-cancel" class="flex-1 py-2 rounded-lg text-xs font-medium transition border bg-[var(--surface-sunken)] text-[var(--text-secondary)] border-[var(--border-subtle)]"></button>
+                            <button id="custom-confirm-ok" class="flex-1 py-2 rounded-lg text-xs font-medium transition border bg-[var(--danger)]/10 text-[var(--danger)] border-[var(--danger)]/20"></button>
                         </div>
                     </div>
                 \`;
@@ -3843,9 +3924,75 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
 
                 function cleanup() { document.removeEventListener('keydown', keyHandler); overlay.remove(); }
 
-                document.getElementById('custom-confirm-cancel').onclick = () => { cleanup(); resolve(false); };
-                document.getElementById('custom-confirm-backdrop').onclick = () => { cleanup(); resolve(false); };
-                document.getElementById('custom-confirm-ok').onclick = () => { cleanup(); resolve(true); };
+                document.getElementById('custom-confirm-cancel').onclick = () => {
+                    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                    cleanup(); resolve(false);
+                };
+                document.getElementById('custom-confirm-backdrop').onclick = () => {
+                    cleanup(); resolve(false);
+                };
+                document.getElementById('custom-confirm-ok').onclick = () => {
+                    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    cleanup(); resolve(true);
+                };
+            });
+        }
+
+        // ===== CUSTOM INPUT DIALOG =============================================
+        // Returns a Promise that resolves to the input string (confirmed) or null (cancelled).
+        // Replaces native prompt() with a styled modal matching the CRM theme.
+        function showInputDialog(message, defaultValue = '', confirmText = ${js('crm.confirm_btn_confirm')}, cancelText = ${js('crm.confirm_btn_cancel')}) {
+            if (document.getElementById('custom-input-dialog')) return Promise.resolve(null);
+            return new Promise((resolve) => {
+                const overlay = document.createElement('div');
+                overlay.id = 'custom-input-dialog';
+                overlay.className = 'fixed inset-0 z-[100] flex items-center justify-center';
+                overlay.innerHTML = \`
+                    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="custom-input-backdrop"></div>
+                    <div class="relative rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4" style="background:var(--surface-raised);border:1px solid var(--border-subtle);">
+                        <p class="text-sm mb-4 leading-relaxed" id="custom-input-message" style="color:var(--text-primary);"></p>
+                        <input id="custom-input-field" type="text" class="w-full px-3 py-2 rounded-lg text-sm mb-5 outline-none" style="background:var(--surface-sunken);color:var(--text-primary);border:1px solid var(--border-subtle);" />
+                        <div class="flex gap-3" id="custom-input-buttons">
+                            <button id="custom-input-cancel" class="flex-1 py-2 rounded-lg text-xs font-medium transition border bg-[var(--surface-sunken)] text-[var(--text-secondary)] border-[var(--border-subtle)]"></button>
+                            <button id="custom-input-ok" class="flex-1 py-2 rounded-lg text-xs font-medium transition border bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20"></button>
+                        </div>
+                    </div>
+                \`;
+                document.body.appendChild(overlay);
+
+                document.getElementById('custom-input-message').textContent = message;
+                document.getElementById('custom-input-cancel').textContent = cancelText;
+                document.getElementById('custom-input-ok').textContent = confirmText;
+                const input = document.getElementById('custom-input-field');
+                input.value = defaultValue;
+
+                // LTR/RTL button placement
+                const isRTL = document.documentElement.dir === 'rtl';
+                document.getElementById('custom-input-buttons').style.flexDirection = isRTL ? 'row-reverse' : 'row';
+
+                // Keyboard support
+                const keyHandler = (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); cleanup(); resolve(input.value); }
+                    if (e.key === 'Escape') { e.preventDefault(); cleanup(); resolve(null); }
+                };
+                document.addEventListener('keydown', keyHandler);
+
+                // Focus input after render
+                setTimeout(() => input.focus(), 50);
+
+                function cleanup() { document.removeEventListener('keydown', keyHandler); overlay.remove(); }
+
+                document.getElementById('custom-input-cancel').onclick = () => {
+                    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                    cleanup(); resolve(null);
+                };
+                document.getElementById('custom-input-backdrop').onclick = () => {
+                    cleanup(); resolve(null);
+                };
+                document.getElementById('custom-input-ok').onclick = () => {
+                    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    cleanup(); resolve(input.value);
+                };
             });
         }
 
@@ -3887,20 +4034,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const parentBtn = document.createElement('button');
             parentBtn.type = 'button';
             parentBtn.dir = dirVal;
-            parentBtn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
-            const parentPriceText = product.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(product.price) + '</span>' : '';
-            parentBtn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(product.name_ar || product.name || product.asin) + parentPriceText + '</span><span class="text-gray-500 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_original')} + '</span>';
-            parentBtn.onclick = () => selectBroadcastDealsOption(null);
+            parentBtn.className = 'w-full text-start px-3 py-2 rounded-lg bg-[var(--surface-sunken)]/50 hover:bg-[var(--accent)]/10 border border-[var(--border-subtle)] hover:border-[var(--accent)]/30 transition text-xs flex items-center gap-3';
+            const parentPriceText = product.price ? ' <span class="text-[var(--text-tertiary)] mx-1">|</span> <span class="text-[var(--accent)] whitespace-nowrap" dir="ltr">' + escapeHtml(product.price) + '</span>' : '';
+            parentBtn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(product.name_ar || product.name || product.asin) + parentPriceText + '</span><span class="text-[var(--text-tertiary)] shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_original')} + '</span>';
+            parentBtn.onclick = () => { if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light'); selectBroadcastDealsOption(null); };
             container.appendChild(parentBtn);
-            
+
             for (const opt of options) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.dir = dirVal;
-                btn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
-                const priceText = opt.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(opt.price) + '</span>' : '';
-                btn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(opt.name || opt.asin) + priceText + '</span><span class="text-brand-400 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_option')} + '</span>';
-                btn.onclick = () => selectBroadcastDealsOption(opt);
+                btn.className = 'w-full text-start px-3 py-2 rounded-lg bg-[var(--surface-sunken)]/50 hover:bg-[var(--accent)]/10 border border-[var(--border-subtle)] hover:border-[var(--accent)]/30 transition text-xs flex items-center gap-3';
+                const priceText = opt.price ? ' <span class="text-[var(--text-tertiary)] mx-1">|</span> <span class="text-[var(--accent)] whitespace-nowrap" dir="ltr">' + escapeHtml(opt.price) + '</span>' : '';
+                btn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(opt.name || opt.asin) + priceText + '</span><span class="text-[var(--accent)] shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_option')} + '</span>';
+                btn.onclick = () => { if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light'); selectBroadcastDealsOption(opt); };
                 container.appendChild(btn);
             }
             document.getElementById('broadcast-deals-options').classList.remove('hidden');
@@ -4005,6 +4152,7 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
         let broadcastModalAsin = null;
 
         function openBroadcastModal(asin) {
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
             if (!asin) return;
             broadcastModalAsin = asin;
             broadcastModalData = null;
@@ -4050,20 +4198,20 @@ export function renderCrmHTML(lang = 'en', isProd = false) {
             const parentBtn = document.createElement('button');
             parentBtn.type = 'button';
             parentBtn.dir = dirVal;
-            parentBtn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
-            const parentPriceText = product.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(product.price) + '</span>' : '';
-            parentBtn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(product.name_ar || product.name || product.asin) + parentPriceText + '</span><span class="text-gray-500 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_original')} + '</span>';
-            parentBtn.onclick = () => selectBroadcastModalOption(null);
+            parentBtn.className = 'w-full text-start px-3 py-2 rounded-lg bg-[var(--surface-sunken)]/50 hover:bg-[var(--accent)]/10 border border-[var(--border-subtle)] hover:border-[var(--accent)]/30 transition text-xs flex items-center gap-3';
+            const parentPriceText = product.price ? ' <span class="text-[var(--text-tertiary)] mx-1">|</span> <span class="text-[var(--accent)] whitespace-nowrap" dir="ltr">' + escapeHtml(product.price) + '</span>' : '';
+            parentBtn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(product.name_ar || product.name || product.asin) + parentPriceText + '</span><span class="text-[var(--text-tertiary)] shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_original')} + '</span>';
+            parentBtn.onclick = () => { if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light'); selectBroadcastModalOption(null); };
             container.appendChild(parentBtn);
-            
+
             for (const opt of options) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.dir = dirVal;
-                btn.className = 'w-full text-start px-3 py-2 rounded-lg bg-gray-800/50 hover:bg-brand-500/10 border border-gray-700 hover:border-brand-500/30 transition text-xs flex items-center gap-3';
-                const priceText = opt.price ? ' <span class="text-gray-500 mx-1">|</span> <span class="text-brand-400 whitespace-nowrap" dir="ltr">' + escapeHtml(opt.price) + '</span>' : '';
-                btn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(opt.name || opt.asin) + priceText + '</span><span class="text-brand-400 shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_option')} + '</span>';
-                btn.onclick = () => selectBroadcastModalOption(opt);
+                btn.className = 'w-full text-start px-3 py-2 rounded-lg bg-[var(--surface-sunken)]/50 hover:bg-[var(--accent)]/10 border border-[var(--border-subtle)] hover:border-[var(--accent)]/30 transition text-xs flex items-center gap-3';
+                const priceText = opt.price ? ' <span class="text-[var(--text-tertiary)] mx-1">|</span> <span class="text-[var(--accent)] whitespace-nowrap" dir="ltr">' + escapeHtml(opt.price) + '</span>' : '';
+                btn.innerHTML = '<span dir="auto" class="font-medium text-white font-arabic flex-1 min-w-0 break-words">' + escapeHtml(opt.name || opt.asin) + priceText + '</span><span class="text-[var(--accent)] shrink-0 whitespace-nowrap">' + ${js('crm.broadcast_option')} + '</span>';
+                btn.onclick = () => { if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred('light'); selectBroadcastModalOption(opt); };
                 container.appendChild(btn);
             }
             document.getElementById('broadcast-modal-options').classList.remove('hidden');

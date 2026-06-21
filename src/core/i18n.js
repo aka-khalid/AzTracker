@@ -1009,18 +1009,6 @@ const dict = {
     en: "💬 <b>Message from Admin:</b>\n\n{message}",
     masry: "💬 <b>رسالة من الأدمن:</b>\n\n{message}"
   },
-  "crm.seller_unknown": {
-    en: "Unknown",
-    masry: "مش معروف"
-  },
-  "crm.unknown_user": {
-    en: "Unknown User ({id})",
-    masry: "مستخدم غير معروف ({id})"
-  },
-  "crm.global_broadcast": {
-    en: "Global Broadcast",
-    masry: "برودكاست"
-  },
   "crm.loading_audit": {
     en: "Loading audit log...",
     masry: "بنحمل سجل المراجعة..."
@@ -1044,10 +1032,6 @@ const dict = {
   "crm.local_mode_toast": {
     en: "Local mode: Telegram verification bypassed (Read Only)",
     masry: "وضع محلي: تم تجاوز تليجرام (قراءة فقط)"
-  },
-  "crm.migrate_success": {
-    en: "Successfully migrated {subscriptions} subscriptions and {users} users!",
-    masry: "تم ترحيل {subscriptions} اشتراك و {users} مستخدم بنجاح!"
   },
   "crm.broadcast_prefix": {
     en: "📢 <b>Global Broadcast</b>\n\n{message}",
@@ -1135,8 +1119,8 @@ const dict = {
     masry: "التفاصيل:"
   },
   "crm.btn_view": {
-    en: "➡️ View",
-    masry: "⬅️ شوف"
+    en: "View",
+    masry: "شوف"
   },
   "crm.select_all": {
     en: "Select All",
@@ -1187,11 +1171,32 @@ const dict = {
     en: "Critical",
     masry: "حرج"
   },
+  "crm.engine_limit": {
+    en: "Limit",
+    masry: "الليميت"
+  },
+  // ── Activity Indicators ──────────────────────────────────────────────────────
+  "crm.activity_new": {
+    en: "New",
+    masry: "جديد"
+  },
+  "crm.activity_active": {
+    en: "Active",
+    masry: "نشط"
+  },
+  "crm.activity_inactive": {
+    en: "Idle",
+    masry: "مش نشط"
+  },
+  "crm.activity_dormant": {
+    en: "Dormant",
+    masry: "نايم"
+  },
 
   // ── Top Charts Drawer ────────────────────────────────────────────────────────
   "crm.top_charts_title": {
-    en: "🔥 Most Popular Products",
-    masry: "🔥 أكثر المنتجات متابعة"
+    en: "Most Popular Products",
+    masry: "أكثر المنتجات متابعة"
   },
   "crm.top_charts_trackers": {
     en: "trackers",
@@ -1204,12 +1209,12 @@ const dict = {
 
   // ── Graveyard Drawer ─────────────────────────────────────────────────────────
   "crm.graveyard_title": {
-    en: "💀 Ghost & Delisted Products",
-    masry: "💀 منتجات مهجورة ومش متوفرة"
+    en: "Ghost & Delisted Products",
+    masry: "منتجات مهجورة ومش متوفرة"
   },
   "crm.graveyard_purge_btn": {
-    en: "🗑️ Purge Selected",
-    masry: "🗑️ امسح المختار"
+    en: "Purge Selected",
+    masry: "امسح المختار"
   },
   "crm.graveyard_purge_confirm": {
     en: "Are you sure? This will permanently delete the selected products from the database. This cannot be undone.",
@@ -1241,15 +1246,6 @@ const dict = {
     en: "Unknown Product",
     masry: "منتج غير معروف"
   },
-  "fallback.unknown_seller": {
-    en: "Unknown",
-    masry: "مش معروف"
-  },
-  "fallback.unknown_user": {
-    en: "Unknown User ({id})",
-    masry: "مستخدم غير معروف ({id})"
-  },
-
   // ── Broadcast Strings ────────────────────────────────────────────────────
   "broadcast.snapshot": {
     en: "🚨 Snapshot 🚨",
@@ -1285,8 +1281,8 @@ const dict = {
   },
   // ── CRM Broadcast Features ───────────────────────────────────────────────────
   "crm.broadcast_deals": {
-    en: "📢 Broadcast Deals",
-    masry: "📢 برودكاست العروض"
+    en: "Broadcast Deals",
+    masry: "برودكاست العروض"
   },
   "crm.broadcast_deals_desc": {
     en: "Pick any ASIN, preview, and broadcast to the public channel.",
@@ -1317,8 +1313,8 @@ const dict = {
     masry: "الوصف (قابل للتعديل)"
   },
   "crm.broadcast_confirm_send": {
-    en: "📢 Confirm & Send",
-    masry: "📢 أكّد وأرسل"
+    en: "Confirm & Send",
+    masry: "أكّد وأرسل"
   },
   "crm.broadcast_sent": {
     en: "Broadcast sent successfully!",
@@ -1366,12 +1362,12 @@ const dict = {
     masry: "امسح المختار"
   },
   "crm.confirm_btn_confirm": {
-    en: "✅ Confirm",
-    masry: "✅ تأكيد"
+    en: "Confirm",
+    masry: "تأكيد"
   },
   "crm.confirm_btn_cancel": {
-    en: "❌ Cancel",
-    masry: "❌ إلغاء"
+    en: "Cancel",
+    masry: "إلغاء"
   },
   "crm.confirm_broadcast_send": {
     en: "Send this broadcast to the public channel?",
@@ -1567,12 +1563,12 @@ const dict = {
     masry: "متأكد إنك عايز توقف تتبع المنتج ده؟"
   },
   "dashboard.confirm_btn_confirm": {
-    en: "✅ Confirm",
-    masry: "✅ تأكيد"
+    en: "Confirm",
+    masry: "تأكيد"
   },
   "dashboard.confirm_btn_cancel": {
-    en: "❌ Cancel",
-    masry: "❌ إلغاء"
+    en: "Cancel",
+    masry: "إلغاء"
   },
   "crm.items_label": {
     en: "items",
@@ -1590,6 +1586,10 @@ const dict = {
     en: "Subscribers for {asin}",
     masry: "اللي مشتركين في {asin}"
   },
+  "crm.subscribers": {
+    en: "Subscribers",
+    masry: "المشتركين"
+  },
   "crm.role_root": {
     en: "ROOT",
     masry: "صاحب المكان"
@@ -1597,6 +1597,10 @@ const dict = {
   "crm.role_admin": {
     en: "ADMIN",
     masry: "أدمن"
+  },
+  "crm.role_rejected": {
+    en: "REJECTED",
+    masry: "مرفوض"
   },
   "audit.action.purge_ghosts": {
     en: "🧹 Purged {count} ghost items",
@@ -1786,10 +1790,6 @@ const dict = {
     en: "Failed to trigger sync: {err}",
     masry: "فشل بدأ المزامنة: {err}"
   },
-  "crm.action_unavailable": {
-    en: "This action is no longer available.",
-    masry: "الإجراء ده مبقاش متاح."
-  }
 };
 
 /**

@@ -5,6 +5,7 @@ on:
       - main
       - dev
       - 'feature/**'
+      - 'feat/**'
     paths:
       - 'src/**'
       - 'wrangler.toml'
@@ -25,7 +26,7 @@ jobs:
           node-version: "22"
 
       - name: Apply Database Migrations (Development)
-        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/')
+        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/feat/')
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -34,7 +35,7 @@ jobs:
           command: d1 migrations apply DB --remote
 
       - name: Deploy to Cloudflare Workers (Development)
-        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/')
+        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/feat/')
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

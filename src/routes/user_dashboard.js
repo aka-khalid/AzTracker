@@ -82,7 +82,7 @@ export async function fetchUserAPI(request, env, ctx) {
       ctx.waitUntil(env.DB.prepare("UPDATE Users SET last_active = ? WHERE chat_id = ?").bind(Date.now(), chatId).run());
     }
     if (!roles.isApproved) {
-        return new Response(JSON.stringify({ error: "FORBIDDEN" }), { 
+        return new Response(JSON.stringify({ error: "FORBIDDEN" }), {
           status: 403,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": roles.lang || 'masry' }
         });
@@ -95,7 +95,7 @@ export async function fetchUserAPI(request, env, ctx) {
                p.image_url, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller,
                p.seen_amazon_eg_at, p.seen_resale_at, p.detail_page_url
         FROM User_Subscriptions s
-        JOIN Global_Products p ON s.asin = p.asin
+        LEFT JOIN Global_Products p ON s.asin = p.asin
         WHERE s.chat_id = ?
         ORDER BY s.added_at DESC, s.asin ASC
       `).bind(chatId).all();
@@ -310,6 +310,311 @@ export async function fetchUserAPI(request, env, ctx) {
   return null;
 }
 
+const USER_STYLES = `
+    :root {
+      --bg-color: var(--surface);
+      --text-color: var(--text-primary);
+      --hint-color: var(--text-tertiary);
+      --link-color: var(--accent);
+      --button-color: var(--accent);
+      --button-text-color: #0f1419;
+      --secondary-bg-color: var(--surface-raised);
+      --destructive-color: var(--danger);
+
+      --accent: #FF9900;
+      --accent-orange: #FF9900;
+      --accent-orange-dim: #e68a00;
+      --surface: #0f1419;
+      --surface-raised: #1a1f26;
+      --surface-sunken: #0a0e12;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --border-default: rgba(255, 255, 255, 0.10);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --success: #34d399;
+      --success-dim: #059669;
+      --warning: #fbbf24;
+      --warning-dim: #d97706;
+      --danger: #f87171;
+      --danger-dim: #dc2626;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-tertiary: #64748b;
+      --glow: rgba(255, 153, 0, 0.3);
+      --card-bg: var(--surface-raised);
+      --card-border: var(--border-default);
+    }
+    body {
+      background-color: var(--surface);
+      color: var(--text-primary);
+      font-family: 'Inter', 'Cairo', -apple-system, sans-serif;
+      margin: 0;
+      padding: 16px;
+      padding-bottom: 40px;
+    }
+    body[dir="rtl"] {
+      font-family: 'Cairo', 'Inter', -apple-system, sans-serif;
+      line-height: 1.3;
+    }
+    button, input {
+      font-family: inherit;
+      line-height: inherit;
+    }
+    .header {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      background: linear-gradient(90deg, var(--text-primary), var(--hint-color));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .product-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      transition: transform 150ms ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .product-card.paused {
+      opacity: 0.6;
+    }
+    .product-card.paused::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.2);
+      pointer-events: none;
+    }
+    .product-header {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .product-img {
+      width: 70px;
+      height: 70px;
+      border-radius: 8px;
+      object-fit: cover;
+      background-color: var(--surface-sunken);
+      padding: 2px;
+      flex-shrink: 0;
+    }
+    .product-title {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.3;
+      margin: 0 0 4px 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .product-asin {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+    }
+    .prices-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .price-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: background-color 150ms ease, transform 150ms ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .price-box:active { transform: scale(0.95); }
+    .price-label {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .price-val {
+      font-size: 14px;
+      font-weight: 700;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .price-val.active {
+      color: var(--success);
+    }
+    .slider-container {
+      margin: 16px 0;
+      padding: 12px;
+      background: var(--surface-sunken);
+      border-radius: 12px;
+    }
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .slider-header span { color: var(--accent); font-weight: 600; }
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+      margin: 8px 0;
+    }
+    input[type=range]:focus { outline: none; }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: var(--border-default);
+      border-radius: 3px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      height: 20px;
+      width: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -7px;
+      box-shadow: 0 0 10px var(--glow);
+    }
+    .action-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    button, input, textarea, select {
+      font-family: inherit;
+      line-height: inherit;
+    }
+    button {
+      flex: 1;
+      background-color: var(--border-default);
+      color: var(--text-primary);
+      border: none;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 150ms ease;
+    }
+    button:active { transform: scale(0.98); }
+    button.primary {
+      background-color: var(--button-color);
+      color: var(--button-text-color);
+    }
+    button.danger { color: var(--destructive-color); }
+    .last-updated {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 12px;
+    }
+    .target-input {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-primary);
+      border-radius: 6px;
+      padding: 4px 8px;
+      width: 70px;
+      text-align: center;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .target-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    #loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-tertiary);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+    .tab {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      position: relative;
+    }
+    .tab.active {
+      color: var(--text-primary);
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -9px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px;
+      box-shadow: 0 0 8px var(--glow);
+    }
+    @keyframes pulse-red {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .hotdeals-dot {
+      position: absolute;
+      top: -2px;
+      right: -8px;
+      width: 8px;
+      height: 8px;
+      background-color: var(--danger);
+      border-radius: 50%;
+      animation: pulse-red 2s infinite;
+    }
+    [dir="rtl"] .hotdeals-dot {
+      right: auto;
+      left: -8px;
+    }
+
+    /* ═══ Command Center Component Styles ═══ */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: 0.5rem; font-size: 13px; font-weight: 600; border: 1px solid var(--border-default); transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease; cursor: pointer; white-space: nowrap; }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; pointer-events: none; }
+    .btn-primary { background: var(--accent); color: #0f1419; border-color: var(--accent); }
+    .btn-primary:active { background: var(--accent-orange-dim, #e68a00); }
+    .btn-secondary { background: var(--surface-raised); color: var(--text-secondary); }
+    .btn-secondary:active { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+    .btn-danger { background: rgba(248, 113, 113, 0.1); color: var(--danger); border-color: rgba(248, 113, 113, 0.2); }
+    .btn-danger:active { background: rgba(248, 113, 113, 0.2); }
+    .btn-sm { padding: 6px 10px; font-size: 11px; border-radius: 0.375rem; }
+
+    .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+    .pill-active { background: rgba(52, 211, 153, 0.12); color: var(--success); border: 1px solid rgba(52, 211, 153, 0.2); }
+    .pill-active::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--success); border-radius: 50%; }
+    .pill-paused { background: rgba(251, 191, 36, 0.12); color: var(--warning); border: 1px solid rgba(251, 191, 36, 0.2); }
+    .pill-paused::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--warning); border-radius: 2px; }
+    .pill-danger { background: rgba(248, 113, 113, 0.12); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.2); }
+    .pill-danger::before { content: ''; display: inline-block; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 7px solid var(--danger); }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--text-tertiary); }
+  `;
+
 function renderUserHTML(lang, partnerTag) {
   const isMasry = lang === 'masry';
   const htmlLang = lang;
@@ -319,8 +624,8 @@ function renderUserHTML(lang, partnerTag) {
   const ui = {
     access_denied_head: t('access.denied_head', lang) || "Access Denied",
     access_denied_body: t('access.denied_body_private', lang) || "You do not have permission to access this page.",
-    access_dev_lockdown_head: t('access.dev_bot_lockdown_head', lang) || "🚧 Development Bot",
-    access_dev_lockdown: t('access.dev_bot_lockdown', lang) || "🚧 Dev Bot: Admin access required.",
+    access_dev_lockdown_head: t('access.dev_bot_lockdown_head', lang) || "Development Bot",
+    access_dev_lockdown: t('access.dev_bot_lockdown', lang) || "Dev Bot: Admin access required.",
     my_products: t('dashboard.my_products', lang),
     hot_deals: t('dashboard.hot_deals', lang),
     syncing: t('dashboard.syncing', lang),
@@ -376,271 +681,12 @@ function renderUserHTML(lang, partnerTag) {
   <title>My Products</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-color: var(--tg-theme-bg-color, #121212);
-      --text-color: var(--tg-theme-text-color, #ffffff);
-      --hint-color: var(--tg-theme-hint-color, #9e9e9e);
-      --link-color: var(--tg-theme-link-color, #3390ec);
-      --button-color: var(--tg-theme-button-color, #3390ec);
-      --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-      --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1c1c1d);
-      --destructive-color: var(--tg-theme-destructive-text-color, #ff3b30);
-      
-      --accent: #FF9900;
-      --card-bg: rgba(255, 255, 255, 0.05);
-      --card-border: rgba(255, 255, 255, 0.1);
-      --glow: rgba(255, 153, 0, 0.3);
-    }
-    body {
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      font-family: ${isMasry ? "'Cairo', sans-serif" : "'Inter', 'Cairo', -apple-system, sans-serif"};
-      ${isMasry ? 'line-height: 1.3;' : ''}
-      margin: 0;
-      padding: 16px;
-      padding-bottom: 40px;
-    }
-    button, input {
-      font-family: inherit;
-    }
-    .header {
-      font-size: 24px;
-      font-weight: 700;
-      margin-bottom: 20px;
-      background: linear-gradient(90deg, var(--text-color), var(--hint-color));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .product-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 16px;
-      margin-bottom: 16px;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-      transition: transform 0.2s ease;
-      position: relative;
-      overflow: hidden;
-    }
-    .product-card.paused {
-      opacity: 0.6;
-    }
-    .product-card.paused::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.2);
-      pointer-events: none;
-    }
-    .product-header {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-    .product-img {
-      width: 70px;
-      height: 70px;
-      border-radius: 8px;
-      object-fit: cover;
-      background-color: #fff;
-      padding: 2px;
-      flex-shrink: 0;
-    }
-    .product-title {
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 1.3;
-      margin: 0 0 4px 0;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .product-asin {
-      font-size: 12px;
-      color: var(--hint-color);
-      margin: 0;
-    }
-    .prices-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .price-box {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.05);
-      border-radius: 8px;
-      padding: 8px;
-      text-align: center;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.2s;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .price-box:hover { background: rgba(255,255,255,0.06); }
-    .price-box:active { transform: scale(0.95); }
-    .price-label {
-      font-size: 11px;
-      color: var(--hint-color);
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .price-val {
-      font-size: 14px;
-      font-weight: 700;
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .price-val.active {
-      color: #4ade80;
-    }
-    .slider-container {
-      margin: 16px 0;
-      padding: 12px;
-      background: rgba(0,0,0,0.2);
-      border-radius: 12px;
-    }
-    .slider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      font-size: 14px;
-    }
-    .slider-header span { color: var(--accent); font-weight: 600; }
-    input[type=range] {
-      -webkit-appearance: none;
-      width: 100%;
-      background: transparent;
-      margin: 8px 0;
-    }
-    input[type=range]:focus { outline: none; }
-    input[type=range]::-webkit-slider-runnable-track {
-      width: 100%;
-      height: 6px;
-      cursor: pointer;
-      background: rgba(255,255,255,0.1);
-      border-radius: 3px;
-    }
-    input[type=range]::-webkit-slider-thumb {
-      height: 20px;
-      width: 20px;
-      border-radius: 50%;
-      background: var(--accent);
-      cursor: pointer;
-      -webkit-appearance: none;
-      margin-top: -7px;
-      box-shadow: 0 0 10px var(--glow);
-    }
-    .action-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    button, input, textarea, select {
-      font-family: inherit;
-      line-height: inherit;
-    }
-    button {
-      flex: 1;
-      background-color: rgba(255,255,255,0.1);
-      color: var(--text-color);
-      border: none;
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button:active { transform: scale(0.98); }
-    button.primary {
-      background-color: var(--button-color);
-      color: var(--button-text-color);
-    }
-    button.danger { color: var(--destructive-color); }
-    .last-updated {
-      font-size: 11px;
-      color: var(--hint-color);
-      margin-top: 12px;
-    }
-    .target-input {
-      background: transparent;
-      border: 1px solid var(--card-border);
-      color: var(--text-color);
-      border-radius: 6px;
-      padding: 4px 8px;
-      width: 70px;
-      text-align: center;
-      font-weight: 600;
-      font-size: 13px;
-    }
-    .target-input:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-    #loading {
-      text-align: center;
-      padding: 40px;
-      color: var(--hint-color);
-    }
-  
-    .tabs {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 20px;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 8px;
-    }
-    .tab {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--hint-color);
-      cursor: pointer;
-      position: relative;
-    }
-    .tab.active {
-      color: var(--text-color);
-    }
-    .tab.active::after {
-      content: '';
-      position: absolute;
-      left: 0; right: 0; bottom: -9px;
-      height: 2px;
-      background: var(--accent);
-      border-radius: 2px;
-      box-shadow: 0 0 8px var(--glow);
-    }
-    @keyframes pulse-red {
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-    }
-    .hotdeals-dot {
-      position: absolute;
-      top: -2px;
-      right: ${isMasry ? 'auto' : '-8px'};
-      left: ${isMasry ? '-8px' : 'auto'};
-      width: 8px;
-      height: 8px;
-      background-color: #ef4444;
-      border-radius: 50%;
-      animation: pulse-red 2s infinite;
-    }
-</style>
+  <style>${USER_STYLES}</style>
 </head>
 <body>
   <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
-  <div id="init-loader" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background-color: var(--bg-color);">
-    <div style="width: 48px; height: 48px; border: 4px solid var(--secondary-bg-color); border-top-color: var(--button-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+  <div id="init-loader" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 9999; display: flex; align-items: center; justify-content: center; background-color: var(--surface);">
+    <div style="width: 48px; height: 48px; border: 4px solid var(--border-default); border-top-color: var(--button-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
   </div>
   <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); margin-bottom: 20px; padding-bottom: 8px;">
     <div class="tabs" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
@@ -651,15 +697,15 @@ function renderUserHTML(lang, partnerTag) {
       </div>
     </div>
     <div style="display: flex; gap: 8px;">
-      <button onclick="toggleLang()" id="btn-lang" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
+      <button onclick="toggleLang()" id="btn-lang" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
         ${isMasry ? 'EN' : 'مصري'}
       </button>
-      <button onclick="customAlert(ui.help_text)" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-color); border-radius: 4px; cursor: pointer;">
-        ℹ️
+      <button onclick="customAlert(ui.help_text)" style="padding: 2px 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary); border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;" aria-label="Help">
+        <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
       </button>
     </div>
   </div>
-  
+
   <div id="content-products">
     <div id="app"><div id="loading">${ui.syncing}</div></div>
   </div>
@@ -675,25 +721,30 @@ function renderUserHTML(lang, partnerTag) {
     const initData = tg.initData || '';
 
     function customAlert(msg) {
+        if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
         let modal = document.getElementById('custom-alert');
         if (!modal) {
             modal = document.createElement('div');
             modal.id = 'custom-alert';
-            modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
-            modal.innerHTML = '<div style="background:var(--secondary-bg-color);padding:24px;border-radius:16px;max-width:80%;width:300px;text-align:center;border:1px solid rgba(255,255,255,0.1);box-shadow:0 10px 25px rgba(0,0,0,0.5);"><div id="custom-alert-text" style="margin-bottom:24px;font-size:15px;line-height:1.5;"></div><button onclick="document.getElementById(\\'custom-alert\\').style.display=\\'none\\'" style="width:100%;padding:12px;border-radius:10px;background:var(--button-color);color:var(--button-text-color);border:none;font-weight:700;cursor:pointer;font-size:14px;font-family:inherit;">' + (ui.close || 'Close') + '</button></div>';
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;';
+            modal.innerHTML = '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);"></div><div style="position:relative;border-radius:16px;padding:20px;box-shadow:0 25px 50px rgba(0,0,0,0.5);max-width:300px;width:100%;background:var(--surface-raised);border:1px solid var(--border-subtle);"><div id="custom-alert-text" style="font-size:13px;margin-bottom:16px;line-height:1.625;color:var(--text-primary);"></div><button id="custom-alert-close" style="width:100%;padding:8px 0;border-radius:8px;font-size:12px;font-weight:500;transition:background-color 150ms ease;border:1px solid rgba(255,153,0,0.2);background:rgba(255,153,0,0.1);color:var(--accent);cursor:pointer;">' + (ui.close || 'Close') + '</button></div>';
             document.body.appendChild(modal);
+            document.getElementById('custom-alert-close').onclick = function() {
+                if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                modal.style.display = 'none';
+            };
         }
         document.getElementById('custom-alert-text').innerText = msg;
         modal.style.display = 'flex';
     }
 
-    function showConfirmDialog(message, confirmText = '✅ Confirm', cancelText = '❌ Cancel') {
+    function showConfirmDialog(message, confirmText = 'Confirm', cancelText = 'Cancel') {
         if (document.getElementById('custom-confirm-dialog')) return Promise.resolve(false);
         return new Promise((resolve) => {
             const overlay = document.createElement('div');
             overlay.id = 'custom-confirm-dialog';
-            overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;';
-            overlay.innerHTML = '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);" id="custom-confirm-backdrop"></div><div style="position:relative;background:var(--secondary-bg-color);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;box-shadow:0 10px 25px rgba(0,0,0,0.5);max-width:320px;width:calc(100% - 32px);"><p style="font-size:14px;line-height:1.6;color:var(--text-color);margin-bottom:20px;" id="custom-confirm-message"></p><div id="custom-confirm-buttons" style="display:flex;gap:12px;justify-content:space-between;"><button id="custom-confirm-cancel" style="padding:8px 16px;background:rgba(239,68,68,0.1);color:var(--destructive-color);border:1px solid rgba(239,68,68,0.2);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;"></button><button id="custom-confirm-ok" style="padding:8px 16px;background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.2);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;"></button></div></div>';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;';
+            overlay.innerHTML = '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);" id="custom-confirm-backdrop"></div><div style="position:relative;border-radius:16px;padding:20px;box-shadow:0 25px 50px rgba(0,0,0,0.5);max-width:300px;width:100%;background:var(--surface-raised);border:1px solid var(--border-subtle);"><p style="font-size:13px;margin-bottom:16px;line-height:1.625;color:var(--text-primary);" id="custom-confirm-message"></p><div style="display:flex;gap:12px;" id="custom-confirm-buttons"><button id="custom-confirm-cancel" style="flex:1;padding:8px 0;border-radius:8px;font-size:11px;font-weight:500;transition:background-color 150ms ease;border:1px solid var(--border-subtle);background:var(--surface-sunken);color:var(--text-secondary);cursor:pointer;"></button><button id="custom-confirm-ok" style="flex:1;padding:8px 0;border-radius:8px;font-size:11px;font-weight:500;transition:background-color 150ms ease;border:1px solid rgba(248,113,113,0.2);background:rgba(248,113,113,0.1);color:var(--danger);cursor:pointer;"></button></div></div>';
             document.body.appendChild(overlay);
             document.getElementById('custom-confirm-message').textContent = message;
             document.getElementById('custom-confirm-cancel').textContent = cancelText;
@@ -708,9 +759,15 @@ function renderUserHTML(lang, partnerTag) {
             };
             document.addEventListener('keydown', keyHandler);
             function cleanup() { document.removeEventListener('keydown', keyHandler); overlay.remove(); }
-            document.getElementById('custom-confirm-cancel').onclick = () => { cleanup(); resolve(false); };
+            document.getElementById('custom-confirm-cancel').onclick = () => {
+                if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                cleanup(); resolve(false);
+            };
             document.getElementById('custom-confirm-backdrop').onclick = () => { cleanup(); resolve(false); };
-            document.getElementById('custom-confirm-ok').onclick = () => { cleanup(); resolve(true); };
+            document.getElementById('custom-confirm-ok').onclick = () => {
+                if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                cleanup(); resolve(true);
+            };
         });
     }
 
@@ -723,14 +780,16 @@ function renderUserHTML(lang, partnerTag) {
             document.body.appendChild(container);
         }
         const el = document.createElement('div');
-        const bg = type === 'error' ? 'background:rgba(239,68,68,0.9);border-color:rgba(239,68,68,1);'
-            : type === 'success' ? 'background:rgba(34,197,94,0.9);border-color:rgba(34,197,94,1);'
-            : 'background:rgba(31,41,55,0.9);border-color:rgba(75,85,99,0.5);';
-        const icon = type === 'error' ? '❌' : '✅';
-        el.style.cssText = 'border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:500;box-shadow:0 10px 25px rgba(0,0,0,0.5);border:1px solid;backdrop-filter:blur(12px);' + bg;
-        el.innerHTML = '<span>' + icon + '</span> <span>' + escapeHtml(message) + '</span>';
+        const bg = type === 'error' ? 'background:rgba(248,113,113,0.9);border-color:var(--danger);'
+            : type === 'success' ? 'background:rgba(52,211,153,0.9);border-color:var(--success);'
+            : 'background:var(--surface-raised);border-color:var(--border-strong);';
+        const iconSvg = type === 'error'
+          ? '<svg style="width:18px;height:18px;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>'
+          : '<svg style="width:18px;height:18px;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+        el.style.cssText = 'border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:500;box-shadow:0 10px 25px rgba(0,0,0,0.5);border:1px solid;backdrop-filter:blur(8px);' + bg;
+        el.innerHTML = iconSvg + ' <span>' + escapeHtml(message) + '</span>';
         container.appendChild(el);
-        setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
+        setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 300ms ease'; setTimeout(() => el.remove(), 300); }, 3000);
     }
 
     const originalFetch = window.fetch;
@@ -757,7 +816,7 @@ function renderUserHTML(lang, partnerTag) {
         }
         return res;
     };
-    
+
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('admin') === 'true') {
         tg.BackButton.show();
@@ -794,11 +853,12 @@ function renderUserHTML(lang, partnerTag) {
     const ui = ${JSON.stringify(ui)};
     const isMasry = ${isMasry};
 
-    
+
     let allProducts = [];
     let hotDeals = [];
 
     function switchTab(tabId) {
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
       document.getElementById('tab-products').classList.remove('active');
       document.getElementById('tab-hotdeals').classList.remove('active');
       document.getElementById('content-products').style.display = 'none';
@@ -810,10 +870,8 @@ function renderUserHTML(lang, partnerTag) {
       if (tabId === 'hotdeals') {
         const dot = document.getElementById('dot-hotdeals');
         if (dot) dot.style.display = 'none';
-        
-        if (hotDeals.length === 0) {
-          loadHotDeals();
-        }
+
+        loadHotDeals();
       }
     }
 
@@ -837,7 +895,7 @@ function renderUserHTML(lang, partnerTag) {
     function renderHotDeals() {
       if (hotDeals.length === 0) {
         document.getElementById('dot-hotdeals').style.display = 'none';
-        document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (ui.no_deals) + '</div>';
+        document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--text-tertiary);margin-top:40px;">' + (ui.no_deals) + '</div>';
         return;
       }
       document.getElementById('dot-hotdeals').style.display = 'inline-block';
@@ -847,14 +905,14 @@ function renderUserHTML(lang, partnerTag) {
         if(!name) name = ui.unknown_product;
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
-        
+
         const amzUrl = p.detail_page_url || 'https://www.amazon.eg/dp/' + p.asin;
 
         let dropPct = Math.round(((p.hist_mean - p.new_price) / p.hist_mean) * 100);
 
-        let trackBtn = p.is_tracked 
-          ? '<button disabled style="opacity:0.5; cursor:default; border: 1px solid var(--card-border);">✅ ' + (ui.tracked) + '</button>'
-          : '<button class="primary" onclick="trackDeal(\\'' + p.asin + '\\')">🎯 ' + (ui.track) + '</button>';
+        const trackBtn = p.is_tracked
+          ? '<button class="btn btn-sm btn-secondary" disabled>' + (ui.tracked) + '</button>'
+          : '<button class="btn btn-sm btn-primary" onclick="trackDeal(\\'' + p.asin + '\\')">' + (ui.track) + '</button>';
 
         html += '<div class="product-card">' +
           '<div class="product-header">' +
@@ -866,15 +924,17 @@ function renderUserHTML(lang, partnerTag) {
                    '<div class="price-label">' + (ui.price_now) + '</div>' +
                    '<div class="price-val">' + formatEGP(p.new_price) + '</div>' +
                  '</div>' +
-                 '<div class="price-box used" style="background: rgba(255, 59, 48, 0.1); border-color: rgba(255, 59, 48, 0.2);">' +
+                 '<div class="price-box used" style="background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.2);">' +
                    '<div class="price-label" style="color:var(--destructive-color)">' + (ui.price_drop) + '</div>' +
-                   '<div class="price-val" style="color:var(--destructive-color)">' + dropPct + '% 🔻</div>' +
+                   '<div class="price-val" style="color:var(--destructive-color)">' + dropPct + '%' +
+                   '<svg style="width:12px;height:12px;margin-left:3px;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>' +
+                   '</div>' +
                  '</div>' +
                '</div>' +
             '</div>' +
           '</div>' +
           '<div class="action-row">' +
-            '<button onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (ui.open_amazon) + '</button>' +
+            '<button class="btn btn-sm btn-primary" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');window.open(\\''+amzUrl+'\\', \\'_blank\\')">' + (ui.open_amazon) + '</button>' +
             trackBtn +
           '</div>' +
         '</div>';
@@ -946,7 +1006,7 @@ function renderUserHTML(lang, partnerTag) {
 
     function renderProducts() {
       if (allProducts.length === 0) {
-        document.getElementById('app').innerHTML = '<div style="text-align:center;color:var(--hint-color);margin-top:40px;">' + (ui.no_products_found) + '</div>';
+        document.getElementById('app').innerHTML = '<div style="text-align:center;color:var(--text-tertiary);margin-top:40px;">' + (ui.no_products_found) + '</div>';
         return;
       }
       let html = '';
@@ -955,7 +1015,7 @@ function renderUserHTML(lang, partnerTag) {
         if(!name) name = ui.unknown_product;
         const placeholder = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMmMyYzJlIiByeD0iOCIvPjwvc3ZnPg==';
         let img = p.image_url ? p.image_url : placeholder;
-        
+
         let targetSliderVal = p.target_price || p.atl || 0;
         let maxVal = Math.max(p.new_price||0, p.used_price||0, p.amazon_price||0) * 1.2 || 1000;
         if(targetSliderVal > maxVal) maxVal = targetSliderVal * 1.2;
@@ -975,6 +1035,37 @@ function renderUserHTML(lang, partnerTag) {
         let shortSeller = p.new_seller ? p.new_seller.substring(0, 10) + (p.new_seller.length > 10 ? '..' : '') : (ui.new_condition);
         if(p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg') shortSeller = ui.amazon_eg;
 
+        const isAmzDuplicate = p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg';
+        const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const amazonRecentlySeen = p.seen_amazon_eg_at && (now - p.seen_amazon_eg_at) < SEVEN_DAYS;
+        const usedRecentlySeen = p.seen_resale_at && (now - p.seen_resale_at) < SEVEN_DAYS;
+
+        const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price;
+        let pricesHtml = '';
+        if (isOutOfStock) {
+          pricesHtml = '<div style="background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.2); color: var(--danger); padding: 12px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px 0; font-weight: 500; font-size: 14px;">' +
+                           '<svg style="width: 16px; height: 16px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' +
+                           '<span>' + (ui.currently_out_of_stock) + '</span>' +
+                           '</div>';
+        } else {
+          pricesHtml = '<div class="prices-grid" ' + (isAmzDuplicate ? 'style="grid-template-columns: repeat(2, 1fr);"' : '') + '>' +
+                '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
+                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--danger);">' + ui.likely_out_of_stock + '</span>')) + '</div>' +
+                '</div>' +
+                '<div class="price-box" title="' + (ui.resale) + '" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + (ui.resale) + '</div>' +
+                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--danger);">' + ui.likely_out_of_stock + '</span>'))) + '</div>' +
+                '</div>' +
+                (isAmzDuplicate ? '' :
+                '<div class="price-box" title="' + (ui.amazon_eg) + '" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
+                  '<div class="price-label">' + (ui.amazon_eg) + '</div>' +
+                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:#3b82f6;">' + ui.amazon_hidden_price + '</span>'))) + '</div>' +
+                '</div>') +
+              '</div>';
+        }
+
         html += '<div class="product-card ' + classPaused + '">' +
           '<div class="product-header">' +
             '<img src="' + img + '" class="product-img" />' +
@@ -982,47 +1073,15 @@ function renderUserHTML(lang, partnerTag) {
                '<h4 class="product-title">' + name + '</h4>' +
                '<p class="product-asin">' + p.asin + '</p>' +
             '</div>' +
-          '</div>';
-          
-          const isAmzDuplicate = p.new_seller && p.new_seller.toLowerCase() === 'amazon.eg';
-          const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-          const now = Date.now();
-          const amazonRecentlySeen = p.seen_amazon_eg_at && (now - p.seen_amazon_eg_at) < SEVEN_DAYS;
-          const usedRecentlySeen = p.seen_resale_at && (now - p.seen_resale_at) < SEVEN_DAYS;
-
-          const isOutOfStock = !p.new_price && !p.used_price && !p.amazon_price;
-          let pricesHtml = '';
-          if (isOutOfStock) {
-              pricesHtml = '<div style="background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: var(--destructive-color); padding: 12px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px 0; font-weight: 500; font-size: 14px;">' +
-                           '<svg style="width: 16px; height: 16px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' +
-                           '<span>' + (ui.currently_out_of_stock) + '</span>' +
-                           '</div>';
-          } else {
-              pricesHtml = '<div class="prices-grid" ' + (isAmzDuplicate ? 'style="grid-template-columns: repeat(2, 1fr);"' : '') + '>' +
-                '<div class="price-box" title="' + escapeHtml(sellerLabel) + '" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">' +
-                  '<div class="price-label">' + escapeHtml(shortSeller) + '</div>' +
-                  '<div class="price-val ' + (p.new_price ? 'active' : '') + '">' + (p.new_price ? formatEGP(p.new_price) : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--destructive-color);">' + ui.likely_out_of_stock + '</span>')) + '</div>' +
-                '</div>' +
-                '<div class="price-box" title="' + (ui.resale) + '" onclick="window.open(\\''+resaleUrl+'\\', \\'_blank\\')">' +
-                  '<div class="price-label">' + (ui.resale) + '</div>' +
-                  '<div class="price-val ' + (p.used_price ? 'active' : '') + '">' + (p.used_price ? formatEGP(p.used_price) : (usedRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:var(--destructive-color);">' + ui.likely_out_of_stock + '</span>'))) + '</div>' +
-                '</div>' +
-                (isAmzDuplicate ? '' : 
-                '<div class="price-box" title="' + (ui.amazon_eg) + '" onclick="window.open(\\''+amazonEgUrl+'\\', \\'_blank\\')">' +
-                  '<div class="price-label">' + (ui.amazon_eg) + '</div>' +
-                  '<div class="price-val ' + (p.amazon_price ? 'active' : '') + '">' + (p.amazon_price ? formatEGP(p.amazon_price) : (amazonRecentlySeen ? ('<span style="font-size:11px;color:#f59e0b;">' + ui.check_stock + '</span>') : ('<span style="font-size:'+(isMasry?'11px':'10px;line-height:1.2;display:inline-block')+';color:#3b82f6;">' + ui.amazon_hidden_price + '</span>'))) + '</div>' +
-                '</div>') +
-              '</div>';
-          }
-
-          html += pricesHtml +
+          '</div>' +
+          pricesHtml +
 
           '<div class="slider-container">' +
              '<div class="slider-header">' +
                '<div>' + (ui.target_price) + '</div>' +
                '<div style="display:flex;align-items:center;gap:6px;">' +
                  '<input type="number" id="tgt-input-'+idx+'" class="target-input" min="1" max="'+maxVal+'" value="'+(p.target_price || '')+'" placeholder="'+(ui.none)+'" oninput="document.getElementById(\\'slider-'+idx+'\\').value = this.value" onchange="updateTarget(\\''+p.asin+'\\', this.value ? parseInt(this.value) : null)">' +
-                 (p.target_price ? '<a href="#" onclick="clearTarget(\\''+p.asin+'\\'); return false;" style="color:var(--hint-color);font-size:11px;text-decoration:none;">(' + (ui.clear) + ')</a>' : '') +
+                 (p.target_price ? '<a href="#" onclick="clearTarget(\\''+p.asin+'\\'); return false;" style="color:var(--text-tertiary);font-size:11px;text-decoration:none;">(' + (ui.clear) + ')</a>' : '') +
                '</div>' +
              '</div>' +
              '<input type="range" id="slider-'+idx+'" min="1" max="'+maxVal+'" value="'+targetSliderVal+'" oninput="document.getElementById(\\'tgt-input-'+idx+'\\').value = this.value" onchange="updateTarget(\\''+p.asin+'\\', parseInt(this.value))">' +
@@ -1030,13 +1089,14 @@ function renderUserHTML(lang, partnerTag) {
 
           '<div class="action-row">' +
             '<button onclick="togglePause(\\''+p.asin+'\\', '+(p.paused?1:0)+')">' + btnPauseTxt + '</button>' +
-            '<button class="danger" onclick="deleteProduct(\\''+p.asin+'\\')">🗑 ' + (ui.delete) + '</button>' +
+            '<button class="danger" onclick="deleteProduct(\\''+p.asin+'\\')">' + (ui.delete) + '</button>' +
           '</div>' +
           '<div class="action-row">' +
-            '<button class="primary" onclick="window.open(\\''+amzUrl+'\\', \\'_blank\\')">🛒 ' + (ui.open_amazon) + '</button>' +
+            '<button class="primary" onclick="if(tg&&tg.HapticFeedback)tg.HapticFeedback.impactOccurred(\\'light\\');window.open(\\''+amzUrl+'\\', \\'_blank\\')">' + (ui.open_amazon) + '</button>' +
           '</div>' +
-          
-          '<div class="last-updated">' + (ui.last_checked) + '<span>' + lastUpd + '</span></div>' +
+
+          '<div class="last-updated">' + (ui.last_checked) + '<span>' + lastUpd + '</span>' +
+          '</div>' +
         '</div>';
       });
       document.getElementById('app').innerHTML = html;
