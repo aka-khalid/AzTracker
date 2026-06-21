@@ -29,7 +29,7 @@ export async function scheduled(event, env, ctx) {
         // 1c. Idle User Cleanup (7 Days)
         const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
         const idleCutoff = now - sevenDaysMs;
-        const idleUsersRes = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role = 'approved' AND last_active IS NULL AND created_at < ?").bind(idleCutoff).all();
+        const idleUsersRes = await env.DB.prepare("SELECT chat_id, lang FROM Users WHERE role = 'approved' AND (last_active IS NULL OR last_active = 0) AND created_at < ?").bind(idleCutoff).all();
         
         if (idleUsersRes.results && idleUsersRes.results.length > 0) {
             for (const user of idleUsersRes.results) {
