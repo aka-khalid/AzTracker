@@ -1,7 +1,7 @@
 import { getUserRoles, logAudit, resolveUserProfile } from '../core/db.js';
 import { t, resolveLanguageCode, getWelcomeMessage } from '../core/i18n.js';
 import { getAmazonAccessToken, AmazonEdgeParser } from '../core/amazon.js';
-import { escapeHtml, convertHindiToArabic, resolveProductName } from '../core/utils.js';
+import { escapeHtml, convertHindiToArabic, resolveProductName, expandAmazonUrl, getAsinFromUrl } from '../core/utils.js';
 
 const QUEUE_MAX_DEPTH = 25;
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
@@ -240,7 +240,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
 
   const isNumericId = /^\d{6,15}$/.test(text);
-  const isAmazonLink = text.includes("amazon.") || text.includes("amzn.");
+  const isAmazonLink = text.includes("amazon.") || text.includes("amzn.") || text.includes("link.amazon");
 
   if (isNumericId || isAmazonLink) {
     await deleteTelegramMessage(env, chatId, messageId);
@@ -250,7 +250,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
 
   if (isAmazonLink) {
     // Isolate the link from surrounding text and auto-prepend protocol if missing
-    let inputUrl = text.split(/\s+/).find(w => w.includes("amazon.") || w.includes("amzn.")) || text;
+    let inputUrl = text.split(/\s+/).find(w => w.includes("amazon.") || w.includes("amzn.") || w.includes("link.amazon")) || text;
     if (!/^https?:\/\//i.test(inputUrl)) {
       inputUrl = "https://" + inputUrl;
     }
@@ -317,13 +317,11 @@ async function handleMessage(message, env, baseUrl, ctx) {
         if (arabicMap.has(pid)) {
           arabicName = arabicMap.get(pid);
         }
-        // Fallback: scrape amazon.eg page if API didn't return Arabic
-        if (!arabicName) {
-          arabicName = await parser.scrapeArabicTitle(pid);
-        }
-        // Fetch English if URL extraction failed
-        if (!extractedName) {
-          extractedName = await parser.scrapeEnglishTitle(pid);
+        // Fallback: scrape amazon.eg page for both titles in parallel
+        if (!arabicName || !extractedName) {
+          const titles = await parser.scrapeTitles(pid);
+          if (!arabicName) arabicName = titles.ar;
+          if (!extractedName) extractedName = titles.en;
         }
       }
     } catch (e) {
@@ -346,7 +344,7 @@ async function handleMessage(message, env, baseUrl, ctx) {
     `).bind(chatId, pid, Date.now()).run();
 
 
-    const title = extractedName ? extractedName : pid;
+    const title = (lang === 'masry' && arabicName) ? arabicName : (extractedName || pid);
     const cleanTitle = escapeHtml(title.length > 35 ? title.substring(0, 32) + "..." : title);
 
     const successText = t('link.registered_head', lang) + '\n\n' +
@@ -1156,37 +1154,6 @@ async function deleteTelegramMessage(env, chatId, messageId) {
   } catch (e) {
     console.error("deleteTelegramMessage fetch failed:", e);
   }
-}
-
-async function expandAmazonUrl(url) {
-  let currentUrl = url;
-  let hops = 0;
-  try {
-    while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || currentUrl.includes("a.co") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
-      const res = await fetch(currentUrl, { method: "GET", redirect: "manual", headers: { "User-Agent": "Agent/AzTrackerBot" }, signal: AbortSignal.timeout(5000) });
-      const location = res.headers.get("location");
-
-      if (location) {
-        currentUrl = new URL(location, currentUrl).href;
-        hops++;
-      } else {
-        break;
-      }
-    }
-  } catch (e) {
-    console.error("Short link expansion failure:", e);
-  }
-  return currentUrl;
-}
-
-function getAsinFromUrl(url) {
-  if (!url) return null;
-  // Product ASINs start with B — reject all-numeric (ISBN) and garbage
-  const dpMatch = url.match(/\/dp\/(B[A-Z0-9]{9})(?=[/?#]|$)/i);
-  if (dpMatch) return dpMatch[1].toUpperCase();
-  const gpMatch = url.match(/\/gp\/product\/(B[A-Z0-9]{9})(?=[/?#]|$)/i);
-  if (gpMatch) return gpMatch[1].toUpperCase();
-  return null;
 }
 
 async function sendTelegram(env, chatId, text, replyMarkup = null) {

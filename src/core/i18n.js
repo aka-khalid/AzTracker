@@ -379,14 +379,36 @@ const dict = {
 
 
 
-  // ── Admin: Confirm Revocation ─────────────────────────────────────────────
+  
+
+		  // ── Product Removed: Invalid ASIN ─────────────────────────────────────────
+		  "product.removed_invalid_head": {
+		    en: "⚠️ <b>Product Removed</b>",
+		    masry: "⚠️ <b>المنتج اتشال</b>"
+		  },
+		  "product.removed_invalid_body": {
+		    en: "The product with ASIN <code>{asin}</code> couldn't be found on Amazon, so we removed it from tracking. Don't try adding it again — it's not a valid product.",
+		    masry: "المنتج اللي ب ASIN <code>{asin}</code> مش موجود على أمازون، فشيلناه من المتابعة. متحاولش تضيفه تاني — ده مش منتج حقيقي."
+		  },
+
+		  // ── Product Removed: Inaccessible ─────────────────────────────────────────
+		  "product.removed_inaccessible_head": {
+		    en: "⚠️ <b>Product Removed</b>",
+		    masry: "⚠️ <b>المنتج اتشال</b>"
+		  },
+		  "product.removed_inaccessible_body": {
+		    en: "The product with ASIN <code>{asin}</code> can't be accessed by our services (it may be restricted or region-locked), so we removed it from tracking. Don't try adding it again.",
+		    masry: "المنتج اللي ب ASIN <code>{asin}</code> مش قادرين نوصله، فشيلناه من المتابعة. متحاولش تضيفه تاني."
+		  },
+
+// ── Admin: Confirm Revocation ─────────────────────────────────────────────
   "admin.confirm_revoke_head": {
     en: "⚠️ <b>Confirm Revocation</b>",
     masry: "⚠️ <b>تأكيد إلغاء الوصول</b>"
   },
   "admin.confirm_revoke_body": {
     en: "Are you sure you want to permanently revoke ID ‏<code>{id}</code>‏?\n\n<i>Their entire saved list will be erased. This cannot be undone.</i>",
-    masry: "متأكد إنك عايز تشيل الرقم ‏<code>{id}</code>‏ نهائياً؟\n\n<i>كل منتجاته المحفوحة هتتتمسح. العملية دي ملهاش رجعة.</i>"
+    masry: "متأكد إنك عايز تشيل الرقم ‏<code>{id}</code>‏ نهائياً؟\n\n<i>كل منتجاته المحفوظة هتتتمسح. العملية دي ملهاش رجعة.</i>"
   },
   "admin.btn_revoke": {
     en: "✅ Yes, Revoke",
@@ -921,15 +943,11 @@ const dict = {
   },
   "crm.action_restoration_complete": {
     en: "✅ <b>Restoration Complete</b>",
-    masry: "✅ <b>كل حاجة اترجعت</b>"
+    masry: "✅ <b>كل حاجة رجعت</b>"
   },
   "crm.action_restoration_fail": {
     en: "❌ <b>Restoration Failed</b>",
     masry: "❌ <b>منفعش</b>"
-  },
-  "crm.action_force_scrape_ok": {
-    en: "✅ <b>Force Scrape Completed</b>",
-    masry: "✅ <b>تم</b>"
   },
   "crm.action_force_scrape_fail": {
     en: "❌ <b>Force Scrape Failed</b>",
@@ -1682,7 +1700,16 @@ const dict = {
     en: "🧹 System automatically revoked idle user",
     masry: "🧹 النظام سحب صلاحية الدخول لعدم الاستخدام"
   },
-  "audit.action.product_broadcast": {
+  
+	  "audit.action.auto_remove_invalid": {
+	    en: "🚫 Auto-removed invalid product {asin} ({productName})",
+	    masry: "🚫 النظام شال منتج مش موجود {asin} ({productName})"
+	  },
+	  "audit.action.auto_remove_inaccessible": {
+	    en: "🚫 Auto-removed inaccessible product {asin} ({productName})",
+	    masry: "🚫 النظام شال منتج محظور {asin} ({productName})"
+	  },
+"audit.action.product_broadcast": {
     en: "📢 Sent product broadcast to channel",
     masry: "📢 بعت برودكاست منتج للقناة"
   },

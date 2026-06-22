@@ -20,6 +20,57 @@ function checkUserRateLimit(ip) {
   return entry.count <= USER_RATE_MAX;
 }
 
+// ── Screenshot mode handler ──────────────────────────────────────────────
+// Handles API requests from Puppeteer with mock auth. Uses real prod D1 data
+// for user 760872964 so screenshots show real products/charts/broadcasts.
+async function handleUserScreenshot(request, env, ctx, url, lang) {
+  const SS_CHAT_ID = "760872964";
+  const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-User-Lang", "X-User-Lang": lang };
+
+  if (url.pathname === "/api/user/products" && request.method === "GET") {
+    const { results } = await env.DB.prepare(`
+      SELECT s.asin, s.is_paused as paused, s.target_price, p.name, p.name_ar,
+             p.new_price, p.used_price, p.amazon_price, p.hist_mean, p.is_atl_new,
+             p.image_url, p.last_updated, p.new_seller, p.used_seller, p.amazon_seller,
+             p.seen_amazon_eg_at, p.seen_resale_at, p.detail_page_url
+      FROM User_Subscriptions s
+      LEFT JOIN Global_Products p ON s.asin = p.asin
+      WHERE s.chat_id = ?
+      ORDER BY s.added_at DESC, s.asin ASC
+    `).bind(SS_CHAT_ID).all();
+    for (let prod of results) {
+      let historyData = await env.AZTRACKER_DB.get(`history:${prod.asin}`, "json") || [];
+      let atl = null;
+      if (historyData.length > 0) {
+        atl = Math.min(...historyData.map(h => h.n || h.u || 999999));
+      }
+      prod.atl = atl;
+    }
+    return new Response(JSON.stringify(results), { status: 200, headers });
+  }
+
+  if (url.pathname === "/api/user/hot_deals" && request.method === "GET") {
+    const { results } = await env.DB.prepare(`
+      SELECT g.asin, g.name, g.name_ar, g.new_price, g.hist_mean, g.image_url,
+             g.detail_page_url, (s.asin IS NOT NULL) AS is_tracked
+      FROM Global_Products g
+      LEFT JOIN User_Subscriptions s ON g.asin = s.asin AND s.chat_id = ?
+      WHERE g.hist_mean > 0 AND g.new_price > 0 AND (
+        (g.hist_mean <= 1000 AND g.new_price <= g.hist_mean * 0.90) OR
+        (g.hist_mean > 1000 AND g.hist_mean <= 5000 AND g.new_price <= g.hist_mean * 0.93) OR
+        (g.hist_mean > 5000 AND g.hist_mean <= 20000 AND g.new_price <= g.hist_mean * 0.95) OR
+        (g.hist_mean > 20000 AND g.hist_mean <= 50000 AND g.new_price <= g.hist_mean * 0.97) OR
+        (g.hist_mean > 50000 AND g.new_price <= g.hist_mean * 0.99)
+      )
+      ORDER BY ((g.hist_mean - g.new_price) / g.hist_mean) DESC LIMIT 20
+    `).bind(SS_CHAT_ID).all();
+    return new Response(JSON.stringify(results), { status: 200, headers });
+  }
+
+  // Default: return empty success for other endpoints (track, delete, etc.)
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers });
+}
+
 export async function fetchUserAPI(request, env, ctx) {
   const url = new URL(request.url);
 
@@ -38,6 +89,13 @@ export async function fetchUserAPI(request, env, ctx) {
       return new Response("Unauthorized", { status: 401 });
     }
     const initData = authHeader.substring("Bearer ".length);
+
+    // Screenshot mode: Puppeteer sends literal "puppeteer_mock" — skip HMAC
+    if (initData === "puppeteer_mock") {
+      const ssLang = url.searchParams.get("lang") || "masry";
+      return handleUserScreenshot(request, env, ctx, url, ssLang);
+    }
+
     let chatId;
     const parsed = new URLSearchParams(initData);
     const hash = parsed.get("hash");
@@ -144,8 +202,9 @@ export async function fetchUserAPI(request, env, ctx) {
         ctx.waitUntil((async () => {
            const userRow = await env.DB.prepare("SELECT lang, role FROM Users WHERE chat_id = ?").bind(chatId).first();
            if(userRow) {
-               const lang = userRow.lang || 'masry';
-               const isAdmin = userRow.role === 'admin';
+               const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || "";
+               const isRootAdmin = rootAdminsRaw.split(",").filter(Boolean).includes(String(chatId));
+               const isAdmin = isRootAdmin || userRow.role === 'admin';
                const baseUrl = url.origin;
                const state = await env.DB.prepare("SELECT value FROM Bot_States WHERE key = ?").bind(`ui:${chatId}`).first();
                if (state && state.value) {
@@ -209,7 +268,9 @@ export async function fetchUserAPI(request, env, ctx) {
           const cache = caches.default;
           await cache.delete(new Request(`https://auth.internal/roles/${chatId}`));
           const userRow = await env.DB.prepare("SELECT role FROM Users WHERE chat_id = ?").bind(chatId).first();
-          const isAdmin = userRow && userRow.role === 'admin';
+          const rootAdminsRaw = env.TELEGRAM_ROOT_ADMIN_IDS || env.ROOT_ADMIN_ID || "";
+          const isRootAdmin = rootAdminsRaw.split(",").filter(Boolean).includes(String(chatId));
+          const isAdmin = isRootAdmin || (userRow && userRow.role === 'admin');
           await setChatMenuButton(env, chatId, url.origin, lang, isAdmin);
         })());
 
@@ -402,6 +463,13 @@ const USER_STYLES = `
       padding: 2px;
       flex-shrink: 0;
     }
+    .product-header-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      flex: 1;
+      min-width: 0;
+    }
     .product-title {
       font-size: 15px;
       font-weight: 600;
@@ -454,6 +522,40 @@ const USER_STYLES = `
     }
     .price-val.active {
       color: var(--success);
+    }
+    .deal-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .deal-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .deal-pill-price {
+      background: rgba(52, 211, 153, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(52, 211, 153, 0.2);
+    }
+    .deal-pill-drop {
+      background: rgba(248, 113, 113, 0.1);
+      color: var(--danger);
+      border: 1px solid rgba(248, 113, 113, 0.2);
+    }
+    .deal-pill-drop svg {
+      width: 11px;
+      height: 11px;
+      flex-shrink: 0;
+    }
+    [dir="rtl"] .deal-pill-drop svg {
+      order: -1;
     }
     .slider-container {
       margin: 16px 0;
@@ -798,7 +900,7 @@ function renderUserHTML(lang, partnerTag) {
         if (res.status === 403) {
             try {
                 const text = await res.clone().text();
-                if (text.includes("FORBIDDEN")) {
+                if (text.includes("FORBIDDEN") && !window.__screenshotMode) {
                     const isDevLockdown = text.includes("FORBIDDEN: Dev Environment");
                     const headTxt = isDevLockdown ? ui.access_dev_lockdown_head : ui.access_denied_head;
                     const bodyTxt = isDevLockdown ? ui.access_dev_lockdown.replace(/\\n/g, '<br>') : ui.access_denied_body;
@@ -856,6 +958,7 @@ function renderUserHTML(lang, partnerTag) {
 
     let allProducts = [];
     let hotDeals = [];
+    let hotDealsSeen = false;
 
     function switchTab(tabId) {
       if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
@@ -868,6 +971,7 @@ function renderUserHTML(lang, partnerTag) {
       document.getElementById('content-' + tabId).style.display = 'block';
 
       if (tabId === 'hotdeals') {
+        hotDealsSeen = true;
         const dot = document.getElementById('dot-hotdeals');
         if (dot) dot.style.display = 'none';
 
@@ -898,7 +1002,7 @@ function renderUserHTML(lang, partnerTag) {
         document.getElementById('app-deals').innerHTML = '<div style="text-align:center;color:var(--text-tertiary);margin-top:40px;">' + (ui.no_deals) + '</div>';
         return;
       }
-      document.getElementById('dot-hotdeals').style.display = 'inline-block';
+      if (!hotDealsSeen) document.getElementById('dot-hotdeals').style.display = 'inline-block';
       let html = '';
       hotDeals.forEach(p => {
         let name = (isMasry && p.name_ar) ? p.name_ar : p.name;
@@ -917,19 +1021,14 @@ function renderUserHTML(lang, partnerTag) {
         html += '<div class="product-card">' +
           '<div class="product-header">' +
             '<img src="' + img + '" class="product-img" />' +
-            '<div>' +
+            '<div class="product-header-text">' +
                '<h4 class="product-title">' + escapeHtml(name) + '</h4>' +
-               '<div class="price-row" style="margin-top:4px;">' +
-                 '<div class="price-box new">' +
-                   '<div class="price-label">' + (ui.price_now) + '</div>' +
-                   '<div class="price-val">' + formatEGP(p.new_price) + '</div>' +
-                 '</div>' +
-                 '<div class="price-box used" style="background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.2);">' +
-                   '<div class="price-label" style="color:var(--destructive-color)">' + (ui.price_drop) + '</div>' +
-                   '<div class="price-val" style="color:var(--destructive-color)">' + dropPct + '%' +
-                   '<svg style="width:12px;height:12px;margin-left:3px;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>' +
-                   '</div>' +
-                 '</div>' +
+               '<div class="deal-pills">' +
+                 '<span class="deal-pill deal-pill-price">' + formatEGP(p.new_price) + '</span>' +
+                 '<span class="deal-pill deal-pill-drop">' +
+                   '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>' +
+                   dropPct + '%' +
+                 '</span>' +
                '</div>' +
             '</div>' +
           '</div>' +

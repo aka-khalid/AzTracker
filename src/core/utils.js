@@ -16,27 +16,22 @@ export function formatEGP(price) {
 export const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Expand Amazon short URLs (amzn.to, amzn.eu, a.co, amazon.eg/d/) to full URLs.
- * Follows up to 3 redirect hops via the Location header.
+ * Expand Amazon short URLs (amzn.to, amzn.eu, a.co, link.amazon, amazon.eg/d/) to full URLs.
+ * Uses redirect:follow to automatically resolve all redirect hops.
  */
 export async function expandAmazonUrl(url) {
-  let currentUrl = url;
-  let hops = 0;
   try {
-    while ((currentUrl.includes("amzn.to") || currentUrl.includes("amzn.eu") || currentUrl.includes("a.co") || /amazon\.eg\/d\//.test(currentUrl)) && hops < 3) {
-      const res = await fetch(currentUrl, { method: "GET", redirect: "manual", headers: { "User-Agent": "Agent/AzTrackerBot" }, signal: AbortSignal.timeout(5000) });
-      const location = res.headers.get("location");
-      if (location) {
-        currentUrl = new URL(location, currentUrl).href;
-        hops++;
-      } else {
-        break;
-      }
-    }
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+      signal: AbortSignal.timeout(10000)
+    });
+    return res.url || url;
   } catch (e) {
     console.error("Short link expansion failure:", e);
+    return url;
   }
-  return currentUrl;
 }
 
 /**
@@ -44,10 +39,10 @@ export async function expandAmazonUrl(url) {
  */
 export function getAsinFromUrl(url) {
   if (!url) return null;
-  // Product ASINs start with B — reject all-numeric (ISBN) and garbage
-  const dpMatch = url.match(/\/dp\/(B[A-Z0-9]{9})(?=[/?#]|$)/i);
+  // Product ASINs start with B; books use all-numeric ISBN-10 as ASIN (e.g. 0063320223)
+  const dpMatch = url.match(/\/dp\/([A-Z0-9]{10})(?=[/?#]|$)/i);
   if (dpMatch) return dpMatch[1].toUpperCase();
-  const gpMatch = url.match(/\/gp\/product\/(B[A-Z0-9]{9})(?=[/?#]|$)/i);
+  const gpMatch = url.match(/\/gp\/product\/([A-Z0-9]{9})(?=[/?#]|$)/i);
   if (gpMatch) return gpMatch[1].toUpperCase();
   return null;
 }

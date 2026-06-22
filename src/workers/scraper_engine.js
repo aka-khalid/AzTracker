@@ -1,5 +1,6 @@
 import { AmazonEdgeParser, getAmazonAccessToken } from '../core/amazon.js';
 import { t } from '../core/i18n.js';
+import { logAudit } from '../core/db.js';
 import { escapeHtml, formatEGP, getCairoTime, resolveProductName, truncateName, buildBroadcastMessage } from '../core/utils.js';
 
 const AMAZON_EG_MERCHANT_ID = "A1ZVRGNO5AYLOV";
@@ -129,8 +130,13 @@ export async function executeScrapeEngine(env, offset = 0) {
   const asins = staleProducts.map(p => p.asin);
 
   let liveItems;
+  let invalidAsins = [];
+  let invalidAsinErrors = {};
   try {
-    liveItems = await parser.getItems(asins);
+    const result = await parser.getItems(asins);
+    liveItems = result.items;
+    invalidAsins = result.invalidAsins || [];
+    invalidAsinErrors = result.invalidAsinErrors || {};
     // Success: reset circuit breaker (unless we're half_open, then let it close on next success)
     if (cbState === "half_open") {
       await recordCircuitSuccess(env);
@@ -166,15 +172,10 @@ export async function executeScrapeEngine(env, offset = 0) {
         item.name = null; 
       }
 
-      if (!item.name_ar) {
-        const scraped = await parser.scrapeArabicTitle(item.asin);
-        if (scraped) item.name_ar = scraped;
-        // Small delay to avoid rate-limiting
-        await new Promise(r => setTimeout(r, 200));
-      }
-      if (!item.name) {
-        const scraped = await parser.scrapeEnglishTitle(item.asin);
-        if (scraped) item.name = scraped;
+      if (!item.name_ar || !item.name) {
+        const titles = await parser.scrapeTitles(item.asin);
+        if (!item.name_ar && titles.ar) item.name_ar = titles.ar;
+        if (!item.name && titles.en) item.name = titles.en;
         // Small delay to avoid rate-limiting
         await new Promise(r => setTimeout(r, 200));
       }
@@ -187,9 +188,49 @@ export async function executeScrapeEngine(env, offset = 0) {
   const kvPromises = [];
   const queueBatch = [];
   const now = Date.now();
-  
+
+  // Delete invalid/inaccessible ASINs and notify subscribed users
+  if (invalidAsins.length > 0) {
+    console.warn(`[ScraperEngine] Removing ${invalidAsins.length} invalid ASIN(s): ${invalidAsins.join(', ')}`);
+    for (const badAsin of invalidAsins) {
+      const errorCode = invalidAsinErrors[badAsin] || 'InvalidParameterValue';
+      const isAccessible = errorCode === 'ItemNotAccessible';
+
+      // Look up product name for the notification message
+      const dbProduct = staleProducts.find(p => p.asin === badAsin);
+      const productName = (dbProduct?.name && dbProduct.name !== badAsin)
+        ? dbProduct.name
+        : (dbProduct?.name_ar || badAsin);
+
+      // Get all subscribed users for this ASIN
+      const { results: subs } = await env.DB.prepare(
+        "SELECT s.chat_id, COALESCE(u.lang, 'en') AS lang FROM User_Subscriptions s LEFT JOIN Users u ON s.chat_id = u.chat_id WHERE s.asin = ? AND s.is_paused = 0"
+      ).bind(badAsin).all();
+
+      for (const sub of subs) {
+        const subLang = sub.lang || 'en';
+        const headKey = isAccessible ? 'product.removed_inaccessible_head' : 'product.removed_invalid_head';
+        const bodyKey = isAccessible ? 'product.removed_inaccessible_body' : 'product.removed_invalid_body';
+        const msg =
+          t(headKey, subLang) + `\n\n` +
+          t(bodyKey, subLang, { asin: badAsin }) + `\n\n` +
+          `📦 <b>${escapeHtml(productName)}</b>`;
+
+        queueBatch.push({ type: 'telegram_alert', asin: badAsin, chatId: sub.chat_id, text: msg });
+
+        // Audit log: one entry per user per product
+        const auditAction = isAccessible ? 'AUTO_REMOVE_INACCESSIBLE' : 'AUTO_REMOVE_INVALID';
+        logAudit(env, 'SYSTEM', auditAction, sub.chat_id, { asin: badAsin, productName });
+      }
+
+      // Delete product (CASCADE removes User_Subscriptions)
+      d1Batch.push(env.DB.prepare('DELETE FROM Global_Products WHERE asin = ?').bind(badAsin));
+    }
+  }
+
   // Failsafe: Avoid 0-items returned outage trap (any batch size)
-  if (staleProducts.length > 0 && liveItems.length === 0) {
+  // If all ASINs were invalid (not an outage), skip the batch instead of retrying
+  if (staleProducts.length > 0 && liveItems.length === 0 && invalidAsins.length === 0) {
     console.log(`Global failsafe: 0 items returned for batch at offset ${offset}. Assuming API Outage. Throwing to retry.`);
     throw new Error("0 items returned from Amazon");
   }

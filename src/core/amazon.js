@@ -75,22 +75,47 @@ export class AmazonEdgeParser {
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`[AmazonEdgeParser] Creators API HTTP Error: ${response.status}`, errorBody);
-      if (response.status === 400 || response.status === 404) return [];
+      if (response.status === 400 || response.status === 404) return { items: [], invalidAsins: [] };
       throw new Error(`Creators API Error: ${response.status} - Body: ${errorBody}`);
     }
 
     const data = await response.json();
-    
+
+    // Detect ASIN-level errors (invalid, restricted, or inaccessible products)
+    // The API returns HTTP 200 with an errors array and empty/partial itemsResult
+    // InvalidParameterValue = garbage ASIN (e.g. 1231231231)
+    // ItemNotAccessible = restricted/blocked product (e.g. adult, region-locked)
+    const invalidAsins = [];
+    const invalidAsinErrors = {}; // asin -> error code
+    if (data.errors && Array.isArray(data.errors)) {
+      for (const err of data.errors) {
+        if (err.code === 'InvalidParameterValue' || err.code === 'ItemNotAccessible') {
+          // Extract ASINs from messages like:
+          //   "The ItemIds X, Y provided in the request is invalid."
+          //   "The ItemIds X, Y provided in the request is not accessible."
+          const match = err.message?.match(/ItemIds?\s+([A-Z0-9,\s]+)\s+provided/i);
+          if (match) {
+            const asins = match[1].split(/[,\s]+/).filter(a => /^[A-Z0-9]{10}$/i.test(a));
+            invalidAsins.push(...asins);
+            for (const a of asins) invalidAsinErrors[a] = err.code;
+          }
+        }
+      }
+      if (invalidAsins.length > 0) {
+        console.warn(`[AmazonEdgeParser] ASIN errors detected by API (${[...new Set(data.errors.map(e => e.code))].join(', ')}): ${invalidAsins.join(', ')}`);
+      }
+    }
+
     const itemsResult = data.ItemsResult || data.itemsResult;
     const items = itemsResult?.Items || itemsResult?.items;
-    
+
     if (items) {
       for (const item of items) {
         results.push(this.parseItem(item));
       }
     }
-    
-    return results;
+
+    return { items: results, invalidAsins, invalidAsinErrors };
   }
 
   /**
@@ -287,9 +312,9 @@ export class AmazonEdgeParser {
         const chunk = rawVariations.slice(i, i + 10);
         const chunkAsins = chunk.map(v => v.asin);
         try {
-          const detailedItems = await this.getItems(chunkAsins, prefLang);
+          const detailedResult = await this.getItems(chunkAsins, prefLang);
           for (const raw of chunk) {
-            const detailed = detailedItems.find(d => d.asin === raw.asin);
+            const detailed = detailedResult.items.find(d => d.asin === raw.asin);
             if (!detailed) continue;
             
             const numPrice = detailed.amazonPrice || detailed.newPrice || detailed.usedPrice || 0;
@@ -321,57 +346,40 @@ export class AmazonEdgeParser {
   }
 
   /**
-   * Scrape the Arabic amazon.eg product page for the product title.
-   * Fallback when the Creators API doesn't return Arabic titles.
+   * Scrape both English and Arabic product titles from amazon.eg in parallel.
+   * Fallback when the Creators API doesn't return titles.
+   * Returns { en: string|null, ar: string|null }
    */
-  async scrapeArabicTitle(asin) {
-    const url = `https://www.amazon.eg/dp/${asin}?language=ar_AE`;
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Accept-Language': 'ar,ar-EG;q=0.9',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        signal: AbortSignal.timeout(8000)
-      });
-      if (!response.ok) return null;
-      const html = await response.text();
-      const match = html.match(/id="productTitle"[^>]*>([^<]+)</);
-      if (match && match[1]) {
-        const title = match[1].trim();
-        if (containsArabic(title)) return title;
+  async scrapeTitles(asin) {
+    const fetchTitle = async (lang, acceptLang) => {
+      const url = `https://www.amazon.eg/dp/${asin}?language=${lang}`;
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'Accept-Language': acceptLang,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) return null;
+        const html = await response.text();
+        const match = html.match(/id="productTitle"[^>]*>([^<]+)</);
+        return match?.[1]?.trim() || null;
+      } catch (e) {
+        console.warn(`[AmazonEdgeParser] ${lang} scrape failed for ${asin}:`, e.message);
+        return null;
       }
-    } catch (e) {
-      console.warn(`[AmazonEdgeParser] Arabic scrape failed for ${asin}:`, e.message);
-    }
-    return null;
-  }
+    };
 
-  /**
-   * Scrape the English amazon.eg product page for the product title.
-   * Fallback when the Creators API doesn't return English titles.
-   */
-  async scrapeEnglishTitle(asin) {
-    const url = `https://www.amazon.eg/dp/${asin}?language=en_AE`;
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Accept-Language': 'en,en-US;q=0.9',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        signal: AbortSignal.timeout(8000)
-      });
-      if (!response.ok) return null;
-      const html = await response.text();
-      const match = html.match(/id="productTitle"[^>]*>([^<]+)</);
-      if (match && match[1]) {
-        const title = match[1].trim();
-        return title;
-      }
-    } catch (e) {
-      console.warn(`[AmazonEdgeParser] English scrape failed for ${asin}:`, e.message);
-    }
-    return null;
+    const [en, ar] = await Promise.all([
+      fetchTitle('en_AE', 'en,en-US;q=0.9'),
+      fetchTitle('ar_AE', 'ar,ar-EG;q=0.9')
+    ]);
+
+    return {
+      en: en || null,
+      ar: ar && containsArabic(ar) ? ar : null
+    };
   }
 
   parseItem(rawItem) {
