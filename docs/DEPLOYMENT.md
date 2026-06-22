@@ -23,7 +23,7 @@ When deploying or testing locally, `aztracker-dev-worker` is used. Production re
 |----------|-----------------------------|---------------------------------|
 | **D1 Database** | `aztracker-dev-db` | `aztracker-prod-db` |
 | **KV Namespace** | Shared (`AZTRACKER_DB`) | Shared (`AZTRACKER_DB`) |
-| **Queues** | `scraper-queue`, `telegram-outbox` | `scraper-queue`, `telegram-outbox` |
+| **Queues** | `scraper-queue-dev`, `telegram-outbox-dev` | `scraper-queue`, `telegram-outbox` |
 | **Cron Trigger** | `* * * * *` (if active) | `* * * * *` (if active) |
 
 _Note: KV is shared across both environments to leverage shared historical price metrics, whereas D1 separates active user and subscription states._
@@ -44,8 +44,9 @@ src/
 │   ├── telegram.js          # Telegram API SDK
 │   └── utils.js             # Shared Utilities
 ├── routes/
-│   ├── crm_dashboard.js     # Web App CRM Route
-│   └── telegram_webhook.js  # ChatOps Handler
+│   ├── crm_dashboard.js     # Admin CRM Web App & API Endpoints
+│   ├── telegram_webhook.js  # Telegram Bot Command & Callback Router
+│   └── user_dashboard.js    # Public User Web App (Products, Hot Deals)
 └── workers/
     ├── cron_trigger.js      # CRON Dynamic Governor
     ├── queue_worker.js      # Consumer for all Queues
@@ -67,9 +68,29 @@ npx wrangler d1 create aztracker-dev-db
 npx wrangler d1 create aztracker-prod-db
 # Add returned IDs to wrangler.toml
 
-# 3. Apply Schema Migrations
+# 3. Create KV Namespaces
+npx wrangler kv:namespace create AZTRACKER_DB
+npx wrangler kv:namespace create AZTRACKER_DB --env production
+# Add returned IDs to wrangler.toml
+
+# 4. Create Queues
+npx wrangler queues create telegram-outbox-dev
+npx wrangler queues create scraper-queue-dev
+npx wrangler queues create telegram-outbox --env production
+npx wrangler queues create scraper-queue --env production
+
+# 5. Apply Schema Migrations
 npx wrangler d1 migrations apply DB --local
 npx wrangler d1 migrations apply DB --env production --remote
+
+# 6. Inject Secrets (per environment — see Section 3.2)
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_BOT_TOKEN --env production
+# Repeat for all secrets listed in Section 3.2
+
+# 7. Set up Telegram Persistent Menu
+TELEGRAM_BOT_TOKEN="YOUR_DEV_BOT_TOKEN" node scripts/setup_bot_commands.js
+TELEGRAM_BOT_TOKEN="YOUR_PROD_BOT_TOKEN" node scripts/setup_bot_commands.js --env production
 ```
 
 ### 3.2 Secret Management
@@ -84,6 +105,7 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN --env production
 **Required Cloudflare Secrets:**
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ROOT_ADMIN_IDS`
 - `AMAZON_CLIENT_ID`, `AMAZON_CLIENT_SECRET`, `AMAZON_PARTNER_TAG`
+	- `AMZN_EG_MERCHANT_ID`, `AMZN_RESALE_MERCHANT_ID`
 
 ### 3.3 GitHub Actions CI/CD Secrets
 To enable automated deployments and dual-environment database syncs via GitHub Actions, configure the following **Repository Secrets** in GitHub:

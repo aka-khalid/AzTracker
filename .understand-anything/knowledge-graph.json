@@ -2193,7 +2193,7 @@
       "type": "document",
       "language": "markdown",
       "fileCategory": "docs",
-      "summary": "Visual gallery documenting the AzTracker CRM interface in both LTR (English) and RTL (Masry/Arabic) layouts, showcasing 22 distinct UI screens including dashboards, user management, product drawers, broadcast modals, and deal discovery views.",
+      "summary": "Visual gallery documenting the AzTracker CRM interface in both LTR (English) and RTL (Masry/Arabic) layouts, showcasing 21 distinct UI screens including dashboards, user management, product drawers, broadcast modals, and deal discovery views.",
       "description": "A visual reference document presenting the entire CRM and user-facing interface in a side-by-side bilingual format. Covers 22 UI screens: Main Dashboard, Approved Users, Pending Queue, Banned Users, System Admins, Audit Log, Active Products Drawer, Top Charts Drawer, Paused Products Drawer, Ghost Graveyard Drawer, User Products Drawer, Product Subscribers Drawer, Price Chart Modal, Per-Product Broadcast Modal, Broadcast Deals Composer, Global Broadcast Section, User Products, Help Modal, Hot Deals, and Access Denied. Each screen is shown with both English (LTR) and Masry Arabic (RTL) renderted screenshots. The document demonstrates the project's comprehensive i18n/RTL capabilities and zero-frontend-framework philosophy.",
       "tags": [
         "ui-gallery",
@@ -2958,7 +2958,7 @@
       "type": "document",
       "name": "GALLERY.md",
       "filePath": "docs/GALLERY.md",
-      "summary": "Visual gallery showcasing AzTracker's bilingual (English LTR / Masry RTL) dashboard interface with 19 side-by-side screenshot comparisons covering CRM views, user management drawers, broadcast modals, price charts, and the hot deals discovery tab.",
+      "summary": "Visual gallery showcasing AzTracker's bilingual (English LTR / Masry RTL) dashboard interface with 21 side-by-side screenshot comparisons covering CRM views, user management drawers, broadcast modals, price charts, and the hot deals discovery tab.",
       "tags": [
         "documentation",
         "ui-reference",
@@ -5885,7 +5885,7 @@
       "confidence": 0.95,
       "metadata": {
         "referenceType": "implementation-documents-ui",
-        "details": "ROADMAP.md phases 6.8, 6.11, 6.12, 6.13, and 6.16 collectively implement all 22 UI screens documented in GALLERY.md. Each roadmap phase adds specific UI capabilities (D1 data, RTL, Web App, images, dialogs) that the gallery showcases."
+        "details": "ROADMAP.md phases 6.8, 6.11, 6.12, 6.13, and 6.16 collectively implement all 21 UI screens documented in GALLERY.md. Each roadmap phase adds specific UI capabilities (D1 data, RTL, Web App, images, dialogs) that the gallery showcases."
       },
       "direction": "forward",
       "fingerprint": "a6c4e4c379cfec54"
@@ -7876,7 +7876,7 @@
     {
       "id": "layer:docs",
       "name": "Documentation",
-      "description": "Project documentation: architecture README, deployment guide, visual gallery (19 LTR/RTL screenshots), engineering roadmap, and test specification.",
+      "description": "Project documentation: architecture README, deployment guide, visual gallery (21 LTR/RTL screenshots), engineering roadmap, and test specification.",
       "nodeIds": [
         "document:README.md",
         "document:docs/DEPLOYMENT.md",

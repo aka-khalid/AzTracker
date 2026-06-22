@@ -87,5 +87,5 @@ Tests for the custom in-UI confirm dialogs and toast notifications that replace 
 3. Verify that `queue_worker.js` safely loops the offsets and correctly executes Two-Phase Commits in the database.
 4. Check D1 state manually:
    ```bash
-   npx wrangler d1 execute aztracker-test-db --local --command "SELECT chat_id, asin, alert_sent_new FROM User_Subscriptions;"
+   npx wrangler d1 execute aztracker-dev-db --local --command "SELECT chat_id, asin, alert_sent_new FROM User_Subscriptions;"
    ```

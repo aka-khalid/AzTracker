@@ -39,7 +39,7 @@ AzTracker features a securely embedded Telegram WebApp CRM that natively support
 </table>
 
 👉 **[View Full Screenshot Gallery](docs/GALLERY.md)**  
-*(Contains side-by-side LTR/RTL comparisons of all 23 interactive views, drawers, and charts!)*
+*(Contains side-by-side LTR/RTL comparisons of all 21 interactive views, drawers, and charts!)*
 
 ---
 
@@ -126,6 +126,7 @@ src/
 ### 🚏 Core Routes (`src/routes/`)
 All HTTP requests are routed by the `fetch` handler in `src/index.js` to their appropriate domain:
 - `POST /webhook` and `POST /webhook/*`: Sent to `telegram_webhook.js` for ChatOps interaction.
+- `GET /user_app`, `GET /api/user/*`, `POST /api/user/*`: Routed to `user_dashboard.js`, which serves the public user Web App (product management, hot deals) and its JSON API endpoints.
 - All other routes (e.g., `GET /crm`, `GET /api/crm/*`, `POST /api/crm/*`): Fall through to `fetchAPI` in `crm_dashboard.js`, which serves both the Edge-Rendered Admin UI and JSON endpoints (handling its own 404s).
 
 ### 🔧 Core Modules (`src/core/`)
@@ -162,8 +163,9 @@ Detailed documentation for various aspects of the system can be found in the `do
 |----------|-------------|
 | `DEFAULT_USER_PRODUCT_LIMIT` | Global limit on concurrent tracks per user (default: `"3"`). |
 | `DAILY_QUEUE_LIMIT` | Global limit for queued executions (default: `"10000"`). |
-| `AMZN_EG_MERCHANT_ID` | Amazon.eg Retail merchant ID (default: `'A1ZVRGNO5AYLOV'`). |
-| `AMZN_RESALE_MERCHANT_ID` | Amazon Resale merchant ID (default: `'A2N2MP47XAP1MK'`). |
+| `ENVIRONMENT` | Worker environment (`"dev"` or `"production"`). |
+| `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel username for automated deal broadcasting (e.g. `"@AzTrackerr"`). |
+| `BOT_USERNAME` | Telegram bot username without `@` (e.g. `"AzTrackerr_bot"`). |
 | `GITHUB_OWNER` | GitHub owner for the project. |
 | `GITHUB_REPO` | GitHub repository name. |
 
@@ -177,7 +179,8 @@ Detailed documentation for various aspects of the system can be found in the `do
 | `AMAZON_CLIENT_ID` | Amazon Creators API Credential ID. |
 | `AMAZON_CLIENT_SECRET` | Amazon Creators API Secret. |
 | `AMAZON_PARTNER_TAG` | Amazon Associates Tracking ID for product URLs and the Creators API payload. |
-| `TELEGRAM_PUBLIC_CHANNEL_ID` | Target channel ID for automated deal broadcasting. |
+| `AMZN_EG_MERCHANT_ID` | Amazon.eg Retail merchant ID (default: `'A1ZVRGNO5AYLOV'`). |
+| `AMZN_RESALE_MERCHANT_ID` | Amazon Resale merchant ID (default: `'A2N2MP47XAP1MK'`). |
 
 ### 🔄 Automated CI/CD Database Synchronization
 The project features a full CI/CD pipeline using GitHub Actions (`sync-prod-to-dev.yml`). On deployment, it safely mirrors the production D1 databases to the development environment by utilizing `sed` to intelligently transform destructive `INSERT INTO` SQL commands into safe `INSERT OR REPLACE INTO` commands. It simultaneously uses a custom Node.js script to bulk-mirror the Cloudflare KV namespaces, guaranteeing identical environments without breaking dev constraints.

@@ -90,7 +90,7 @@ This document tracks the technical debt, security fortifications, feature expans
   **The Strategy:** Deployed an `i18n.js` dictionary engine. Refactored Tailwind CSS in the CRM to use logical properties (`ps-`, `pe-`, `gap`) for native RTL flipping via edge HTML rendering. Decoupled scraper alert logic from string labels by implementing a strict boolean `isUsed` parameter to prevent translation text from breaking conditional routing. Shifted the omnichannel broadcast to a high-urgency organic template without analytical markers to boost affiliate conversion.
 
   **Execution Highlights:**
-  - **i18n Dictionary Engine:** Built `src/core/i18n.js` with a flat key structure `t(key, lang, vars)` supporting `en`/`masry` locales and ~233 keys covering CRM UI, alerts, broadcasts, product labels, access control, navigation, onboarding, and system messages — all in Professional Masry Egyptian Arabic (not Fusha).
+  - **i18n Dictionary Engine:** Built `src/core/i18n.js` with a flat key structure `t(key, lang, vars)` supporting `en`/`masry` locales and ~432 keys covering CRM UI, alerts, broadcasts, product labels, access control, navigation, onboarding, audit logs, and system messages — all in Professional Masry Egyptian Arabic (not Fusha).
   - **Per-User Language Detection:** Extended `getUserRoles()` to return `lang` from the `Users` table, detected from Telegram's `language_code` via `resolveLanguageCode()`. All subscription queries JOIN the Users table for per-user `lang`, enabling per-user localized alerts.
   - **CRM RTL Overhaul:** Added `dir="rtl"` and `lang="masry"` to the CRM `<html>` element dynamically via template literal (`dir="${lang === 'masry' ? 'rtl' : 'ltr'}"`). Uses CSS logical properties (`ps-`, `pe-`, `gap-`) for native RTL flipping in the UI.
   - **Scraper Alert Localization:** Wrapped all user-facing strings in `scraper_engine.js` with `t()` calls — 44 `t()` invocations covering alert headers, button labels, seller tags, historical links, restock/drop messages, the ATL banner, currency labels, and the disclaimer.
@@ -127,7 +127,7 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Synchronous Webhook Scraping:** Upgraded the `telegram_webhook.js` link processor to immediately trigger synchronous HTTP extraction for both Arabic and English names (bypassing the queue) if they can't be extracted from the URL structure directly.
   </details>
 
-- [x] **Phase 6.13: Visual CRM Overhaul, Deal Discovery & Database Synchronization**
+- [x] **Phase 6.19: Visual CRM Overhaul, Deal Discovery & Database Synchronization**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
@@ -149,7 +149,7 @@ This document tracks the technical debt, security fortifications, feature expans
   - **Principle of Least Privilege:** Enforced a strict permission matrix for the GitHub Actions Cloudflare API Token, binding it explicitly to three explicit permissions (`D1 Edit`, `Workers KV Storage Edit`, `Worker Scripts Edit`) instead of granting overarching Global API Key access.
   </details>
 
-- [x] **Phase 6.14: Persistent Menu & Edge Navigation Resilience**
+- [x] **Phase 6.20: Persistent Menu & Edge Navigation Resilience**
   <details>
   <summary><b>View Execution Brief</b></summary>
 
