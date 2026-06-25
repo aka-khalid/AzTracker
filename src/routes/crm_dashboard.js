@@ -171,8 +171,8 @@ export async function fetchAPI(request, env, ctx) {
           accessToken = await getAmazonAccessToken(clientId, clientSecret);
         }
         const parser = new AmazonEdgeParser(accessToken, env.AMAZON_PARTNER_TAG, "www.amazon.eg", env);
-        // Call the Creators API directly ΓÇö return raw response
-        const raw = await parser.getRawItems(asins, "en_AE");
+        // Call the Creators API directly — return raw response
+        const raw = await parser.getRawItems(asins, "ar_AE");
         return new Response(JSON.stringify(raw, null, 2), {
           status: 200,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
